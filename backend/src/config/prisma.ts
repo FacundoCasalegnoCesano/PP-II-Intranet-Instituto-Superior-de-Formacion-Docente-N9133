@@ -1,15 +1,30 @@
 import "dotenv/config";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PrismaClient } from "../generated/prisma/client.js";
+import { PrismaClient } from "@prisma/client";
 
-const adapter = new PrismaMariaDb({
-  host: process.env.DATABASE_HOST!,
-  user: process.env.DATABASE_USER!,
-  password: process.env.DATABASE_PASSWORD!,
-  database: process.env.DATABASE_NAME!,
-  connectionLimit: 5,
+// Instancia única de Prisma Client
+// MariaDB es compatible con el driver de MySQL de Prisma
+const prisma = new PrismaClient({
+  log: process.env.NODE_ENV === 'development' 
+    ? ['query', 'info', 'warn', 'error'] 
+    : ['error']
 });
 
-const prisma = new PrismaClient({ adapter });
+// Función para conectar
+const connectDatabase = async (): Promise<void> => {
+  try {
+    await prisma.$connect();
+    console.log('✅ MariaDB connected successfully');
+    console.log(`📊 Database: ${process.env.DATABASE_NAME || 'instituto_db'}`);
+  } catch (error) {
+    console.error('❌ MariaDB connection error:', error);
+    process.exit(1);
+  }
+};
 
-export { prisma };
+// Función para desconectar
+const disconnectDatabase = async (): Promise<void> => {
+  await prisma.$disconnect();
+  console.log('MariaDB disconnected');
+};
+
+export { prisma, connectDatabase, disconnectDatabase };

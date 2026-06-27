@@ -1,0 +1,69 @@
+import { Router } from 'express';
+import materiaController from '../controllers/materiaController.js';
+import { authMiddleware, roleCheck } from '../middleware/auth.js';
+import { validationMiddleware } from '../middleware/validation.js';
+import { 
+  createMateriaSchema, 
+  updateMateriaSchema, 
+  listMateriasSchema,
+  correlatividadSchema 
+} from '../validations/materiaValidation.js';
+import { ROLES } from '../constants/roles.js';
+
+const router = Router();
+
+// Todas las rutas requieren autenticación
+router.use(authMiddleware);
+
+// Rutas para admin y profesores (pueden ver materias)
+router.get('/',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(listMateriasSchema, 'query'),
+  materiaController.listMaterias
+);
+
+router.get('/carrera/:carreraId',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  materiaController.getMateriasByCarrera
+);
+
+router.get('/:id',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  materiaController.getMateriaById
+);
+
+router.get('/:id/correlatividades',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  materiaController.getCorrelatividades
+);
+
+// Rutas solo para admin
+router.post('/',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(createMateriaSchema),
+  materiaController.createMateria
+);
+
+router.put('/:id',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(updateMateriaSchema),
+  materiaController.updateMateria
+);
+
+router.delete('/:id',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  materiaController.deleteMateria
+);
+
+router.post('/:id/correlatividades',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(correlatividadSchema),
+  materiaController.addCorrelatividad
+);
+
+router.delete('/correlatividades/:id',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  materiaController.removeCorrelatividad
+);
+
+export default router;
