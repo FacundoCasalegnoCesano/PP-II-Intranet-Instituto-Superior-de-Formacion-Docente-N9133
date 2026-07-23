@@ -1,22 +1,4 @@
-import { prisma } from "@/config/prisma.js";
-
-type UpdateCarreraInput = {
-  nombreCarrera?: string | undefined;
-  duracionCarrera?: number | undefined;
-};
-
-type CreateCarreraInput = {
-  nombreCarrera: string;
-  duracionCarrera: number;
-};
-
-function stripUndefined<T extends object>(
-  obj: T,
-): { [K in keyof T]: Exclude<T[K], undefined> } {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== undefined),
-  ) as { [K in keyof T]: Exclude<T[K], undefined> };
-}
+import { prisma, Prisma } from "@/config/prisma.js";
 
 export const carreraRepository = {
   findAll: () => prisma.carrera.findMany(),
@@ -26,15 +8,15 @@ export const carreraRepository = {
       where: { idCarrera: id },
     }),
 
-  create: (data: CreateCarreraInput) =>
+  create: (data: Prisma.CarreraCreateInput) =>
     prisma.carrera.create({
       data,
     }),
 
-  update: (id: number, data: UpdateCarreraInput) =>
+  update: (id: number, data: Prisma.CarreraUpdateInput) =>
     prisma.carrera.update({
       where: { idCarrera: id },
-      data: stripUndefined(data),
+      data,
     }),
 
   delete: (id: number) =>
