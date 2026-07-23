@@ -1,1 +1,29 @@
-GET http://localhost:3000/alumnos
+@baseUrl = http://localhost:3000
+
+### Obtener todas las carreras
+GET {{baseUrl}}/carreras
+
+
+### Crear una carrera
+POST {{baseUrl}}/carreras
+Content-Type: application/json
+
+{
+  "nombreCarrera": "Profesorado en Lengua y Literatura",
+  "duracionCarrera": 4
+}
+
+### Obtener una carrera por id
+GET {{baseUrl}}/carreras/2
+
+### Actualizar una carrera
+PUT {{baseUrl}}/carreras/4
+Content-Type: application/json
+
+{
+  "nombreCarrera": "Ingeniería en Sistemas",
+  "duracionCarrera": 5
+}
+
+### Eliminar una carrera
+DELETE {{baseUrl}}/carreras/5

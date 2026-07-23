@@ -7,44 +7,8 @@ datasource db {
   provider = "mysql"
 }
 
-// Esto es un ejemplo unicamente
-model Alumno {
-  idAlumno              Int      @id @default(autoincrement())
-  idCuenta              Int      @unique
-
-  legajo                String   @db.VarChar(255)
-
-  fechaInscripcion      DateTime
-  estadoAcademico       String   @db.VarChar(255)
-
-  promedio              Decimal? @db.Decimal(2,2)
-
-  apellidoNombre        String   @db.VarChar(255)
-
-  dni                   Int      @unique
-  email                 String   @unique @db.VarChar(255)
-
-  localidad             String   @db.VarChar(255)
-  fechaNacimiento       DateTime
-
-  domicilio             String   @db.VarChar(255)
-
-  telefono              String
-
-  tituloSecundario      String
-
-  institucionProcedencia String? @db.VarChar(255)
-
-  adeudaMateria         Int
-
-  carreraElegida        Carrera
-
-  passwordHash          String   @db.VarChar(255)
-}
-
-enum Carrera {
-  PROFESORADO_MATEMATICA
-  PROFESORADO_LENGUA
-  PROFESORADO_HISTORIA
-  TECNICATURA_SOFTWARE
+model Carrera {
+  idCarrera       Int      @id @default(autoincrement())
+  nombreCarrera   String
+  duracionCarrera Int
 }

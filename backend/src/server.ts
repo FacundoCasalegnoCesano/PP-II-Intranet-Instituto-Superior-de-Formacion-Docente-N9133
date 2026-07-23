@@ -1,14 +1,17 @@
 import express from "express";
 import type { Request, Response } from "express";
-import alumnoRoutes from "./routes/alumno.routes.js";
+import { prisma } from "./config/prisma.js";
+import carreraRoutes from "./routes/carrera.routes.js";
 
 const app = express();
+
+app.use(express.json());
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Working now!");
 });
 
-app.use("/alumnos", alumnoRoutes);
+app.use(carreraRoutes);
 
 app.listen(3000, () => {
   console.log("Server working!");
