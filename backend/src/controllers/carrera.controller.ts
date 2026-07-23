@@ -22,7 +22,6 @@ export const carreraController = {
   },
 
   create: async (req: Request, res: Response) => {
-    console.log("BODY RECIBIDO:", req.body);
     const { nombreCarrera, duracionCarrera } = req.body ?? {};
 
     if (!nombreCarrera || typeof duracionCarrera !== "number") {

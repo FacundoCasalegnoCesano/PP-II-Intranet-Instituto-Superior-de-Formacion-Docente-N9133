@@ -9,21 +9,21 @@ POST {{baseUrl}}/carreras
 Content-Type: application/json
 
 {
-  "nombreCarrera": "Profesorado en Lengua y Literatura",
-  "duracionCarrera": 4
+  "nombreCarrera": "",
+  "duracionCarrera": 
 }
 
 ### Obtener una carrera por id
-GET {{baseUrl}}/carreras/2
+GET {{baseUrl}}/carreras/6
 
 ### Actualizar una carrera
-PUT {{baseUrl}}/carreras/4
+PUT {{baseUrl}}/carreras/6
 Content-Type: application/json
 
 {
-  "nombreCarrera": "Ingeniería en Sistemas",
-  "duracionCarrera": 5
+  "nombreCarrera": "Ingeniería en Anime 2",
+  "duracionCarrera": 1
 }
 
 ### Eliminar una carrera
-DELETE {{baseUrl}}/carreras/5
+DELETE {{baseUrl}}/carreras/7
