@@ -10,20 +10,20 @@ Content-Type: application/json
 
 {
   "nombreCarrera": "",
-  "duracionCarrera": 
+  "duracionCarrera": 5
 }
 
 ### Obtener una carrera por id
-GET {{baseUrl}}/carreras/6
+GET {{baseUrl}}/carreras/99
 
 ### Actualizar una carrera
-PUT {{baseUrl}}/carreras/6
+PUT {{baseUrl}}/carreras/3
 Content-Type: application/json
 
 {
-  "nombreCarrera": "Ingeniería en Anime 2",
+  "nombreCarrera": "Ingeniería en Anime 20",
   "duracionCarrera": 1
 }
 
 ### Eliminar una carrera
-DELETE {{baseUrl}}/carreras/7
+DELETE {{baseUrl}}/carreras/3
