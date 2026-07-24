@@ -2,6 +2,7 @@ import express from "express";
 import type { Request, Response } from "express";
 import { prisma } from "./config/prisma.js";
 import carreraRoutes from "./routes/carrera.routes.js";
+import { errorHandler } from "@/middleware/errorHandler.js";
 
 const app = express();
 
@@ -12,7 +13,7 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 app.use(carreraRoutes);
-
+app.use(errorHandler);
 app.listen(3000, () => {
   console.log("Server working!");
 });

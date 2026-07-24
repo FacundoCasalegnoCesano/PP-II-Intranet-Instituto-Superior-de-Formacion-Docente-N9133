@@ -1,5 +1,11 @@
 import type { Request, Response } from "express";
-import { carreraRepository } from "../../repositories/carrera.repository.js";
+import { carreraRepository } from "@/repositories/carrera.repository.js";
+
+import {
+  createCarreraSchema,
+  updateCarreraSchema,
+  carreraIdParamSchema,
+} from "@/validations/carrera.validation.js";
 
 export const carreraController = {
   getAll: async (_req: Request, res: Response) => {
@@ -8,12 +14,11 @@ export const carreraController = {
   },
 
   getById: async (req: Request, res: Response) => {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) {
-      return res.status(400).json({ message: "Id inválido" });
-    }
+    const { id } = carreraIdParamSchema.parse(req.params);
+    // como que que lo que estoy pasando en el req.params es el atributo id?
 
     const carrera = await carreraRepository.findById(id);
+
     if (!carrera) {
       return res.status(404).json({ message: "Carrera no encontrada" });
     }
@@ -22,38 +27,19 @@ export const carreraController = {
   },
 
   create: async (req: Request, res: Response) => {
-    const { nombreCarrera, duracionCarrera } = req.body ?? {};
-
-    if (!nombreCarrera || typeof duracionCarrera !== "number") {
-      return res.status(400).json({
-        message: "nombreCarrera y duracionCarrera son requeridos",
-      });
-    }
-
-    try {
-      const carrera = await carreraRepository.create({
-        nombreCarrera,
-        duracionCarrera,
-      });
-      res.status(201).json(carrera);
-    } catch {
-      res.status(500).json({ message: "Error al crear la carrera" });
-    }
+    console.log("BODY:", req.body);
+    const data = createCarreraSchema.parse(req.body);
+    // Entiendo que la data de abajo deberia ser correcta porque ya paso por el filtro del parse, pero que pasa si no pasa ese filtro?
+    const carrera = await carreraRepository.create(data);
+    res.status(201).json(carrera);
   },
 
   update: async (req: Request, res: Response) => {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) {
-      return res.status(400).json({ message: "Id inválido" });
-    }
-
-    const { nombreCarrera, duracionCarrera } = req.body;
-
+    const { id } = carreraIdParamSchema.parse(req.params);
+    const data = updateCarreraSchema.parse(req.body);
+    // de vuelta, que pasa si hay errores ahi arriba?
     try {
-      const carrera = await carreraRepository.update(id, {
-        nombreCarrera,
-        duracionCarrera,
-      });
+      const carrera = await carreraRepository.update(id, data);
       res.json(carrera);
     } catch {
       res.status(404).json({ message: "Carrera no encontrada" });
@@ -61,14 +47,12 @@ export const carreraController = {
   },
 
   delete: async (req: Request, res: Response) => {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) {
-      return res.status(400).json({ message: "Id inválido" });
-    }
+    const { id } = carreraIdParamSchema.parse(req.params);
 
     try {
       await carreraRepository.delete(id);
       res.status(204).send();
+      // cuando se usa el .send() en el res.status?
     } catch {
       res.status(404).json({ message: "Carrera no encontrada" });
     }
