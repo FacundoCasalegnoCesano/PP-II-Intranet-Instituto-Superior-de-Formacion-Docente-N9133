@@ -38,7 +38,7 @@ class AlumnoController extends UserController {
 
       const user = await userService.getUserById(userId);
       
-      if (!user || user.rol !== ROLES.ALUMNO) {
+      if (!user || !user.roles.includes(ROLES.ALUMNO)) {
         res.status(404).json({
           success: false,
           message: 'El usuario no es un alumno o no existe'
@@ -88,7 +88,7 @@ class AlumnoController extends UserController {
       }
       
       const user = await userService.getUserById(userId);
-      if (!user || user.rol !== ROLES.ALUMNO) {
+      if (!user || !user.roles.includes(ROLES.ALUMNO)) {
         res.status(404).json({
           success: false,
           message: 'El usuario no es un alumno o no existe'
@@ -124,7 +124,7 @@ class AlumnoController extends UserController {
       }
       
       const user = await userService.getUserById(userId);
-      if (!user || user.rol !== ROLES.ALUMNO) {
+      if (!user || !user.roles.includes(ROLES.ALUMNO)) {
         res.status(404).json({
           success: false,
           message: 'El usuario no es un alumno o no existe'
@@ -144,9 +144,9 @@ class AlumnoController extends UserController {
       const { prisma } = await import('../config/prisma.js');
       
       const [total, activos, inactivos] = await Promise.all([
-        prisma.usuario.count({ where: { rol: ROLES.ALUMNO } }),
-        prisma.usuario.count({ where: { rol: ROLES.ALUMNO, activo: true } }),
-        prisma.usuario.count({ where: { rol: ROLES.ALUMNO, activo: false } })
+        prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ALUMNO } } } }),
+                prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ALUMNO, activo: true } } } }),
+                prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ALUMNO, activo: false } } } })
       ]);
       
       res.json({

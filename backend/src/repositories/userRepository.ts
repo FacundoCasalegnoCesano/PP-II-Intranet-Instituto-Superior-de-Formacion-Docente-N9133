@@ -62,8 +62,8 @@ class UserRepository {
         telefono: data.telefono,
         passwordHash: data.passwordHash,
         cuil: data.cuil,
-        contactoEmergencia: data.contactoEmergencia,
-        foto: data.foto
+        contactoEmergencia: data.contactoEmergencia ?? null,
+        foto: data.foto ?? null
       }
     });
   }
@@ -84,10 +84,7 @@ class UserRepository {
           }
         },
         roles: {
-          where: { activo: true },
-          include: {
-            rol: true
-          }
+          where: { activo: true }
         }
       }
     });
@@ -98,10 +95,7 @@ class UserRepository {
       where: { email },
       include: {
         roles: {
-          where: { activo: true },
-          include: {
-            rol: true
-          }
+          where: { activo: true }
         }
       }
     });
@@ -112,10 +106,7 @@ class UserRepository {
       where: { dni },
       include: {
         roles: {
-          where: { activo: true },
-          include: {
-            rol: true
-          }
+          where: { activo: true }
         }
       }
     });
@@ -131,10 +122,7 @@ class UserRepository {
       },
       include: {
         roles: {
-          where: { activo: true },
-          include: {
-            rol: true
-          }
+          where: { activo: true }
         }
       }
     });
@@ -149,9 +137,7 @@ class UserRepository {
     if (rol) {
       where.roles = {
         some: {
-          rol: {
-            nombre: rol
-          },
+          rol: rol as any,
           activo: true
         }
       };
@@ -186,11 +172,7 @@ class UserRepository {
           roles: {
             where: { activo: true },
             select: {
-              rol: {
-                select: {
-                  nombre: true
-                }
-              }
+              rol: true
             }
           }
         }
@@ -208,13 +190,11 @@ class UserRepository {
       createdAt: Date;
       updatedAt: Date;
       roles: Array<{
-        rol: {
-          nombre: string;
-        };
+        rol: string;
       }>;
     }) => ({
       ...user,
-      roles: user.roles.map((r) => r.rol.nombre)
+      roles: user.roles.map((r) => r.rol)
     }));
 
     return {
@@ -280,10 +260,7 @@ class UserRepository {
       },
       include: {
         roles: {
-          where: { activo: true },
-          include: {
-            rol: true
-          }
+          where: { activo: true }
         }
       }
     });
@@ -294,10 +271,7 @@ class UserRepository {
       where: { id },
       include: {
         roles: {
-          where: { activo: true },
-          include: {
-            rol: true
-          }
+          where: { activo: true }
         }
       }
     });

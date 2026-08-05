@@ -1,24 +1,24 @@
 import { prisma } from '../config/prisma.js';
 
+// Los roles están definidos como ENUM en el schema (Rol), no como modelo.
+// UsuarioRol.rol es el valor del enum directamente (p.ej. 'ADMINISTRATIVO').
+
 class UsuarioRolRepository {
-  async asignarRol(usuarioId: number, rolId: number): Promise<any> {
+  async asignarRol(usuarioId: number, rol: string): Promise<any> {
     return await prisma.usuarioRol.create({
       data: {
         usuarioId,
-        rolId,
+        rol: rol as any,
         activo: true
-      },
-      include: {
-        rol: true
       }
     });
   }
 
-  async removerRol(usuarioId: number, rolId: number): Promise<any> {
+  async removerRol(usuarioId: number, rol: string): Promise<any> {
     return await prisma.usuarioRol.updateMany({
       where: {
         usuarioId,
-        rolId,
+        rol: rol as any,
         activo: true
       },
       data: {
@@ -32,17 +32,14 @@ class UsuarioRolRepository {
       where: {
         usuarioId,
         activo: true
-      },
-      include: {
-        rol: true
       }
     });
   }
 
-  async getUsuarioByRol(rolId: number): Promise<any[]> {
+  async getUsuarioByRol(rol: string): Promise<any[]> {
     return await prisma.usuarioRol.findMany({
       where: {
-        rolId,
+        rol: rol as any,
         activo: true
       },
       include: {
@@ -58,26 +55,19 @@ class UsuarioRolRepository {
     });
   }
 
-  async getRolesByNombre(usuarioId: number, nombreRol: string): Promise<any> {
+  async getRolesByNombre(usuarioId: number, rol: string): Promise<any> {
     return await prisma.usuarioRol.findFirst({
       where: {
         usuarioId,
-        rol: {
-          nombre: nombreRol
-        },
+        rol: rol as any,
         activo: true
-      },
-      include: {
-        rol: true
       }
     });
   }
 
-  async getRolIdByNombre(nombre: string): Promise<number | null> {
-    const rol = await prisma.rol.findUnique({
-      where: { nombre }
-    });
-    return rol?.id || null;
+  // Mantenido por compatibilidad. Ya no se usa: el rol es enum, no modelo.
+  async getRolIdByNombre(_nombre: string): Promise<number | null> {
+    throw new Error('Los roles son enum, no requieren ID. Usa asignarRol(usuarioId, rol)');
   }
 }
 

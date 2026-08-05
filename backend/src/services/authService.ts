@@ -17,6 +17,7 @@ interface RegisterData {
   password: string;
   cuil: string;
   roles?: string[];
+  rol?: string;
   contactoEmergencia?: string | null;
   foto?: string | null;
 }
@@ -24,7 +25,7 @@ interface RegisterData {
 class AuthService {
   // Registrar usuario (SOLO ADMIN)
   async register(userData: RegisterData) {
-    const { email, dni, password, roles, ...rest } = userData;
+    const { email, dni, password, roles, rol, ...rest } = userData;
 
     // Verificar si ya existe
     const existingUser = await userRepository.findByEmailOrDni(email) || 
@@ -51,13 +52,10 @@ class AuthService {
     });
 
     // Asignar roles
-    const rolesToAssign = roles && roles.length > 0 ? roles : [ROLES.ALUMNO];
+    const rolesToAssign = roles && roles.length > 0 ? roles : (rol ? [rol] : [ROLES.ALUMNO]);
     
     for (const rolNombre of rolesToAssign) {
-      const rolId = await usuarioRolRepository.getRolIdByNombre(rolNombre);
-      if (rolId) {
-        await usuarioRolRepository.asignarRol(user.id, rolId);
-      }
+      await usuarioRolRepository.asignarRol(user.id, rolNombre);
     }
 
     const { passwordHash: _, ...userWithoutPassword } = user;
@@ -65,7 +63,7 @@ class AuthService {
     
     return {
       ...userWithoutPassword,
-      roles: userRoles.map((ur: any) => ur.rol.nombre)
+      roles: userRoles.map((ur: any) => ur.rol)
     };
   }
 
@@ -88,7 +86,7 @@ class AuthService {
 
     // Obtener roles del usuario
     const userRoles = await usuarioRolRepository.getRolesByUsuario(user.id);
-    const roles = userRoles.map((ur: any) => ur.rol.nombre);
+    const roles = userRoles.map((ur: any) => ur.rol);
 
     if (roles.length === 0) {
       throw new Error('Usuario sin roles asignados');
@@ -114,8 +112,8 @@ class AuthService {
         token,
         usuarioId: user.id,
         expiraEn: new Date((decodedToken.exp || Date.now() / 1000 + 86400) * 1000),
-        ipAddress,
-        userAgent
+        ipAddress: ipAddress ?? null,
+        userAgent: userAgent ?? null,
       }
     });
 
@@ -164,7 +162,7 @@ class AuthService {
 
     // Obtener los roles del usuario para mostrar
     const userRoles = await usuarioRolRepository.getRolesByUsuario(userId);
-    const roles = userRoles.map((ur: any) => ur.rol.nombre);
+    const roles = userRoles.map((ur: any) => ur.rol);
 
     return {
       token,
@@ -240,7 +238,7 @@ class AuthService {
     }
 
     const userRoles = await usuarioRolRepository.getRolesByUsuario(userId);
-    const roles = userRoles.map((ur: any) => ur.rol.nombre);
+    const roles = userRoles.map((ur: any) => ur.rol);
 
     const { passwordHash: _, ...userWithoutPassword } = user;
     return {

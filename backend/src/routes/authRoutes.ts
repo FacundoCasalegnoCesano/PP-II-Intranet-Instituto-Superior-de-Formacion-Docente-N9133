@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import authController from '../controllers/authController.js';
-import { authMiddleware, roleCheck } from '../middleware/auth.js';
+import { authMiddleware, authOnly, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
 import {
   registerSchema,
@@ -15,7 +15,7 @@ const router = Router();
 
 // Rutas públicas
 router.post('/login', validationMiddleware(loginSchema), authController.login);
-router.post('/select-role', authMiddleware, authController.selectRole); // Seleccionar rol después de login
+router.post('/select-role', authOnly, authController.selectRole); // Seleccionar rol después de login
 router.post('/forgot-password', validationMiddleware(forgotPasswordSchema), authController.forgotPassword);
 router.post('/reset-password', validationMiddleware(resetPasswordSchema), authController.resetPassword);
 router.get('/verify-reset-token/:token', authController.verifyResetToken);

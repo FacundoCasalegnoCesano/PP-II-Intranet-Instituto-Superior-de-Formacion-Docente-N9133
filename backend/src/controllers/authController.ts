@@ -143,7 +143,7 @@ async register(req: Request, res: Response, next: NextFunction): Promise<void> {
         where: {
           usuarioId: userId,
           cerradaEn: null,
-          id: { not: req.sessionId }
+          id: { not: req.sessionId! }
         },
         data: { cerradaEn: new Date() }
       });

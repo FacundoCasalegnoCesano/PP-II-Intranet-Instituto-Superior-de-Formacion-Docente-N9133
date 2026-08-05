@@ -46,7 +46,7 @@ class UserService {
     
     // Obtener roles del usuario
     const userRoles = await usuarioRolRepository.getRolesByUsuario(id);
-    const roles = userRoles.map((ur: any) => ur.rol.nombre);
+    const roles = userRoles.map((ur: any) => ur.rol);
     
     const { passwordHash: _, ...userWithoutPassword } = user;
     return {
@@ -94,7 +94,7 @@ class UserService {
     
     // Obtener roles actualizados
     const userRoles = await usuarioRolRepository.getRolesByUsuario(id);
-    const roles = userRoles.map((ur: any) => ur.rol.nombre);
+    const roles = userRoles.map((ur: any) => ur.rol);
     
     return {
       ...userWithoutPassword,
@@ -113,12 +113,6 @@ class UserService {
       throw new Error('Usuario no encontrado');
     }
 
-    // Verificar que el rol existe
-    const rolId = await usuarioRolRepository.getRolIdByNombre(newRole);
-    if (!rolId) {
-      throw new Error('Rol inválido');
-    }
-
     // Verificar si ya tiene el rol
     const existingRol = await usuarioRolRepository.getRolesByNombre(id, newRole);
     if (existingRol) {
@@ -126,12 +120,12 @@ class UserService {
     }
 
     // Asignar nuevo rol (se agrega, no reemplaza)
-    await usuarioRolRepository.asignarRol(id, rolId);
+    await usuarioRolRepository.asignarRol(id, newRole);
 
     // Obtener usuario actualizado
     const updatedUser = await userRepository.findById(id);
     const userRoles = await usuarioRolRepository.getRolesByUsuario(id);
-    const roles = userRoles.map((ur: any) => ur.rol.nombre);
+    const roles = userRoles.map((ur: any) => ur.rol);
     
     const { passwordHash: _, ...userWithoutPassword } = updatedUser!;
     return {
@@ -151,12 +145,6 @@ class UserService {
       throw new Error('Usuario no encontrado');
     }
 
-    // Verificar que el rol existe
-    const rolId = await usuarioRolRepository.getRolIdByNombre(roleToRemove);
-    if (!rolId) {
-      throw new Error('Rol inválido');
-    }
-
     // Verificar que tenga el rol
     const existingRol = await usuarioRolRepository.getRolesByNombre(id, roleToRemove);
     if (!existingRol) {
@@ -170,12 +158,12 @@ class UserService {
     }
 
     // Quitar rol
-    await usuarioRolRepository.removerRol(id, rolId);
+    await usuarioRolRepository.removerRol(id, roleToRemove);
 
     // Obtener usuario actualizado
     const updatedUser = await userRepository.findById(id);
     const rolesActualizados = await usuarioRolRepository.getRolesByUsuario(id);
-    const roles = rolesActualizados.map((ur: any) => ur.rol.nombre);
+    const roles = rolesActualizados.map((ur: any) => ur.rol);
     
     const { passwordHash: _, ...userWithoutPassword } = updatedUser!;
     return {
@@ -203,7 +191,7 @@ class UserService {
     
     // Obtener roles actualizados
     const userRoles = await usuarioRolRepository.getRolesByUsuario(id);
-    const roles = userRoles.map((ur: any) => ur.rol.nombre);
+    const roles = userRoles.map((ur: any) => ur.rol);
     
     return {
       ...userWithoutPassword,

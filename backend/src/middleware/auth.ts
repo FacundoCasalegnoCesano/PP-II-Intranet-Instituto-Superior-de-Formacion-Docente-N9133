@@ -19,7 +19,14 @@ declare global {
   }
 }
 
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+// Autenticación pura: valida token, usuario activo y sesión activa.
+// Setea req.user y req.sessionId. NO exige que el token tenga rol.
+// Retorna true si el request puede continuar; false si ya se respondió.
+async function authenticateRequest(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<boolean> {
   try {
     const authHeader = req.headers.authorization;
     const token = extractTokenFromHeader(authHeader);
@@ -29,11 +36,11 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         success: false,
         message: 'No token provided'
       });
-      return;
+      return false;
     }
 
     const decoded = verifyToken(token);
-    
+
     // Verificar que el usuario existe y está activo
     const user = await userRepository.findById(decoded.id);
     if (!user) {
@@ -41,7 +48,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         success: false,
         message: 'Usuario no encontrado'
       });
-      return;
+      return false;
     }
 
     if (!user.activo) {
@@ -49,7 +56,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         success: false,
         message: 'Usuario desactivado'
       });
-      return;
+      return false;
     }
 
     // Verificar que la sesión existe y no está cerrada
@@ -66,44 +73,19 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         success: false,
         message: 'Sesión inválida o expirada'
       });
-      return;
-    }
-
-    // Verificar que el token tiene un rol seleccionado
-    if (!decoded.rol) {
-      // Si no tiene rol, el usuario debe seleccionar uno
-      const userRoles = await usuarioRolRepository.getRolesByUsuario(user.id);
-      const roles = userRoles.map((ur: any) => ur.rol.nombre);
-      
-      res.status(403).json({
-        success: false,
-        message: 'Debes seleccionar un rol para continuar',
-        code: 'ROLE_REQUIRED',
-        rolesDisponibles: roles
-      });
-      return;
-    }
-
-    // Verificar que el rol seleccionado es válido para el usuario
-    const userRol = await usuarioRolRepository.getRolesByNombre(user.id, decoded.rol);
-    if (!userRol) {
-      res.status(403).json({
-        success: false,
-        message: 'Rol no válido para este usuario'
-      });
-      return;
+      return false;
     }
 
     req.user = {
       id: user.id,
       email: user.email,
       dni: user.dni,
-      rol: decoded.rol,
+      rol: decoded.rol || '',
       nombre: user.apellidoNombre
     };
     req.sessionId = session.id;
 
-    next();
+    return true;
   } catch (error) {
     if ((error as Error).message === 'Token expirado') {
       res.status(401).json({
@@ -111,13 +93,65 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         message: 'Token expirado',
         code: 'TOKEN_EXPIRED'
       });
-      return;
+    } else {
+      res.status(401).json({
+        success: false,
+        message: (error as Error).message || 'Token inválido'
+      });
     }
-    res.status(401).json({
-      success: false,
-      message: (error as Error).message || 'Token inválido'
-    });
+    return false;
   }
+}
+
+// Solo autentica (token + usuario + sesión), sin exigir rol.
+// Útil para flujos tipo "select-role" donde el token aún no tiene rol.
+export const authOnly = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const ok = await authenticateRequest(req, res, next);
+  if (ok) {
+    next();
+  }
+};
+
+// Autentica Y exige que el token tenga un rol válido.
+export const authMiddleware = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const ok = await authenticateRequest(req, res, next);
+  if (!ok) {
+    return;
+  }
+
+  const userRoles = await usuarioRolRepository.getRolesByUsuario(req.user!.id);
+  const roles = userRoles.map((ur: any) => ur.rol);
+
+  // Si el token no tiene rol, el usuario debe seleccionar uno
+  if (!req.user!.rol) {
+    res.status(403).json({
+      success: false,
+      message: 'Debes seleccionar un rol para continuar',
+      code: 'ROLE_REQUIRED',
+      rolesDisponibles: roles
+    });
+    return;
+  }
+
+  // Verificar que el rol seleccionado es válido para el usuario
+  const userRol = await usuarioRolRepository.getRolesByNombre(req.user!.id, req.user!.rol);
+  if (!userRol) {
+    res.status(403).json({
+      success: false,
+      message: 'Rol no válido para este usuario'
+    });
+    return;
+  }
+
+  next();
 };
 
 export const roleCheck = (...roles: string[]) => {
