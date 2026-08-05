@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import config from './config/env.js';
 import { connectDatabase, disconnectDatabase } from './config/prisma.js';
+import { pathToFileURL } from 'url';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -91,7 +92,7 @@ const startServer = async () => {
 };
 
 // Solo iniciar si no estamos en modo test
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   startServer();
 }
 
