@@ -1,60 +1,104 @@
 import type { Request, Response } from "express";
-import { carreraRepository } from "@/repositories/carrera.repository.js";
-
+import { eq } from "drizzle-orm";
+import { db } from "../config/db.js";
+import { carrera } from "../db/schema.js";
 import {
   createCarreraSchema,
   updateCarreraSchema,
   carreraIdParamSchema,
-} from "@/validations/carrera.validation.js";
+} from "../validations/carrera.validation.js";
 
-export const carreraController = {
-  getAll: async (_req: Request, res: Response) => {
-    const carreras = await carreraRepository.findAll();
-    res.json(carreras);
-  },
+class CarreraController {
+  getAll = async (_req: Request, res: Response) => {
+    const carreras = await db.select().from(carrera);
+    res.json({ data: carreras });
+  };
 
-  getById: async (req: Request, res: Response) => {
+  getById = async (req: Request, res: Response) => {
     const { id } = carreraIdParamSchema.parse(req.params);
-    // como que que lo que estoy pasando en el req.params es el atributo id?
 
-    const carrera = await carreraRepository.findById(id);
+    const [encontrada] = await db
+      .select()
+      .from(carrera)
+      .where(eq(carrera.idCarrera, id));
 
-    if (!carrera) {
+    if (!encontrada) {
+      return res.status(404).json({ message: "Carrera no encontrada" });
+    }
+    res.json({ data: encontrada });
+  };
+
+  create = async (req: Request, res: Response) => {
+    const { nombreCarrera, duracionCarrera } = createCarreraSchema.parse(
+      req.body,
+    );
+
+    try {
+      const [result] = await db
+        .insert(carrera)
+        .values({ nombreCarrera, duracionCarrera });
+
+      res.status(201).json({
+        data: { idCarrera: result.insertId, nombreCarrera, duracionCarrera },
+      });
+    } catch (err: any) {
+      if (err.code === "ER_DUP_ENTRY") {
+        return res
+          .status(409)
+          .json({ message: "Ya existe una carrera con ese nombre" });
+      }
+      throw err;
+    }
+  };
+
+  update = async (req: Request, res: Response) => {
+    const { id } = carreraIdParamSchema.parse(req.params);
+    const data = updateCarreraSchema.parse(req.body);
+
+    try {
+      const [result] = await db
+        .update(carrera)
+        .set(data)
+        .where(eq(carrera.idCarrera, id));
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "Carrera no encontrada" });
+      }
+
+      const [actualizada] = await db
+        .select()
+        .from(carrera)
+        .where(eq(carrera.idCarrera, id));
+      res.json({ data: actualizada });
+    } catch (err: any) {
+      if (err.code === "ER_DUP_ENTRY") {
+        return res
+          .status(409)
+          .json({ message: "Ya existe una carrera con ese nombre" });
+      }
+      throw err;
+    }
+  };
+
+  delete = async (req: Request, res: Response) => {
+    const { id } = carreraIdParamSchema.parse(req.params);
+
+    const [existente] = await db
+      .select()
+      .from(carrera)
+      .where(eq(carrera.idCarrera, id));
+
+    if (!existente) {
       return res.status(404).json({ message: "Carrera no encontrada" });
     }
 
-    res.json(carrera);
-  },
+    await db.delete(carrera).where(eq(carrera.idCarrera, id));
 
-  create: async (req: Request, res: Response) => {
-    console.log("BODY:", req.body);
-    const data = createCarreraSchema.parse(req.body);
-    // Entiendo que la data de abajo deberia ser correcta porque ya paso por el filtro del parse, pero que pasa si no pasa ese filtro?
-    const carrera = await carreraRepository.create(data);
-    res.status(201).json(carrera);
-  },
+    res.status(200).json({
+      message: "Carrera eliminada correctamente",
+      data: existente,
+    });
+  };
+}
 
-  update: async (req: Request, res: Response) => {
-    const { id } = carreraIdParamSchema.parse(req.params);
-    const data = updateCarreraSchema.parse(req.body);
-    // de vuelta, que pasa si hay errores ahi arriba?
-    try {
-      const carrera = await carreraRepository.update(id, data);
-      res.json(carrera);
-    } catch {
-      res.status(404).json({ message: "Carrera no encontrada" });
-    }
-  },
-
-  delete: async (req: Request, res: Response) => {
-    const { id } = carreraIdParamSchema.parse(req.params);
-
-    try {
-      await carreraRepository.delete(id);
-      res.status(204).send();
-      // cuando se usa el .send() en el res.status?
-    } catch {
-      res.status(404).json({ message: "Carrera no encontrada" });
-    }
-  },
-};
+export const carreraController = new CarreraController();

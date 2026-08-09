@@ -1,15 +1,5 @@
 import { z } from "zod";
 
-// export const createCarreraSchema = z.object({
-//   nombreCarrera: z
-//     .string({ message: "nombreCarrera debe ser un texto" })
-//     .min(1, "nombreCarrera es requerido"),
-//   duracionCarrera: z
-//     .number({ message: "duracionCarrera debe ser un número" })
-//     .int("duracionCarrera debe ser un número entero")
-//     .positive("duracionCarrera debe ser un número positivo"),
-// });
-
 export const createCarreraSchema = z.object({
   nombreCarrera: z.string().min(1, "nombreCarrera es requerido"),
   duracionCarrera: z
