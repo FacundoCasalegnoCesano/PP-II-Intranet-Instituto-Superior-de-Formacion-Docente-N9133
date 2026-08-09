@@ -9,21 +9,21 @@ POST {{baseUrl}}/carreras
 Content-Type: application/json
 
 {
-  "nombreCarrera": "",
+  "nombreCarrera": "Ingenieria en minecraft",
   "duracionCarrera": 5
 }
 
 ### Obtener una carrera por id
-GET {{baseUrl}}/carreras/99
+GET {{baseUrl}}/carreras/22
 
 ### Actualizar una carrera
-PUT {{baseUrl}}/carreras/3
+PUT {{baseUrl}}/carreras/22
 Content-Type: application/json
 
 {
-  "nombreCarrera": "Ingeniería en Anime 20",
+  "nombreCarrera": "Ingeniería en minecraft 20",
   "duracionCarrera": 1
 }
 
 ### Eliminar una carrera
-DELETE {{baseUrl}}/carreras/3
+DELETE {{baseUrl}}/carreras/24
