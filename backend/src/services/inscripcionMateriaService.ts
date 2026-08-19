@@ -1,12 +1,14 @@
 import inscripcionMateriaRepository from '../repositories/inscripcionMateriaRepository.js';
+import cursadaRepository from '../repositories/cursadaRepository.js';
 import userRepository from '../repositories/userRepository.js';
 import materiaRepository from '../repositories/materiaRepository.js';
 import type { InscripcionMateriaCreateData } from '../repositories/inscripcionMateriaRepository.js';
 import { ROLES } from '../constants/roles.js';
+import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 
 class InscripcionMateriaService {
   async inscribirAlumno(data: InscripcionMateriaCreateData, currentUser: any) {
-    // Verificar que el alumno existe
+    // `data.alumnoId` es el id de cuenta (Usuario.idUsuario)
     const alumno = await userRepository.findById(data.alumnoId);
     if (!alumno) {
       throw new Error('Alumno no encontrado');
@@ -16,6 +18,8 @@ class InscripcionMateriaService {
       throw new Error('El usuario no es un alumno');
     }
 
+    const idAlumno = await getAlumnoIdByUsuarioId(data.alumnoId);
+
     // Verificar que la materia existe
     const materia = await materiaRepository.findById(data.materiaId);
     if (!materia) {
@@ -24,7 +28,7 @@ class InscripcionMateriaService {
 
     // Verificar que no esté ya inscripto
     const existing = await inscripcionMateriaRepository.findByAlumnoAndMateria(
-      data.alumnoId,
+      idAlumno,
       data.materiaId,
       data.cicloLectivo
     );
@@ -33,12 +37,20 @@ class InscripcionMateriaService {
     }
 
     // Verificar correlatividades (RFGM5, RFCORRECOMP1, RFCORRECOMP2)
-    await this.verificarCorrelatividades(data.alumnoId, data.materiaId);
+    await this.verificarCorrelatividades(idAlumno, data.materiaId);
 
-    return await inscripcionMateriaRepository.create(data);
+    // La institución tiene una sola comisión por materia: vincular la cursada
+    // activa de la materia en el ciclo lectivo si existe (si no, queda NULL)
+    const cursada = await cursadaRepository.getCursadaActivaByMateria(data.materiaId, data.cicloLectivo);
+
+    return await inscripcionMateriaRepository.create({
+      ...data,
+      alumnoId: idAlumno,
+      cursadaId: cursada?.id ?? null
+    });
   }
 
-  async verificarCorrelatividades(alumnoId: number, materiaId: number) {
+  async verificarCorrelatividades(idAlumno: number, materiaId: number) {
     // Obtener correlatividades de la materia
     const correlatividades = await materiaRepository.getCorrelatividades(materiaId);
     
@@ -47,7 +59,7 @@ class InscripcionMateriaService {
     }
 
     // Obtener materias aprobadas del alumno
-    const aprobadas = await inscripcionMateriaRepository.getMateriasAprobadas(alumnoId);
+    const aprobadas = await inscripcionMateriaRepository.getMateriasAprobadas(idAlumno);
     const materiasAprobadasIds = aprobadas.map((a: any) => a.cursada.materiaId);
 
     // Verificar cada correlatividad
@@ -92,7 +104,9 @@ class InscripcionMateriaService {
       throw new Error('Inscripción no encontrada');
     }
 
-    if (currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.id !== inscripcion.alumnoId) {
+    // `inscripcion.alumnoId` es idAlumno; `currentUser.id` es el id de cuenta
+    const idAlumno = await getAlumnoIdByUsuarioId(currentUser.id);
+    if (currentUser.rol !== ROLES.ADMINISTRATIVO && idAlumno !== inscripcion.alumnoId) {
       throw new Error('No tienes permisos para dar de baja esta inscripción');
     }
 
@@ -100,11 +114,13 @@ class InscripcionMateriaService {
   }
 
   async getInscripcionesByAlumno(alumnoId: number, currentUser: any) {
+    // `alumnoId` es el id de cuenta (Usuario.idUsuario)
     if (currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.id !== alumnoId) {
       throw new Error('No tienes permisos para ver estas inscripciones');
     }
 
-    return await inscripcionMateriaRepository.findByAlumnoId(alumnoId);
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
+    return await inscripcionMateriaRepository.findByAlumnoId(idAlumno);
   }
 
   async getInscriptosByMateria(materiaId: number) {
@@ -112,7 +128,9 @@ class InscripcionMateriaService {
   }
 
   async getHistorialAlumnoMateria(alumnoId: number, materiaId: number) {
-    return await inscripcionMateriaRepository.findHistorialByAlumnoAndMateria(alumnoId, materiaId);
+    // `alumnoId` es el id de cuenta (Usuario.idUsuario)
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
+    return await inscripcionMateriaRepository.findHistorialByAlumnoAndMateria(idAlumno, materiaId);
   }
 
   async cambiarModalidad(id: number, modalidad: string, currentUser: any) {
