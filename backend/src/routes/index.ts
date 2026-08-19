@@ -11,6 +11,8 @@ import inscripcionMateriaRoutes from './inscripcionMateriaRoutes.js';
 import examenRoutes from './examenRoutes.js';
 import horarioRoutes from './horarioRoutes.js';
 import periodoInscripcionRoutes from './periodoInscripcionRoutes.js';
+import cursadaRoutes from './cursadaRoutes.js';
+import libroDeTemaRoutes from './libroDeTemaRoutes.js';
 
 const router = Router();
 
@@ -40,6 +42,12 @@ router.use('/horarios', horarioRoutes);
 // Rutas de períodos de inscripción
 router.use('/periodos-inscripcion', periodoInscripcionRoutes);
 
+// Rutas de cursadas
+router.use('/cursadas', cursadaRoutes);
+
+// Rutas de libro de temas
+router.use('/libro-de-temas', libroDeTemaRoutes);
+
 router.get('/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -64,6 +72,8 @@ router.get('/', (req, res) => {
       inscripcionesMaterias: '/api/inscripciones-materias',
       examenes: '/api/examenes',
       horarios: '/api/horarios',
+      cursadas: '/api/cursadas',
+      libroDeTemas: '/api/libro-de-temas',
       periodosInscripcion: '/api/periodos-inscripcion',
       health: '/api/health'
     }
