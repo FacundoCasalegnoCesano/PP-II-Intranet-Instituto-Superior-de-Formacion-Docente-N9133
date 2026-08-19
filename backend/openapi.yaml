@@ -25,6 +25,7 @@ tags:
   - name: Administrativos
   - name: Carreras
   - name: Materias
+  - name: Cursadas
   - name: Inscripciones a Carreras
   - name: Inscripciones a Materias
   - name: Exámenes
@@ -1005,6 +1006,72 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/OK' }
 
+  # ========================= CURSADAS =========================
+  /cursadas:
+    get:
+      tags: [Cursadas]
+      summary: Listar cursadas (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: anioLectivo, in: query, schema: { type: integer } }
+        - { name: materiaId, in: query, schema: { type: integer } }
+        - { name: docenteId, in: query, schema: { type: integer } }
+        - { name: activo, in: query, schema: { type: boolean } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Cursadas]
+      summary: Crear cursada (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CursadaRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /cursadas/{id}:
+    get:
+      tags: [Cursadas]
+      summary: Obtener cursada por ID (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Cursadas]
+      summary: Actualizar cursada (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CursadaUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Cursadas]
+      summary: Eliminar cursada (baja lógica, solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /cursadas/{id}/inscriptos:
+    get:
+      tags: [Cursadas]
+      summary: Alumnos inscriptos a una cursada (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
   # ========================= LIBRO DE TEMAS =========================
   /libro-de-temas:
     get:
@@ -1525,6 +1592,29 @@ components:
         horaInicio: { type: string, format: date-time }
         horaFin: { type: string, format: date-time }
         aula: { type: string, maxLength: 50, nullable: true }
+        activo: { type: boolean }
+
+    # -------- Cursadas --------
+    CursadaRequest:
+      type: object
+      required: [materiaId, anioLectivo]
+      properties:
+        materiaId: { type: integer, minimum: 1 }
+        anioLectivo: { type: integer, minimum: 2000, maximum: 2100 }
+        periodo:
+          type: string
+          enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE]
+          default: ANUAL
+        docenteId: { type: integer, minimum: 1, nullable: true }
+    CursadaUpdateRequest:
+      type: object
+      properties:
+        materiaId: { type: integer, minimum: 1 }
+        anioLectivo: { type: integer, minimum: 2000, maximum: 2100 }
+        periodo:
+          type: string
+          enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE]
+        docenteId: { type: integer, minimum: 1, nullable: true }
         activo: { type: boolean }
 
     # -------- Períodos de inscripción --------
