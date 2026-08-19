@@ -129,13 +129,48 @@ validations/libroDeTemaValidation.ts    NUEVO
 routes/index.ts                         MODIFICAR: registrar ambas rutas + listado raíz
 services/inscripcionMateriaService.ts   MODIFICAR: auto-vincular cursada activa
 openapi.yaml                            MODIFICAR: paths /cursadas + schemas + tag
-repositories/cursadaRepository.ts       SIN CAMBIOS (salvo incluir inscriptos si hace falta un método)
+repositories/cursadaRepository.ts       MODIFICAR: agregar findInscriptosByCursadaId
 ```
+
+**Paginación**: mismo formato que `materias` — respuesta `{ success, data, pagination }`
+con `pagination: { page, limit, total, totalPages }` (`totalPages = Math.ceil(total / limit)`),
+y conteo con `prisma.<model>.count({ where })` en paralelo al `findMany` (patrón de
+`materiaRepository.findAll`).
 
 `cursadaRepository` necesita un método nuevo para inscriptos por cursada
 (`findInscriptosByCursadaId`), que consulta `InscripcionMateria` con `cursadaId`,
 `estado: ACTIVA`, `fechaBaja: null` e incluye `alumno.usuario` (select con
 `idUsuario`, `apellidoNombre`, `email`, `dni`) y `materia`.
+
+## Buenas prácticas (patrón del proyecto / MVC por capas)
+
+El proyecto separa responsabilidades en: `validations` (Joi) → `routes` (auth/roles/
+validación) → `controllers` (parseo de request/response, sin lógica de negocio) →
+`services` (reglas de negocio, permisos, errores con mensaje claro) →
+`repositories` (solo acceso a datos con Prisma, tipado de inputs con interfaces).
+
+Este trabajo debe mantener ese patrón y además:
+
+1. **Tipado**: los métodos del repo reciben interfaces (`CursadaCreateData`,
+   `LibroDeTemaCreateData`, etc.) exportadas; evitar `any` en firmas nuevas cuando
+   el tipo del cliente de Prisma lo permite; `as const`/`satisfies` para enums de
+   Prisma en vez de `as any` donde sea razonable.
+2. **Sin lógica de negocio en repos**: los repos solo construyen queries; "el
+   profesor solo puede editar materias asignadas" vive en el service.
+3. **Reutilizar antes de crear**: `materiaRepository.findById`, `userRepository.findById`,
+   `getAlumnoIdByUsuarioId`, `getCursadaActivaByMateria`; no duplicar queries.
+4. **Transacciones**: solo si una operación toca varias tablas (no es el caso aquí;
+   cada endpoint es una escritura simple).
+5. **Mensajes de error específicos y en español** (convención del proyecto), nunca
+   exponer trazas de Prisma (ya lo maneja `errorHandler`).
+6. **Orden de rutas Express**: declarar rutas estáticas/paramétricas específicas
+   (`/materia/:materiaId`, `/{id}/inscriptos`) ANTES de las rutas con parámetro
+   genérico (`/:id`) para evitar que `/` capture segmentos.
+7. **IDs**: `docenteId` de cursada y perfiles en servicios se manejan como
+   `idUsuario`; la conversión a `idAlumno` solo cuando la FK lo exige
+   (`Asistencia`, `Calificacion`, `InscripcionMateria`).
+8. **Joi**: `stripUnknown: true` (ya lo hace `validationMiddleware`) para que no
+   entren campos no declarados al body.
 
 ## Esquemas openapi agregados
 
