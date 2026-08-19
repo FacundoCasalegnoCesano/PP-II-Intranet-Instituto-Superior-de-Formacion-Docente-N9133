@@ -4,13 +4,13 @@ export interface CursadaCreateData {
   materiaId: number;
   anioLectivo: number;
   periodo: string;
-  docenteId?: number;
+  docenteId?: number | null;
 }
 
 export interface CursadaUpdateData {
   anioLectivo?: number;
   periodo?: string;
-  docenteId?: number;
+  docenteId?: number | null;
   activo?: boolean;
 }
 
@@ -21,7 +21,7 @@ class CursadaRepository {
         materiaId: data.materiaId,
         anioLectivo: data.anioLectivo,
         periodo: data.periodo as any,
-        docenteId: data.docenteId,
+        docenteId: data.docenteId ?? null,
         activo: true
       },
       include: {
@@ -32,7 +32,7 @@ class CursadaRepository {
         },
         docente: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true
           }
@@ -52,7 +52,7 @@ class CursadaRepository {
         },
         docente: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true
           }
@@ -92,7 +92,7 @@ class CursadaRepository {
         },
         docente: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true
           }
@@ -155,7 +155,7 @@ class CursadaRepository {
         },
         docente: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true
           }
@@ -199,7 +199,7 @@ class CursadaRepository {
         },
         docente: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true
           }
@@ -237,6 +237,45 @@ class CursadaRepository {
           ]
         }
       }
+    });
+  }
+
+  async findByMateriaAnioPeriodo(
+    materiaId: number,
+    anioLectivo: number,
+    periodo: string
+  ): Promise<any> {
+    return await prisma.cursada.findFirst({
+      where: {
+        materiaId,
+        anioLectivo,
+        periodo: periodo as any
+      }
+    });
+  }
+
+  async findInscriptosByCursadaId(cursadaId: number): Promise<any[]> {
+    return await prisma.inscripcionMateria.findMany({
+      where: {
+        cursadaId,
+        estado: 'ACTIVA',
+        fechaBaja: null
+      },
+      include: {
+        alumno: {
+          include: {
+            usuario: {
+              select: {
+                idUsuario: true,
+                apellidoNombre: true,
+                email: true,
+                dni: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { fechaInscripcion: 'asc' }
     });
   }
 }

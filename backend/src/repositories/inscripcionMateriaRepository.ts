@@ -5,6 +5,7 @@ export interface InscripcionMateriaCreateData {
   materiaId: number;
   cicloLectivo: number;
   modalidadElegida: string;
+  cursadaId?: number;
 }
 
 export interface InscripcionMateriaUpdateData {
@@ -22,16 +23,21 @@ class InscripcionMateriaRepository {
         materiaId: data.materiaId,
         cicloLectivo: data.cicloLectivo,
         modalidadElegida: data.modalidadElegida as any,
+        cursadaId: data.cursadaId ?? null,
         fechaInscripcion: new Date(),
         estado: 'ACTIVA'
       },
       include: {
         alumno: {
-          select: {
-            id: true,
-            apellidoNombre: true,
-            email: true,
-            dni: true
+          include: {
+            usuario: {
+              select: {
+                idUsuario: true,
+                apellidoNombre: true,
+                email: true,
+                dni: true
+              }
+            }
           }
         },
         materia: {
@@ -53,11 +59,15 @@ class InscripcionMateriaRepository {
       where: { id },
       include: {
         alumno: {
-          select: {
-            id: true,
-            apellidoNombre: true,
-            email: true,
-            dni: true
+          include: {
+            usuario: {
+              select: {
+                idUsuario: true,
+                apellidoNombre: true,
+                email: true,
+                dni: true
+              }
+            }
           }
         },
         materia: {
@@ -103,11 +113,15 @@ class InscripcionMateriaRepository {
       },
       include: {
         alumno: {
-          select: {
-            id: true,
-            apellidoNombre: true,
-            email: true,
-            dni: true
+          include: {
+            usuario: {
+              select: {
+                idUsuario: true,
+                apellidoNombre: true,
+                email: true,
+                dni: true
+              }
+            }
           }
         }
       }
@@ -178,7 +192,6 @@ class InscripcionMateriaRepository {
   }
 
   async getMateriasAprobadas(alumnoId: number): Promise<any[]> {
-    // Obtener materias aprobadas (calificación >= 6)
     return await prisma.calificacion.findMany({
       where: {
         alumnoId,
