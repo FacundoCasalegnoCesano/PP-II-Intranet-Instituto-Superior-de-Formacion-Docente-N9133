@@ -1,0 +1,1698 @@
+openapi: 3.0.3
+info:
+  title: Instituto Académico — Intranet API
+  description: |
+    Backend Express + TypeScript + Prisma (MariaDB) para gestión académica.
+    ### Autenticación
+    - `POST /auth/login` devuelve un **token sin rol**.
+    - `POST /auth/select-role` (con ese token) devuelve un **token con rol**.
+    - Todas las demás rutas protegen el acceso por rol del token.
+    - Envío del token: cabecera `Authorization: Bearer <token>`.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Usuarios
+  - name: Alumnos
+  - name: Profesores
+  - name: Administrativos
+  - name: Carreras
+  - name: Materias
+  - name: Cursadas
+  - name: Inscripciones a Carreras
+  - name: Inscripciones a Materias
+  - name: Exámenes
+  - name: Horarios
+  - name: Libro de Temas
+  - name: Períodos de Inscripción
+  - name: Health
+
+paths:
+  # ========================= AUTH =========================
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión (email o DNI)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Login exitoso. devuelve token sin rol.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/select-role:
+    post:
+      tags: [Auth]
+      summary: Seleccionar rol de la sesión (devuelve token con rol)
+      operationId: selectRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SelectRoleRequest' }
+      responses:
+        '200':
+          description: Token con rol seleccionado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SelectRoleResponse' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrar un nuevo usuario (solo ADMINISTRATIVO)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Perfil del usuario autenticado
+      responses:
+        '200':
+          description: Perfil del usuario
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Cerrar sesión actual
+      responses:
+        '200':
+          description: Sesión cerrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /auth/refresh-token:
+    post:
+      tags: [Auth]
+      summary: Renovar token con refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshTokenRequest' }
+      responses:
+        '200':
+          description: Token renovado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /auth/change-password:
+    put:
+      tags: [Auth]
+      summary: Cambiar contraseña propia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '200':
+          description: Contraseña actualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Solicitar reset de contraseña (envía token por email)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+      responses:
+        '200':
+          description: Email de reset enviado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Resetear contraseña con el token del email
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '200':
+          description: Contraseña reseteada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /auth/verify-reset-token/{token}:
+    get:
+      tags: [Auth]
+      summary: Verificar validez de un token de reset
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Token válido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  # ========================= USUARIOS =========================
+  /users:
+    get:
+      tags: [Usuarios]
+      summary: Listar usuarios (paginado + filtros)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: rol, in: query, schema: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] } }
+        - { name: activo, in: query, schema: { type: string, enum: ['true', 'false'] } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Lista paginada de usuarios
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginatedResponse' }
+
+  /users/{id}:
+    get:
+      tags: [Usuarios]
+      summary: Obtener usuario por ID (admin o el mismo usuario)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Usuario
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Usuarios]
+      summary: Actualizar usuario (admin o el mismo usuario)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdateRequest' }
+      responses:
+        '200':
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      tags: [Usuarios]
+      summary: Eliminar un usuario (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Usuario eliminado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /users/{id}/role:
+    put:
+      tags: [Usuarios]
+      summary: Cambiar rol de un usuario (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeRoleRequest' }
+      responses:
+        '200':
+          description: Rol actualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /users/{id}/activate:
+    put:
+      tags: [Usuarios]
+      summary: Activar/desactivar un usuario (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Estado de activación actualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  # ========================= ALUMNOS =========================
+  /alumnos:
+    get:
+      tags: [Alumnos]
+      summary: Listar alumnos (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: activo, in: query, schema: { type: string, enum: ['true', 'false'] } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/ListOK' }
+    post:
+      tags: [Alumnos]
+      summary: Crear alumno (solo admin). Usa body de registro con rol ALUMNO forzado.
+      operationId: crearAlumno
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /alumnos/estadisticas:
+    get:
+      tags: [Alumnos]
+      summary: Estadísticas de alumnos (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /alumnos/{id}:
+    get:
+      tags: [Alumnos]
+      summary: Obtener alumno (admin, profesor o el mismo alumno)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Alumnos]
+      summary: Actualizar alumno (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Alumnos]
+      summary: Eliminar alumno (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= PROFESORES =========================
+  /profesores:
+    get:
+      tags: [Profesores]
+      summary: Listar profesores (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: activo, in: query, schema: { type: string, enum: ['true', 'false'] } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/ListOK' }
+    post:
+      tags: [Profesores]
+      summary: Crear profesor (solo admin). Usa body de registro con rol PROFESOR forzado.
+      operationId: crearProfesor
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /profesores/estadisticas:
+    get:
+      tags: [Profesores]
+      summary: Estadísticas de profesores (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /profesores/{id}:
+    get:
+      tags: [Profesores]
+      summary: Obtener profesor (admin o el mismo profesor)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Profesores]
+      summary: Actualizar profesor (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Profesores]
+      summary: Eliminar profesor (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /profesores/{id}/materias:
+    get:
+      tags: [Profesores]
+      summary: Materias asignadas a un profesor (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= ADMINISTRATIVOS =========================
+  /administrativos:
+    get:
+      tags: [Administrativos]
+      summary: Listar administrativos (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: activo, in: query, schema: { type: string, enum: ['true', 'false'] } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/ListOK' }
+    post:
+      tags: [Administrativos]
+      summary: Crear administrativo (solo admin). Body de registro con rol ADMINISTRATIVO forzado.
+      operationId: crearAdministrativo
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /administrativos/estadisticas:
+    get:
+      tags: [Administrativos]
+      summary: Estadísticas de administrativos (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /administrativos/{id}:
+    get:
+      tags: [Administrativos]
+      summary: Obtener administrativo (admin o el mismo)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Administrativos]
+      summary: Actualizar administrativo (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Administrativos]
+      summary: Eliminar administrativo (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= CARRERAS =========================
+  /carreras:
+    get:
+      tags: [Carreras]
+      summary: Listar carreras (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: activo, in: query, schema: { type: boolean } }
+      responses:
+        '200': { $ref: '#/components/responses/ListOK' }
+    post:
+      tags: [Carreras]
+      summary: Crear carrera (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CarreraCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /carreras/{id}:
+    get:
+      tags: [Carreras]
+      summary: Obtener carrera por ID
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Carreras]
+      summary: Actualizar carrera (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CarreraUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Carreras]
+      summary: Eliminar carrera (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /carreras/{id}/plan-estudio:
+    get:
+      tags: [Carreras]
+      summary: Plan de estudio de una carrera
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= MATERIAS =========================
+  /materias:
+    get:
+      tags: [Materias]
+      summary: Listar materias (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: carreraId, in: query, schema: { type: integer } }
+        - { name: tipoEspacio, in: query, schema: { $ref: '#/components/schemas/TipoEspacio' } }
+        - { name: activo, in: query, schema: { type: boolean } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Materias]
+      summary: Crear materia (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MateriaCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /materias/carrera/{carreraId}:
+    get:
+      tags: [Materias]
+      summary: Materias de una carrera
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: carreraId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /materias/{id}:
+    get:
+      tags: [Materias]
+      summary: Obtener materia por ID
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Materias]
+      summary: Actualizar materia (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MateriaUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Materias]
+      summary: Eliminar materia (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /materias/{id}/correlatividades:
+    get:
+      tags: [Materias]
+      summary: Correlatividades de una materia
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Materias]
+      summary: Agregar correlatividad a una materia (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CorrelatividadRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /materias/correlatividades/{id}:
+    delete:
+      tags: [Materias]
+      summary: Eliminar correlatividad (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= INSCRIPCIONES A CARRERAS =========================
+  /inscripciones-carreras:
+    post:
+      tags: [Inscripciones a Carreras]
+      summary: Inscribir alumno a una carrera (alumno = él mismo, admin indica alumnoId)
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InscripcionCarreraRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /inscripciones-carreras/{id}:
+    delete:
+      tags: [Inscripciones a Carreras]
+      summary: Dar de baja inscripción a carrera
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /inscripciones-carreras/alumno/{alumnoId}:
+    get:
+      tags: [Inscripciones a Carreras]
+      summary: Carreras de un alumno
+      x-roles: [ALUMNO, ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: alumnoId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /inscripciones-carreras/carrera/{carreraId}/inscriptos:
+    get:
+      tags: [Inscripciones a Carreras]
+      summary: Inscriptos de una carrera (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: carreraId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= INSCRIPCIONES A MATERIAS =========================
+  /inscripciones-materias/disponibles:
+    get:
+      tags: [Inscripciones a Materias]
+      summary: "Materias disponibles para inscribirse (alumno usa su ID; admin usa ?alumnoId=)"
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: alumnoId, in: query, schema: { type: integer }, description: Requerido si eres ADMINISTRATIVO }
+        - { name: cicloLectivo, in: query, schema: { type: integer }, description: Por defecto el año actual }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /inscripciones-materias/verificar/{materiaId}:
+    get:
+      tags: [Inscripciones a Materias]
+      summary: Verificar si el alumno puede inscribirse a una materia
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: materiaId, in: path, required: true, schema: { type: integer } }
+        - { name: alumnoId, in: query, schema: { type: integer }, description: Requerido si eres ADMINISTRATIVO }
+        - { name: cicloLectivo, in: query, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /inscripciones-materias:
+    post:
+      tags: [Inscripciones a Materias]
+      summary: Inscribir alumno a materia (alumno = él mismo, admin indica alumnoId)
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InscripcionMateriaRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /inscripciones-materias/{id}:
+    delete:
+      tags: [Inscripciones a Materias]
+      summary: Dar de baja inscripción a materia
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /inscripciones-materias/alumno/{alumnoId}:
+    get:
+      tags: [Inscripciones a Materias]
+      summary: Materias de un alumno
+      x-roles: [ALUMNO, ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: alumnoId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /inscripciones-materias/materia/{materiaId}/inscriptos:
+    get:
+      tags: [Inscripciones a Materias]
+      summary: Inscriptos de una materia (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: materiaId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /inscripciones-materias/historial/{alumnoId}/{materiaId}:
+    get:
+      tags: [Inscripciones a Materias]
+      summary: Historial de un alumno en una materia
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: alumnoId, in: path, required: true, schema: { type: integer } }
+        - { name: materiaId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /inscripciones-materias/{id}/modalidad:
+    put:
+      tags: [Inscripciones a Materias]
+      summary: Cambiar modalidad de cursada (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CambiarModalidadRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= EXÁMENES =========================
+  /examenes:
+    get:
+      tags: [Exámenes]
+      summary: Listar exámenes (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10 } }
+        - { name: materiaId, in: query, schema: { type: integer } }
+        - { name: fechaDesde, in: query, schema: { type: string, format: date } }
+        - { name: fechaHasta, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedOK' }
+    post:
+      tags: [Exámenes]
+      summary: Crear examen (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExamenCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /examenes/{id}:
+    get:
+      tags: [Exámenes]
+      summary: Obtener examen por ID
+      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Exámenes]
+      summary: Actualizar examen (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExamenUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Exámenes]
+      summary: Eliminar examen (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /examenes/tribunales:
+    post:
+      tags: [Exámenes]
+      summary: Agregar tribunal a un examen (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TribunalRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /examenes/tribunales/{id}:
+    delete:
+      tags: [Exámenes]
+      summary: Quitar tribunal de un examen (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /examenes/{examenId}/inscribir:
+    post:
+      tags: [Exámenes]
+      summary: Inscribir alumno a un examen (alumno usa su propio ID)
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: examenId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InscripcionExamenRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /examenes/{examenId}/desinscribir:
+    post:
+      tags: [Exámenes]
+      summary: Desinscribir alumno de un examen
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: examenId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DesinscripcionExamenRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /examenes/{examenId}/inscriptos:
+    get:
+      tags: [Exámenes]
+      summary: Inscriptos de un examen (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: examenId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /examenes/alumno/{alumnoId}/inscripciones:
+    get:
+      tags: [Exámenes]
+      summary: Inscripciones a exámenes de un alumno
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: alumnoId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /examenes/{examenId}/calificacion:
+    post:
+      tags: [Exámenes]
+      summary: Registrar nota a un alumno en un examen (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: examenId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalificacionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= HORARIOS =========================
+  /horarios:
+    post:
+      tags: [Horarios]
+      summary: Crear horario (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HorarioRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /horarios/{id}:
+    get:
+      tags: [Horarios]
+      summary: Obtener horario por ID (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Horarios]
+      summary: Actualizar horario (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HorarioUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Horarios]
+      summary: Eliminar horario (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /horarios/cursada/{cursadaId}:
+    get:
+      tags: [Horarios]
+      summary: Horarios de una cursada (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /horarios/materia/{materiaId}:
+    get:
+      tags: [Horarios]
+      summary: Horarios de una materia (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: materiaId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= CURSADAS =========================
+  /cursadas:
+    get:
+      tags: [Cursadas]
+      summary: Listar cursadas (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: anioLectivo, in: query, schema: { type: integer } }
+        - { name: materiaId, in: query, schema: { type: integer } }
+        - { name: docenteId, in: query, schema: { type: integer } }
+        - { name: activo, in: query, schema: { type: boolean } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Cursadas]
+      summary: Crear cursada (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CursadaRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /cursadas/{id}:
+    get:
+      tags: [Cursadas]
+      summary: Obtener cursada por ID (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Cursadas]
+      summary: Actualizar cursada (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CursadaUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Cursadas]
+      summary: Eliminar cursada (baja lógica, solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /cursadas/{id}/inscriptos:
+    get:
+      tags: [Cursadas]
+      summary: Alumnos inscriptos a una cursada (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= LIBRO DE TEMAS =========================
+  /libro-de-temas:
+    get:
+      tags: [Libro de Temas]
+      summary: Listar registros del libro de temas (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: materiaId, in: query, schema: { type: integer } }
+        - { name: fechaDesde, in: query, schema: { type: string, format: date } }
+        - { name: fechaHasta, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedOK' }
+    post:
+      tags: [Libro de Temas]
+      summary: Crear registro en el libro de temas (solo admin o profesor de la materia)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LibroDeTemaCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /libro-de-temas/{id}:
+    get:
+      tags: [Libro de Temas]
+      summary: Obtener registro del libro de temas por ID (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Libro de Temas]
+      summary: Actualizar registro del libro de temas (solo admin o profesor de la materia)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LibroDeTemaUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Libro de Temas]
+      summary: Eliminar registro del libro de temas (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /libro-de-temas/materia/{materiaId}:
+    get:
+      tags: [Libro de Temas]
+      summary: Registros del libro de temas de una materia (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: materiaId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= PERÍODOS DE INSCRIPCIÓN =========================
+  /periodos-inscripcion:
+    get:
+      tags: [Períodos de Inscripción]
+      summary: Listar períodos de inscripción (todos los roles)
+      parameters:
+        - { name: tipo, in: query, schema: { $ref: '#/components/schemas/TipoPeriodo' } }
+        - { name: activo, in: query, schema: { type: boolean } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Períodos de Inscripción]
+      summary: Crear período de inscripción (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PeriodoRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /periodos-inscripcion/activos/{tipo}:
+    get:
+      tags: [Períodos de Inscripción]
+      summary: Períodos activos de un tipo (MATERIA o EXAMEN)
+      parameters:
+        - { name: tipo, in: path, required: true, schema: { $ref: '#/components/schemas/TipoPeriodo' } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /periodos-inscripcion/verificar/{tipo}:
+    get:
+      tags: [Períodos de Inscripción]
+      summary: Verificar si la inscripción de un tipo está habilitada
+      parameters:
+        - { name: tipo, in: path, required: true, schema: { $ref: '#/components/schemas/TipoPeriodo' } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /periodos-inscripcion/{id}:
+    get:
+      tags: [Períodos de Inscripción]
+      summary: Obtener período por ID (admin o profesor)
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Períodos de Inscripción]
+      summary: Actualizar período (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PeriodoUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    delete:
+      tags: [Períodos de Inscripción]
+      summary: Eliminar período (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  # ========================= HEALTH / RAÍZ =========================
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check (público)
+      security: []
+      responses:
+        '200':
+          description: Servicio OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: OK }
+                  timestamp: { type: string, format: date-time }
+                  uptime: { type: number }
+
+  /:
+    get:
+      tags: [Health]
+      summary: Listado de recursos de la API (público)
+      security: []
+      responses:
+        '200':
+          description: Índice de endpoints
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Token JWT con rol (obtenido tras /auth/select-role). Cabecera: Authorization: Bearer <token>"
+
+  responses:
+    BadRequest:
+      description: Petición inválida (validación Joi)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Token ausente, inválido o expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Sin permisos para el rol
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RoleRequired:
+      description: El token no tiene rol seleccionado (hacer /auth/select-role)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    OK:
+      description: Operación exitosa. Envuelve en { success, message?, data }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SuccessResponse' }
+    ListOK:
+      description: Lista de usuarios envuelta en { success, data, pagination }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PaginatedResponse' }
+    PaginatedOK:
+      description: Lista paginada { success, data, pagination }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PaginatedResponse' }
+    Created:
+      description: Recurso creado. Envuelve en { success, message, data }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  schemas:
+    # -------- Envoltorios de respuesta --------
+    SuccessResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, nullable: true, example: Operación exitosa }
+        data: { type: object, nullable: true }
+      additionalProperties: true
+    PaginatedResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, nullable: true }
+        data: { type: array, items: { type: object } }
+        pagination:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            totalPages: { type: integer }
+      additionalProperties: true
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string }
+        code: { type: string, nullable: true }
+        rolesDisponibles: { type: array, items: { type: string }, nullable: true }
+
+    # -------- Auth --------
+    LoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier: { type: string, description: Email o DNI }
+        password: { type: string, format: password }
+      example:
+        identifier: admin@instituto.edu.ar
+        password: Admin123!
+    LoginResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                user: { type: object }
+                roles: { type: array, items: { type: string } }
+                token: { type: string, description: Token JWT sin rol }
+                refreshToken: { type: string }
+                sessionId: { type: integer }
+    SelectRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
+      example:
+        role: ADMINISTRATIVO
+    SelectRoleResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                token: { type: string, description: Token JWT con rol }
+                refreshToken: { type: string }
+                sessionId: { type: integer }
+                rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
+                rolesDisponibles: { type: array, items: { type: string } }
+    RegisterRequest:
+      type: object
+      required: [apellidoNombre, dni, email, fechaNacimiento, telefono, password, cuil, rol]
+      properties:
+        apellidoNombre: { type: string, maxLength: 255 }
+        dni: { type: string, pattern: '^\\d{7,8}$' }
+        email: { type: string, format: email, maxLength: 255 }
+        fechaNacimiento: { type: string, format: date, description: No puede ser futura }
+        telefono: { type: string, pattern: '^\\d{10,11}$' }
+        password: { type: string, format: password, minLength: 8, description: "Requiere mayúscula, minúscula, número y símbolo" }
+        cuil: { type: string, pattern: '^\\d{11}$' }
+        rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
+        contactoEmergencia: { type: string, nullable: true }
+        foto: { type: string, nullable: true }
+        domicilio: { type: string, maxLength: 255, description: 'Obligatorio solo si rol = ALUMNO' }
+        anioEgreso: { type: integer, minimum: 1990, maximum: 2100, description: 'Año de egreso del secundario. Obligatorio solo si rol = ALUMNO; si se omite usa el año en curso' }
+        institucionProcedencia: { type: string, nullable: true, maxLength: 255, description: 'Solo aplica a alumnos' }
+      example:
+        apellidoNombre: Ana García
+        dni: "30123456"
+        email: ana.garcia@instituto.edu.ar
+        fechaNacimiento: 1998-05-12
+        telefono: "1155551234"
+        password: Password1!
+        cuil: "20301234567"
+        rol: ALUMNO
+        contactoEmergencia: "1112345678"
+        domicilio: Av. Siempre Viva 742
+        anioEgreso: 2016
+        institucionProcedencia: Escuela Secundaria Nº 42
+    UserUpdateRequest:
+      type: object
+      properties:
+        apellidoNombre: { type: string, maxLength: 255 }
+        dni: { type: string, pattern: '^\\d{7,8}$' }
+        email: { type: string, format: email }
+        fechaNacimiento: { type: string, format: date }
+        telefono: { type: string, pattern: '^\\d{10,11}$' }
+        password: { type: string, format: password, minLength: 8 }
+        cuil: { type: string, pattern: '^\\d{11}$' }
+        rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
+        contactoEmergencia: { type: string, nullable: true }
+        foto: { type: string, nullable: true }
+        activo: { type: boolean }
+    ChangeRoleRequest:
+      type: object
+      required: [rol]
+      properties:
+        rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string, minLength: 8 }
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+    ResetPasswordRequest:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token: { type: string }
+        newPassword: { type: string, minLength: 8 }
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+
+    # -------- Carreras --------
+    CarreraCreateRequest:
+      type: object
+      required: [nombre, duracionAnios]
+      properties:
+        nombre: { type: string, maxLength: 255 }
+        duracionAnios: { type: integer, minimum: 1, maximum: 10 }
+    CarreraUpdateRequest:
+      type: object
+      properties:
+        nombre: { type: string, maxLength: 255 }
+        duracionAnios: { type: integer, minimum: 1, maximum: 10 }
+        activo: { type: boolean }
+
+    # -------- Materias --------
+    TipoEspacio:
+      type: string
+      enum: [MATERIA, SEMINARIO, TALLER, TALLER_PRACTICA]
+    Modalidad:
+      type: string
+      enum: [PRESENCIAL, SEMIPRESENCIAL, LIBRE]
+    PeriodoMateria:
+      type: string
+      enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE]
+    Regimen:
+      type: string
+      enum: [REGULAR_PRESENCIAL_PROMOCION, REGULAR_PRESENCIAL_SIN_PROMOCION, REGULAR_SEMIPRESENCIAL, LIBRE]
+    MateriaCreateRequest:
+      type: object
+      required: [nombre, cargaHoraria, tipoEspacio, carreraId]
+      properties:
+        nombre: { type: string, maxLength: 255 }
+        descripcion: { type: string, nullable: true }
+        codigo: { type: string, maxLength: 50, nullable: true }
+        cargaHoraria: { type: integer, minimum: 1, maximum: 9999 }
+        horasCatedra: { type: string, maxLength: 50, nullable: true }
+        tipoEspacio: { $ref: '#/components/schemas/TipoEspacio' }
+        modalidad: { $ref: '#/components/schemas/Modalidad', default: PRESENCIAL }
+        periodo: { $ref: '#/components/schemas/PeriodoMateria', default: ANUAL }
+        regimen: { $ref: '#/components/schemas/Regimen', default: REGULAR_PRESENCIAL_SIN_PROMOCION }
+        notaMinima: { type: number, minimum: 0, maximum: 10, default: 6 }
+        asistenciaRequerida: { type: number, minimum: 0, maximum: 100, default: 75 }
+        tpRequeridos: { type: number, minimum: 0, maximum: 100, default: 75 }
+        esPromocionable: { type: boolean, default: false }
+        notaPromocion: { type: number, minimum: 0, maximum: 10, default: 8 }
+        aniosRegularidad: { type: integer, minimum: 1, maximum: 5, default: 3 }
+        carreraId: { type: integer, minimum: 1 }
+        cursoId: { type: integer, nullable: true }
+        espacioCurricularId: { type: integer, nullable: true }
+    MateriaUpdateRequest:
+      type: object
+      properties:
+        nombre: { type: string, maxLength: 255 }
+        descripcion: { type: string, nullable: true }
+        codigo: { type: string, maxLength: 50, nullable: true }
+        cargaHoraria: { type: integer, minimum: 1, maximum: 9999 }
+        horasCatedra: { type: string, maxLength: 50, nullable: true }
+        tipoEspacio: { $ref: '#/components/schemas/TipoEspacio' }
+        modalidad: { $ref: '#/components/schemas/Modalidad' }
+        periodo: { $ref: '#/components/schemas/PeriodoMateria' }
+        regimen: { $ref: '#/components/schemas/Regimen' }
+        notaMinima: { type: number, minimum: 0, maximum: 10 }
+        asistenciaRequerida: { type: number, minimum: 0, maximum: 100 }
+        tpRequeridos: { type: number, minimum: 0, maximum: 100 }
+        esPromocionable: { type: boolean }
+        notaPromocion: { type: number, minimum: 0, maximum: 10 }
+        aniosRegularidad: { type: integer, minimum: 1, maximum: 5 }
+        carreraId: { type: integer, minimum: 1 }
+        cursoId: { type: integer, nullable: true }
+        espacioCurricularId: { type: integer, nullable: true }
+        activo: { type: boolean }
+    CorrelatividadRequest:
+      type: object
+      required: [materiaRequeridaId, tipoRequisito]
+      properties:
+        materiaRequeridaId: { type: integer, minimum: 1 }
+        tipoRequisito: { type: string, enum: [OBLIGATORIA, ALTERNATIVA, GRUPO] }
+        grupo: { type: string, maxLength: 100, nullable: true }
+        cantidadMinimaAprobadas: { type: integer, minimum: 1, nullable: true, description: Obligatorio si tipoRequisito = GRUPO }
+        aplicaCursado: { type: boolean, default: true }
+        aplicaRendir: { type: boolean, default: true }
+
+    # -------- Inscripciones --------
+    InscripcionCarreraRequest:
+      type: object
+      required: [carreraId]
+      properties:
+        alumnoId: { type: integer, description: Solo para admin; el alumno se inscribe solo }
+        carreraId: { type: integer }
+        cicloLectivo: { type: integer, default: 2026 }
+      example:
+        alumnoId: 3
+        carreraId: 1
+        cicloLectivo: 2026
+    InscripcionMateriaRequest:
+      type: object
+      required: [materiaId]
+      properties:
+        alumnoId: { type: integer, description: Solo para admin; el alumno se inscribe solo }
+        materiaId: { type: integer }
+        cicloLectivo: { type: integer, default: 2026 }
+      example:
+        alumnoId: 3
+        materiaId: 1
+        cicloLectivo: 2026
+    CambiarModalidadRequest:
+      type: object
+      required: [modalidad]
+      properties:
+        modalidad: { $ref: '#/components/schemas/Modalidad' }
+
+    # -------- Exámenes --------
+    TipoExamen:
+      type: string
+      enum: [ORAL, ESCRITO]
+    EstadoMesa:
+      type: string
+      enum: [ABIERTA, EN_PROCESO, FINALIZADA]
+    ExamenCreateRequest:
+      type: object
+      required: [materiaId, fecha, tipoExamen]
+      properties:
+        materiaId: { type: integer }
+        fecha: { type: string, format: date-time }
+        tipoExamen: { $ref: '#/components/schemas/TipoExamen' }
+        llamado: { type: integer, default: 1 }
+        folioExamen: { type: string, maxLength: 255, nullable: true }
+        libroExamen: { type: string, maxLength: 255, nullable: true }
+    ExamenUpdateRequest:
+      type: object
+      properties:
+        materiaId: { type: integer }
+        fecha: { type: string, format: date-time }
+        tipoExamen: { $ref: '#/components/schemas/TipoExamen' }
+        llamado: { type: integer }
+        folioExamen: { type: string, maxLength: 255, nullable: true }
+        libroExamen: { type: string, maxLength: 255, nullable: true }
+        estadoMesa: { $ref: '#/components/schemas/EstadoMesa' }
+        activo: { type: boolean }
+    TribunalRequest:
+      type: object
+      required: [examenId, profesorId]
+      properties:
+        examenId: { type: integer }
+        profesorId: { type: integer }
+        rolTribunal: { type: string, enum: [PRESIDENTE, VOCAL, SUPLENTE], default: VOCAL }
+    InscripcionExamenRequest:
+      type: object
+      required: [alumnoId]
+      properties:
+        alumnoId: { type: integer, description: Solo para admin; el alumno usa su propio ID }
+        condicion: { type: string, enum: [REGULAR, LIBRE], default: REGULAR }
+    DesinscripcionExamenRequest:
+      type: object
+      required: [alumnoId]
+      properties:
+        alumnoId: { type: integer, description: Solo para admin }
+    CalificacionRequest:
+      type: object
+      required: [alumnoId, nota]
+      properties:
+        alumnoId: { type: integer }
+        nota: { type: number, minimum: 1, maximum: 10 }
+
+    # -------- Horarios --------
+    DiaSemana:
+      type: string
+      enum: [LUNES, MARTES, MIERCOLES, JUEVES, VIERNES, SABADO, DOMINGO]
+    HorarioRequest:
+      type: object
+      required: [cursadaId, dia, horaInicio, horaFin]
+      properties:
+        cursadaId: { type: integer }
+        dia: { $ref: '#/components/schemas/DiaSemana' }
+        horaInicio: { type: string, format: date-time, description: "ISO, p.ej. 2026-01-01T08:00:00.000Z" }
+        horaFin: { type: string, format: date-time }
+        aula: { type: string, maxLength: 50, nullable: true }
+    HorarioUpdateRequest:
+      type: object
+      properties:
+        cursadaId: { type: integer }
+        dia: { $ref: '#/components/schemas/DiaSemana' }
+        horaInicio: { type: string, format: date-time }
+        horaFin: { type: string, format: date-time }
+        aula: { type: string, maxLength: 50, nullable: true }
+        activo: { type: boolean }
+
+    # -------- Cursadas --------
+    CursadaRequest:
+      type: object
+      required: [materiaId, anioLectivo]
+      properties:
+        materiaId: { type: integer, minimum: 1 }
+        anioLectivo: { type: integer, minimum: 2000, maximum: 2100 }
+        periodo:
+          type: string
+          enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE]
+          default: ANUAL
+        docenteId: { type: integer, minimum: 1, nullable: true }
+      example:
+        materiaId: 1
+        anioLectivo: 2026
+        periodo: ANUAL
+        docenteId: 2
+    CursadaUpdateRequest:
+      type: object
+      properties:
+        materiaId: { type: integer, minimum: 1 }
+        anioLectivo: { type: integer, minimum: 2000, maximum: 2100 }
+        periodo:
+          type: string
+          enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE]
+        docenteId: { type: integer, minimum: 1, nullable: true }
+        activo: { type: boolean }
+      example:
+        periodo: PRIMER_CUATRIMESTRE
+        activo: true
+
+    # -------- Períodos de inscripción --------
+    TipoPeriodo:
+      type: string
+      enum: [MATERIA, EXAMEN]
+    LibroDeTemaCreateRequest:
+      type: object
+      required: [materiaId, fecha, temaDesarrollado]
+      properties:
+        materiaId: { type: integer, minimum: 1 }
+        fecha: { type: string, format: date }
+        temaDesarrollado: { type: string }
+        observaciones: { type: string, nullable: true }
+      example:
+        materiaId: 1
+        fecha: 2026-08-19
+        temaDesarrollado: Unidad 1 - Introducción a la materia
+        observaciones: Clase dictada en el aula 12
+    LibroDeTemaUpdateRequest:
+      type: object
+      properties:
+        fecha: { type: string, format: date }
+        temaDesarrollado: { type: string }
+        observaciones: { type: string, nullable: true }
+      example:
+        temaDesarrollado: Unidad 1 - Introducción (actualizado)
+        observaciones: Consigna de trabajo práctico
+    PeriodoRequest:
+      type: object
+      required: [tipo, fechaInicio, fechaFin]
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoPeriodo' }
+        fechaInicio: { type: string, format: date-time }
+        fechaFin: { type: string, format: date-time }
+        descripcion: { type: string, maxLength: 255, nullable: true }
+    PeriodoUpdateRequest:
+      type: object
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoPeriodo' }
+        fechaInicio: { type: string, format: date-time }
+        fechaFin: { type: string, format: date-time }
+        descripcion: { type: string, maxLength: 255, nullable: true }
+        activo: { type: boolean }

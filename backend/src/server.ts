@@ -1,6 +1,6 @@
 import express from "express";
 import type { Request, Response } from "express";
-import carreraRoutes from "./routes/carrera.routes.js";
+import alumnoRoutes from "./routes/alumnoRoutes.js";
 
 const app = express();
 
