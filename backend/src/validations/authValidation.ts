@@ -76,7 +76,43 @@ export const registerSchema = Joi.object({
   
   foto: Joi.string()
     .max(255)
+    .allow('', null),
+  
+  // Datos específicos del alumno (obligatorios solo si rol = ALUMNO)
+  domicilio: Joi.string()
+    .max(255)
+    .messages({
+      'string.empty': 'El domicilio es requerido para alumnos',
+      'string.max': 'El domicilio no puede exceder 255 caracteres'
+    })
+    .when('rol', {
+      is: 'ALUMNO',
+      then: Joi.required(),
+      otherwise: Joi.allow('', null)
+    }),
+  
+  anioEgreso: Joi.number()
+    .integer()
+    .min(1990)
+    .max(2100)
+    .messages({
+      'number.base': 'El año de egreso debe ser un número',
+      'number.integer': 'El año de egreso debe ser un número entero',
+      'number.min': 'El año de egreso debe ser mayor o igual a 1990',
+      'number.max': 'El año de egreso no puede exceder 2100'
+    })
+    .when('rol', {
+      is: 'ALUMNO',
+      then: Joi.required(),
+      otherwise: Joi.allow(null)
+    }),
+  
+  institucionProcedencia: Joi.string()
+    .max(255)
     .allow('', null)
+    .messages({
+      'string.max': 'La institución de procedencia no puede exceder 255 caracteres'
+    })
 });
 
 export const loginSchema = Joi.object({

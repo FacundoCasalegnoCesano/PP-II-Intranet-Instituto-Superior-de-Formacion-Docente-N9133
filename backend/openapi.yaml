@@ -1328,6 +1328,9 @@ components:
       properties:
         identifier: { type: string, description: Email o DNI }
         password: { type: string, format: password }
+      example:
+        identifier: admin@instituto.edu.ar
+        password: Admin123!
     LoginResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
@@ -1346,6 +1349,8 @@ components:
       required: [role]
       properties:
         role: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
+      example:
+        role: ADMINISTRATIVO
     SelectRoleResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
@@ -1373,6 +1378,22 @@ components:
         rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
         contactoEmergencia: { type: string, nullable: true }
         foto: { type: string, nullable: true }
+        domicilio: { type: string, maxLength: 255, description: 'Obligatorio solo si rol = ALUMNO' }
+        anioEgreso: { type: integer, minimum: 1990, maximum: 2100, description: 'Año de egreso del secundario. Obligatorio solo si rol = ALUMNO; si se omite usa el año en curso' }
+        institucionProcedencia: { type: string, nullable: true, maxLength: 255, description: 'Solo aplica a alumnos' }
+      example:
+        apellidoNombre: Ana García
+        dni: "30123456"
+        email: ana.garcia@instituto.edu.ar
+        fechaNacimiento: 1998-05-12
+        telefono: "1155551234"
+        password: Password1!
+        cuil: "20301234567"
+        rol: ALUMNO
+        contactoEmergencia: "1112345678"
+        domicilio: Av. Siempre Viva 742
+        anioEgreso: 2016
+        institucionProcedencia: Escuela Secundaria Nº 42
     UserUpdateRequest:
       type: object
       properties:
@@ -1505,6 +1526,10 @@ components:
         alumnoId: { type: integer, description: Solo para admin; el alumno se inscribe solo }
         carreraId: { type: integer }
         cicloLectivo: { type: integer, default: 2026 }
+      example:
+        alumnoId: 3
+        carreraId: 1
+        cicloLectivo: 2026
     InscripcionMateriaRequest:
       type: object
       required: [materiaId]
@@ -1512,6 +1537,10 @@ components:
         alumnoId: { type: integer, description: Solo para admin; el alumno se inscribe solo }
         materiaId: { type: integer }
         cicloLectivo: { type: integer, default: 2026 }
+      example:
+        alumnoId: 3
+        materiaId: 1
+        cicloLectivo: 2026
     CambiarModalidadRequest:
       type: object
       required: [modalidad]
@@ -1606,6 +1635,11 @@ components:
           enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE]
           default: ANUAL
         docenteId: { type: integer, minimum: 1, nullable: true }
+      example:
+        materiaId: 1
+        anioLectivo: 2026
+        periodo: ANUAL
+        docenteId: 2
     CursadaUpdateRequest:
       type: object
       properties:
@@ -1616,6 +1650,9 @@ components:
           enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE]
         docenteId: { type: integer, minimum: 1, nullable: true }
         activo: { type: boolean }
+      example:
+        periodo: PRIMER_CUATRIMESTRE
+        activo: true
 
     # -------- Períodos de inscripción --------
     TipoPeriodo:
@@ -1629,12 +1666,20 @@ components:
         fecha: { type: string, format: date }
         temaDesarrollado: { type: string }
         observaciones: { type: string, nullable: true }
+      example:
+        materiaId: 1
+        fecha: 2026-08-19
+        temaDesarrollado: Unidad 1 - Introducción a la materia
+        observaciones: Clase dictada en el aula 12
     LibroDeTemaUpdateRequest:
       type: object
       properties:
         fecha: { type: string, format: date }
         temaDesarrollado: { type: string }
         observaciones: { type: string, nullable: true }
+      example:
+        temaDesarrollado: Unidad 1 - Introducción (actualizado)
+        observaciones: Consigna de trabajo práctico
     PeriodoRequest:
       type: object
       required: [tipo, fechaInicio, fechaFin]

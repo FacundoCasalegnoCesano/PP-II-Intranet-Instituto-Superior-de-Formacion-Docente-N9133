@@ -1,7 +1,7 @@
 import { prisma } from '../config/prisma.js';
 
 export interface InscripcionCarreraCreateData {
-  alumnoId: number;
+  usuarioId: number;
   carreraId: number;
   cicloLectivo: number;
 }
@@ -15,16 +15,16 @@ class InscripcionCarreraRepository {
   async create(data: InscripcionCarreraCreateData): Promise<any> {
     return await prisma.inscripcionCarrera.create({
       data: {
-        alumnoId: data.alumnoId,
+        usuarioId: data.usuarioId,
         carreraId: data.carreraId,
         cicloLectivo: data.cicloLectivo,
         fechaInscripcion: new Date(),
         activo: true
       },
       include: {
-        alumno: {
+        usuario: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true,
             dni: true
@@ -39,9 +39,9 @@ class InscripcionCarreraRepository {
     return await prisma.inscripcionCarrera.findUnique({
       where: { id },
       include: {
-        alumno: {
+        usuario: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true,
             dni: true
@@ -52,10 +52,10 @@ class InscripcionCarreraRepository {
     });
   }
 
-  async findByAlumnoId(alumnoId: number): Promise<any[]> {
+  async findByUsuarioId(usuarioId: number): Promise<any[]> {
     return await prisma.inscripcionCarrera.findMany({
       where: {
-        alumnoId,
+        usuarioId,
         activo: true
       },
       include: {
@@ -74,9 +74,9 @@ class InscripcionCarreraRepository {
         activo: true
       },
       include: {
-        alumno: {
+        usuario: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true,
             dni: true
@@ -86,10 +86,10 @@ class InscripcionCarreraRepository {
     });
   }
 
-  async findByAlumnoAndCarrera(alumnoId: number, carreraId: number): Promise<any> {
+  async findByUsuarioAndCarrera(usuarioId: number, carreraId: number): Promise<any> {
     return await prisma.inscripcionCarrera.findFirst({
       where: {
-        alumnoId,
+        usuarioId,
         carreraId,
         activo: true
       }
@@ -118,19 +118,19 @@ class InscripcionCarreraRepository {
     });
   }
 
-  async countByAlumno(alumnoId: number): Promise<number> {
+  async countByUsuario(usuarioId: number): Promise<number> {
     return await prisma.inscripcionCarrera.count({
       where: {
-        alumnoId,
+        usuarioId,
         activo: true
       }
     });
   }
 
-  async getCarrerasInscriptas(alumnoId: number): Promise<any[]> {
+  async getCarrerasInscriptas(usuarioId: number): Promise<any[]> {
     return await prisma.inscripcionCarrera.findMany({
       where: {
-        alumnoId,
+        usuarioId,
         activo: true
       },
       include: {
@@ -140,8 +140,7 @@ class InscripcionCarreraRepository {
               where: { activo: true },
               select: {
                 id: true,
-                nombre: true,
-                codigo: true
+                nombre: true
               }
             }
           }

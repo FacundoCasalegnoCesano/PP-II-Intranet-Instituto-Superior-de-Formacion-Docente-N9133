@@ -12,7 +12,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env') });
 async function createAdmin(): Promise<void> {
   try {
     const existingAdmin = await prisma.usuario.findFirst({
-      where: { roles: { some: { rol: 'ADMINISTRATIVO' } } }
+      where: { rol: { contains: 'ADMINISTRATIVO' } }
     });
 
     if (existingAdmin) {
@@ -27,17 +27,15 @@ async function createAdmin(): Promise<void> {
     const admin = await prisma.usuario.create({
       data: {
         apellidoNombre: 'Administrador Sistema',
-        dni: '12345678',
+        dni: 12345678,
         email: 'admin@instituto.edu.ar',
         fechaNacimiento: new Date('1990-01-01'),
         telefono: '1234567890',
         passwordHash,
         cuil: '20123456789',
+        rol: 'ADMINISTRATIVO',
         activo: true,
-        contactoEmergencia: '1111111111',
-        roles: {
-          create: { rol: 'ADMINISTRATIVO' }
-        }
+        contactoEmergencia: '1111111111'
       }
     });
 

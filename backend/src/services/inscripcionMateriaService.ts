@@ -20,6 +20,9 @@ class InscripcionMateriaService {
 
     const idAlumno = await getAlumnoIdByUsuarioId(data.alumnoId);
 
+    // Si no se indica ciclo lectivo, se usa el año en curso
+    const cicloLectivo = data.cicloLectivo ?? new Date().getFullYear();
+
     // Verificar que la materia existe
     const materia = await materiaRepository.findById(data.materiaId);
     if (!materia) {
@@ -30,7 +33,7 @@ class InscripcionMateriaService {
     const existing = await inscripcionMateriaRepository.findByAlumnoAndMateria(
       idAlumno,
       data.materiaId,
-      data.cicloLectivo
+      cicloLectivo
     );
     if (existing) {
       throw new Error('El alumno ya está inscripto en esta materia en este ciclo lectivo');
@@ -41,11 +44,12 @@ class InscripcionMateriaService {
 
     // La institución tiene una sola comisión por materia: vincular la cursada
     // activa de la materia en el ciclo lectivo si existe (si no, queda NULL)
-    const cursada = await cursadaRepository.getCursadaActivaByMateria(data.materiaId, data.cicloLectivo);
+    const cursada = await cursadaRepository.getCursadaActivaByMateria(data.materiaId, cicloLectivo);
 
     return await inscripcionMateriaRepository.create({
       ...data,
       alumnoId: idAlumno,
+      cicloLectivo,
       cursadaId: cursada?.id ?? null
     });
   }
@@ -105,9 +109,11 @@ class InscripcionMateriaService {
     }
 
     // `inscripcion.alumnoId` es idAlumno; `currentUser.id` es el id de cuenta
-    const idAlumno = await getAlumnoIdByUsuarioId(currentUser.id);
-    if (currentUser.rol !== ROLES.ADMINISTRATIVO && idAlumno !== inscripcion.alumnoId) {
-      throw new Error('No tienes permisos para dar de baja esta inscripción');
+    if (currentUser.rol !== ROLES.ADMINISTRATIVO) {
+      const idAlumno = await getAlumnoIdByUsuarioId(currentUser.id);
+      if (idAlumno !== inscripcion.alumnoId) {
+        throw new Error('No tienes permisos para dar de baja esta inscripción');
+      }
     }
 
     return await inscripcionMateriaRepository.delete(id);

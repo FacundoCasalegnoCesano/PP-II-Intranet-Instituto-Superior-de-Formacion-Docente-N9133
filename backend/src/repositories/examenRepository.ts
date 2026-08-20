@@ -5,16 +5,17 @@ export interface ExamenCreateData {
   fecha: Date;
   tipoExamen: string;
   llamado: number;
-  folio?: string;
-  libro?: string;
+  folioExamen?: string | null;
+  libroExamen?: string | null;
 }
 
 export interface ExamenUpdateData {
   fecha?: Date;
   tipoExamen?: string;
   llamado?: number;
-  folio?: string;
-  libro?: string;
+  folioExamen?: string | null;
+  libroExamen?: string | null;
+  estadoMesa?: string;
   activo?: boolean;
 }
 
@@ -25,16 +26,16 @@ export interface TribunalCreateData {
 }
 
 class ExamenRepository {
-  // ===== EXÁMENES =====
+  // ===== MESAS (EXÁMENES) =====
   async createExamen(data: ExamenCreateData): Promise<any> {
-    return await prisma.examen.create({
+    return await prisma.mesa.create({
       data: {
         materiaId: data.materiaId,
         fecha: data.fecha,
         tipoExamen: data.tipoExamen as any,
         llamado: data.llamado,
-        folio: data.folio,
-        libro: data.libro,
+        folioExamen: data.folioExamen ?? null,
+        libroExamen: data.libroExamen ?? null,
         activo: true
       },
       include: {
@@ -48,7 +49,7 @@ class ExamenRepository {
   }
 
   async findExamenById(id: number): Promise<any> {
-    return await prisma.examen.findUnique({
+    return await prisma.mesa.findUnique({
       where: { id },
       include: {
         materia: {
@@ -60,7 +61,7 @@ class ExamenRepository {
           include: {
             profesor: {
               select: {
-                id: true,
+                idUsuario: true,
                 apellidoNombre: true,
                 email: true
               }
@@ -70,11 +71,15 @@ class ExamenRepository {
         inscripciones: {
           include: {
             alumno: {
-              select: {
-                id: true,
-                apellidoNombre: true,
-                email: true,
-                dni: true
+              include: {
+                usuario: {
+                  select: {
+                    idUsuario: true,
+                    apellidoNombre: true,
+                    email: true,
+                    dni: true
+                  }
+                }
               }
             }
           }
@@ -96,7 +101,7 @@ class ExamenRepository {
     }
 
     const [examenes, total] = await Promise.all([
-      prisma.examen.findMany({
+      prisma.mesa.findMany({
         where,
         skip,
         take: limit,
@@ -105,15 +110,14 @@ class ExamenRepository {
           materia: {
             select: {
               id: true,
-              nombre: true,
-              codigo: true
+              nombre: true
             }
           },
           tribunales: {
             include: {
               profesor: {
                 select: {
-                  id: true,
+                  idUsuario: true,
                   apellidoNombre: true
                 }
               }
@@ -126,7 +130,7 @@ class ExamenRepository {
           }
         }
       }),
-      prisma.examen.count({ where })
+      prisma.mesa.count({ where })
     ]);
 
     return {
@@ -141,7 +145,7 @@ class ExamenRepository {
       if (cleanData[key] === undefined) delete cleanData[key];
     });
 
-    return await prisma.examen.update({
+    return await prisma.mesa.update({
       where: { id },
       data: cleanData,
       include: {
@@ -151,7 +155,7 @@ class ExamenRepository {
   }
 
   async deleteExamen(id: number): Promise<any> {
-    return await prisma.examen.update({
+    return await prisma.mesa.update({
       where: { id },
       data: { activo: false }
     });
@@ -159,16 +163,16 @@ class ExamenRepository {
 
   // ===== TRIBUNALES =====
   async addTribunal(data: TribunalCreateData): Promise<any> {
-    return await prisma.tribunal.create({
+    return await prisma.mesaTribunal.create({
       data: {
-        examenId: data.examenId,
+        mesaId: data.examenId,
         profesorId: data.profesorId,
         rolTribunal: data.rolTribunal as any
       },
       include: {
         profesor: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true
           }
@@ -178,18 +182,18 @@ class ExamenRepository {
   }
 
   async removeTribunal(id: number): Promise<any> {
-    return await prisma.tribunal.delete({
+    return await prisma.mesaTribunal.delete({
       where: { id }
     });
   }
 
-  async getTribunalesByExamen(examenId: number): Promise<any[]> {
-    return await prisma.tribunal.findMany({
-      where: { examenId },
+  async getTribunalesByExamen(mesaId: number): Promise<any[]> {
+    return await prisma.mesaTribunal.findMany({
+      where: { mesaId },
       include: {
         profesor: {
           select: {
-            id: true,
+            idUsuario: true,
             apellidoNombre: true,
             email: true
           }
@@ -199,10 +203,10 @@ class ExamenRepository {
   }
 
   // ===== INSCRIPCIÓN A EXÁMENES =====
-  async inscribirAlumno(examenId: number, alumnoId: number, condicion: string): Promise<any> {
+  async inscribirAlumno(mesaId: number, alumnoId: number, condicion: string): Promise<any> {
     return await prisma.inscripcionExamen.create({
       data: {
-        examenId,
+        mesaId,
         alumnoId,
         condicion: condicion as any,
         fechaInscripcion: new Date(),
@@ -210,14 +214,18 @@ class ExamenRepository {
       },
       include: {
         alumno: {
-          select: {
-            id: true,
-            apellidoNombre: true,
-            email: true,
-            dni: true
+          include: {
+            usuario: {
+              select: {
+                idUsuario: true,
+                apellidoNombre: true,
+                email: true,
+                dni: true
+              }
+            }
           }
         },
-        examen: {
+        mesa: {
           include: {
             materia: true
           }
@@ -226,11 +234,10 @@ class ExamenRepository {
     });
   }
 
-  async desinscribirAlumno(examenId: number, alumnoId: number): Promise<any> {
-    // Buscar la inscripción
+  async desinscribirAlumno(mesaId: number, alumnoId: number): Promise<any> {
     const inscripcion = await prisma.inscripcionExamen.findFirst({
       where: {
-        examenId,
+        mesaId,
         alumnoId
       }
     });
@@ -245,19 +252,23 @@ class ExamenRepository {
     });
   }
 
-  async getInscriptosByExamen(examenId: number): Promise<any[]> {
+  async getInscriptosByExamen(mesaId: number): Promise<any[]> {
     return await prisma.inscripcionExamen.findMany({
       where: {
-        examenId,
+        mesaId,
         fechaBaja: null
       },
       include: {
         alumno: {
-          select: {
-            id: true,
-            apellidoNombre: true,
-            email: true,
-            dni: true
+          include: {
+            usuario: {
+              select: {
+                idUsuario: true,
+                apellidoNombre: true,
+                email: true,
+                dni: true
+              }
+            }
           }
         }
       }
@@ -271,7 +282,7 @@ class ExamenRepository {
         fechaBaja: null
       },
       include: {
-        examen: {
+        mesa: {
           include: {
             materia: true
           }
@@ -284,11 +295,10 @@ class ExamenRepository {
   }
 
   // ===== CALIFICACIONES =====
-  async registrarNota(examenId: number, alumnoId: number, nota: number): Promise<any> {
-    // Buscar la inscripción
+  async registrarNota(mesaId: number, alumnoId: number, nota: number): Promise<any> {
     const inscripcion = await prisma.inscripcionExamen.findFirst({
       where: {
-        examenId,
+        mesaId,
         alumnoId,
         fechaBaja: null
       }
@@ -306,10 +316,14 @@ class ExamenRepository {
       },
       include: {
         alumno: {
-          select: {
-            id: true,
-            apellidoNombre: true,
-            email: true
+          include: {
+            usuario: {
+              select: {
+                idUsuario: true,
+                apellidoNombre: true,
+                email: true
+              }
+            }
           }
         }
       }

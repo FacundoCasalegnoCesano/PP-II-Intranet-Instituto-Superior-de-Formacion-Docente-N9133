@@ -144,9 +144,9 @@ class ProfesorController extends UserController {
       const { prisma } = await import('../config/prisma.js');
       
       const [total, activos, inactivos] = await Promise.all([
-        prisma.usuario.count({ where: { roles: { some: { rol: ROLES.PROFESOR } } } }),
-                prisma.usuario.count({ where: { roles: { some: { rol: ROLES.PROFESOR, activo: true } } } }),
-                prisma.usuario.count({ where: { roles: { some: { rol: ROLES.PROFESOR, activo: false } } } })
+        prisma.usuario.count({ where: { rol: { contains: ROLES.PROFESOR } } }),
+        prisma.usuario.count({ where: { rol: { contains: ROLES.PROFESOR }, activo: true } }),
+        prisma.usuario.count({ where: { rol: { contains: ROLES.PROFESOR }, activo: false } })
       ]);
       
       res.json({

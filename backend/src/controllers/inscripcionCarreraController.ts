@@ -9,9 +9,21 @@ class InscripcionCarreraController {
       const data = req.body;
       const currentUser = req.user!;
 
+      // El body usa `alumnoId` (id de cuenta); InscripcionCarrera guarda usuarioId.
       // Si el usuario es alumno, solo puede inscribirse a sí mismo
       if (currentUser.rol === ROLES.ALUMNO) {
-        data.alumnoId = currentUser.id;
+        data.usuarioId = currentUser.id;
+      } else {
+        data.usuarioId = data.alumnoId ?? data.usuarioId;
+      }
+      delete data.alumnoId;
+
+      if (!data.usuarioId) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de alumno no proporcionado'
+        });
+        return;
       }
 
       // Si es admin, puede inscribir a cualquier alumno

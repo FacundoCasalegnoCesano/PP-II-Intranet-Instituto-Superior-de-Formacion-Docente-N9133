@@ -6,8 +6,8 @@ import { ROLES } from '../constants/roles.js';
 
 class InscripcionCarreraService {
   async inscribirAlumno(data: InscripcionCarreraCreateData, currentUser: any) {
-    // Verificar que el alumno existe
-    const alumno = await userRepository.findById(data.alumnoId);
+    // Verificar que el alumno existe (data.usuarioId = id de cuenta)
+    const alumno = await userRepository.findById(data.usuarioId);
     if (!alumno) {
       throw new Error('Alumno no encontrado');
     }
@@ -23,9 +23,12 @@ class InscripcionCarreraService {
       throw new Error('Carrera no encontrada');
     }
 
+    // Si no se indica ciclo lectivo, se usa el año en curso
+    data.cicloLectivo = data.cicloLectivo ?? new Date().getFullYear();
+
     // Verificar que no esté ya inscripto
-    const existing = await inscripcionCarreraRepository.findByAlumnoAndCarrera(
-      data.alumnoId,
+    const existing = await inscripcionCarreraRepository.findByUsuarioAndCarrera(
+      data.usuarioId,
       data.carreraId
     );
     if (existing) {
@@ -33,7 +36,7 @@ class InscripcionCarreraService {
     }
 
     // Verificar que el alumno no tenga más de 2 carreras (RFIMC1)
-    const count = await inscripcionCarreraRepository.countByAlumno(data.alumnoId);
+    const count = await inscripcionCarreraRepository.countByUsuario(data.usuarioId);
     if (count >= 2) {
       throw new Error('El alumno ya está inscripto en 2 carreras (máximo permitido)');
     }
@@ -48,7 +51,7 @@ class InscripcionCarreraService {
     }
 
     // Verificar permisos: el mismo alumno o admin
-    if (currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.id !== inscripcion.alumnoId) {
+    if (currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.id !== inscripcion.usuarioId) {
       throw new Error('No tienes permisos para dar de baja esta inscripción');
     }
 

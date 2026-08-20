@@ -33,7 +33,7 @@ class CursadaController {
       if (req.query.anioLectivo) filters.anioLectivo = parseInt(req.query.anioLectivo as string);
       if (req.query.materiaId) filters.materiaId = parseInt(req.query.materiaId as string);
       if (req.query.docenteId) filters.docenteId = parseInt(req.query.docenteId as string);
-      if (req.query.activo !== undefined) filters.activo = req.query.activo === 'true';
+      if (req.query.activo !== undefined) filters.activo = String(req.query.activo) === 'true';
 
       const result = await cursadaService.getCursadas(filters);
       res.json({

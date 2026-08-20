@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyToken, extractTokenFromHeader } from '../utils/jwt.js';
 import userRepository from '../repositories/userRepository.js';
-import usuarioRolRepository from '../repositories/usuarioRolRepository.js';
 import { prisma } from '../config/prisma.js';
 
 declare global {
@@ -63,7 +62,7 @@ async function authenticateRequest(
     const session = await prisma.sesion.findFirst({
       where: {
         token,
-        usuarioId: user.id,
+        usuarioId: user.idUsuario,
         cerradaEn: null
       }
     });
@@ -77,9 +76,9 @@ async function authenticateRequest(
     }
 
     req.user = {
-      id: user.id,
+      id: user.idUsuario,
       email: user.email,
-      dni: user.dni,
+      dni: user.dni.toString(),
       rol: decoded.rol || '',
       nombre: user.apellidoNombre
     };
@@ -127,26 +126,15 @@ export const authMiddleware = async (
     return;
   }
 
-  const userRoles = await usuarioRolRepository.getRolesByUsuario(req.user!.id);
-  const roles = userRoles.map((ur: any) => ur.rol);
-
   // Si el token no tiene rol, el usuario debe seleccionar uno
   if (!req.user!.rol) {
+    const user = await userRepository.findById(req.user!.id);
+    const userRoles = user?.rol ? user.rol.split(',').map((r: string) => r.trim()) : [];
     res.status(403).json({
       success: false,
       message: 'Debes seleccionar un rol para continuar',
       code: 'ROLE_REQUIRED',
-      rolesDisponibles: roles
-    });
-    return;
-  }
-
-  // Verificar que el rol seleccionado es válido para el usuario
-  const userRol = await usuarioRolRepository.getRolesByNombre(req.user!.id, req.user!.rol);
-  if (!userRol) {
-    res.status(403).json({
-      success: false,
-      message: 'Rol no válido para este usuario'
+      rolesDisponibles: userRoles
     });
     return;
   }

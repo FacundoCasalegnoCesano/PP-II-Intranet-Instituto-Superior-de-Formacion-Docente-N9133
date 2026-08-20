@@ -144,9 +144,9 @@ class AlumnoController extends UserController {
       const { prisma } = await import('../config/prisma.js');
       
       const [total, activos, inactivos] = await Promise.all([
-        prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ALUMNO } } } }),
-                prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ALUMNO, activo: true } } } }),
-                prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ALUMNO, activo: false } } } })
+        prisma.usuario.count({ where: { rol: { contains: ROLES.ALUMNO } } }),
+        prisma.usuario.count({ where: { rol: { contains: ROLES.ALUMNO }, activo: true } }),
+        prisma.usuario.count({ where: { rol: { contains: ROLES.ALUMNO }, activo: false } })
       ]);
       
       res.json({

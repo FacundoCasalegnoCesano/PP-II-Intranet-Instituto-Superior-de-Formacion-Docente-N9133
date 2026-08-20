@@ -16,6 +16,7 @@ export interface UserCreateData {
   telefono: string;
   passwordHash: string;
   cuil: string;
+  rol: string;
   contactoEmergencia?: string | null;
   foto?: string | null;
 }
@@ -28,6 +29,7 @@ export interface UserUpdateData {
   telefono?: string;
   passwordHash?: string;
   cuil?: string;
+  rol?: string;
   contactoEmergencia?: string | null;
   foto?: string | null;
   activo?: boolean;
@@ -35,15 +37,16 @@ export interface UserUpdateData {
 
 // Tipo para el resultado de usuario (sin tipos de Prisma)
 export type UsuarioResult = {
-  id: number;
+  idUsuario: number;
   apellidoNombre: string;
-  dni: string;
+  dni: number;
   email: string;
   fechaNacimiento: Date;
   telefono: string;
   passwordHash: string;
-  cuil: string;
+  cuil: string | null;
   activo: boolean;
+  rol: string;
   contactoEmergencia: string | null;
   foto: string | null;
   ultimoAcceso: Date | null;
@@ -56,12 +59,13 @@ class UserRepository {
     return await prisma.usuario.create({
       data: {
         apellidoNombre: data.apellidoNombre,
-        dni: data.dni,
+        dni: parseInt(data.dni),
         email: data.email,
         fechaNacimiento: new Date(data.fechaNacimiento),
         telefono: data.telefono,
         passwordHash: data.passwordHash,
-        cuil: data.cuil,
+        cuil: data.cuil ?? null,
+        rol: data.rol,
         contactoEmergencia: data.contactoEmergencia ?? null,
         foto: data.foto ?? null
       }
@@ -70,7 +74,7 @@ class UserRepository {
 
   async findById(id: number) {
     return await prisma.usuario.findUnique({
-      where: { id },
+      where: { idUsuario: id },
       include: {
         sesiones: {
           where: {
@@ -82,9 +86,6 @@ class UserRepository {
             expiraEn: true,
             ipAddress: true
           }
-        },
-        roles: {
-          where: { activo: true }
         }
       }
     });
@@ -92,38 +93,25 @@ class UserRepository {
 
   async findByEmail(email: string) {
     return await prisma.usuario.findUnique({
-      where: { email },
-      include: {
-        roles: {
-          where: { activo: true }
-        }
-      }
+      where: { email }
     });
   }
 
   async findByDni(dni: string) {
     return await prisma.usuario.findUnique({
-      where: { dni },
-      include: {
-        roles: {
-          where: { activo: true }
-        }
-      }
+      where: { dni: parseInt(dni) }
     });
   }
 
   async findByEmailOrDni(identifier: string) {
+    const parsedDni = /^\d{7,8}$/.test(identifier) ? parseInt(identifier) : null;
+    
     return await prisma.usuario.findFirst({
       where: {
         OR: [
           { email: identifier },
-          { dni: identifier }
+          ...(parsedDni ? [{ dni: parsedDni }] : [])
         ]
-      },
-      include: {
-        roles: {
-          where: { activo: true }
-        }
       }
     });
   }
@@ -135,12 +123,9 @@ class UserRepository {
     const where: any = {};
     
     if (rol) {
-      where.roles = {
-        some: {
-          rol: rol as any,
-          activo: true
-        }
-      };
+      where.OR = rol.includes(',')
+        ? rol.split(',').map((r: string) => ({ rol: { contains: r } }))
+        : [{ rol: { contains: rol } }];
     }
     
     if (activo !== undefined && activo !== '') {
@@ -148,11 +133,17 @@ class UserRepository {
     }
     
     if (search && search !== '') {
-      where.OR = [
+      where.OR = where.OR || [];
+      where.OR.push(
         { apellidoNombre: { contains: search } },
         { email: { contains: search } },
-        { dni: { contains: search } }
-      ];
+        { dni: { equals: /^\d{7,8}$/.test(search) ? parseInt(search) : undefined } }
+      );
+      // Filter out undefined values
+      where.OR = where.OR.filter((c: any) => c.dni === undefined ? false : true).filter((c: any) => {
+        if (c.dni && c.dni.equals === undefined) return false;
+        return true;
+      });
     }
 
     const [usuarios, total] = await Promise.all([
@@ -162,40 +153,26 @@ class UserRepository {
         take: parseInt(limit.toString()),
         orderBy: { createdAt: 'desc' },
         select: {
-          id: true,
+          idUsuario: true,
           apellidoNombre: true,
           dni: true,
           email: true,
           activo: true,
+          rol: true,
           createdAt: true,
-          updatedAt: true,
-          roles: {
-            where: { activo: true },
-            select: {
-              rol: true
-            }
-          }
+          updatedAt: true
         }
       }),
       prisma.usuario.count({ where })
     ]);
 
-    // ✅ Tipar correctamente el parámetro 'user'
-    const usuariosFormateados = usuarios.map((user: {
-      id: number;
-      apellidoNombre: string;
-      dni: string;
-      email: string;
-      activo: boolean;
-      createdAt: Date;
-      updatedAt: Date;
-      roles: Array<{
-        rol: string;
-      }>;
-    }) => ({
-      ...user,
-      roles: user.roles.map((r) => r.rol)
-    }));
+    const usuariosFormateados = usuarios.map((user: any) => {
+      const roles = user.rol ? user.rol.split(',').map((r: string) => r.trim()) : [];
+      return {
+        ...user,
+        roles
+      };
+    });
 
     return {
       data: usuariosFormateados,
@@ -215,64 +192,76 @@ class UserRepository {
         delete cleanData[key];
       }
     });
-
+    
+    if (cleanData.dni) {
+      cleanData.dni = parseInt(cleanData.dni);
+    }
     if (cleanData.fechaNacimiento) {
       cleanData.fechaNacimiento = new Date(cleanData.fechaNacimiento);
     }
 
     return await prisma.usuario.update({
-      where: { id },
+      where: { idUsuario: id },
       data: cleanData
     });
   }
 
   async updatePassword(id: number, passwordHash: string) {
     return await prisma.usuario.update({
-      where: { id },
+      where: { idUsuario: id },
       data: { passwordHash }
     });
   }
 
   async updateLastAccess(id: number) {
     return await prisma.usuario.update({
-      where: { id },
+      where: { idUsuario: id },
       data: { ultimoAcceso: new Date() }
     });
   }
 
   async toggleActive(id: number, activo: boolean = false) {
     return await prisma.usuario.update({
-      where: { id },
+      where: { idUsuario: id },
       data: { activo }
     });
   }
 
   async delete(id: number) {
     return await prisma.usuario.delete({
-      where: { id }
+      where: { idUsuario: id }
     });
   }
 
   async findByIds(ids: number[]) {
     return await prisma.usuario.findMany({
       where: {
-        id: { in: ids }
-      },
-      include: {
-        roles: {
-          where: { activo: true }
-        }
+        idUsuario: { in: ids }
       }
     });
   }
 
   async findWithRoles(id: number) {
     return await prisma.usuario.findUnique({
-      where: { id },
-      include: {
-        roles: {
-          where: { activo: true }
-        }
+      where: { idUsuario: id }
+    });
+  }
+
+  async findOrCreateAlumno(usuarioId: number, alumnoData: { domicilio: string; anioEgreso: number; institucionProcedencia?: string | null }) {
+    const alumno = await prisma.alumno.findUnique({
+      where: { idCuenta: usuarioId }
+    });
+
+    if (alumno) {
+      return alumno;
+    }
+
+    return await prisma.alumno.create({
+      data: {
+        idCuenta: usuarioId,
+        domicilio: alumnoData.domicilio,
+        anioEgreso: alumnoData.anioEgreso,
+        institucionProcedencia: alumnoData.institucionProcedencia ?? null
       }
     });
   }

@@ -17,14 +17,6 @@ class MateriaService {
       throw new Error('Ya existe una materia con ese nombre');
     }
 
-    // Verificar código único
-    if (data.codigo) {
-      const existingCodigo = await materiaRepository.findByCodigo(data.codigo);
-      if (existingCodigo) {
-        throw new Error('Ya existe una materia con ese código');
-      }
-    }
-
     return await materiaRepository.create(data);
   }
 
@@ -51,14 +43,6 @@ class MateriaService {
       const existing = await materiaRepository.findByNombre(data.nombre);
       if (existing) {
         throw new Error('Ya existe una materia con ese nombre');
-      }
-    }
-
-    // Verificar código único
-    if (data.codigo && data.codigo !== materia.codigo) {
-      const existingCodigo = await materiaRepository.findByCodigo(data.codigo);
-      if (existingCodigo) {
-        throw new Error('Ya existe una materia con ese código');
       }
     }
 
@@ -129,13 +113,16 @@ class MateriaService {
   // ============================================
 
   async getMateriasDisponibles(alumnoId: number, cicloLectivo: number) {
-    // Obtener el alumno
+    // `alumnoId` es el id de cuenta (Usuario.idUsuario). La tabla
+    // InscripcionCarrera guarda usuarioId; las tablas de materias guardan idAlumno.
     const { prisma } = await import('../config/prisma.js');
-    
+    const { getAlumnoIdByUsuarioId } = await import('../utils/alumnoHelper.js');
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
+
     // Obtener carreras del alumno
     const inscripcionesCarreras = await prisma.inscripcionCarrera.findMany({
       where: {
-        alumnoId,
+        usuarioId: alumnoId,
         activo: true
       },
       include: {
@@ -153,7 +140,7 @@ class MateriaService {
     let todasLasMaterias: any[] = [];
     for (const carreraId of carrerasIds) {
       const materias = await materiaRepository.getMateriasDisponibles(
-        alumnoId,
+        idAlumno,
         carreraId,
         cicloLectivo
       );
@@ -178,6 +165,12 @@ class MateriaService {
   }
 
   async verificarInscripcion(alumnoId: number, materiaId: number, cicloLectivo: number) {
+    // `alumnoId` es el id de cuenta (Usuario.idUsuario). InscripcionCarrera
+    // guarda usuarioId; InscripcionMateria y Calificacion guardan idAlumno.
+    const { prisma } = await import('../config/prisma.js');
+    const { getAlumnoIdByUsuarioId } = await import('../utils/alumnoHelper.js');
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
+
     // Verificar que la materia existe
     const materia = await materiaRepository.findById(materiaId);
     if (!materia) {
@@ -192,10 +185,9 @@ class MateriaService {
     }
 
     // Verificar que el alumno esté en la carrera de la materia
-    const { prisma } = await import('../config/prisma.js');
     const inscripcionCarrera = await prisma.inscripcionCarrera.findFirst({
       where: {
-        alumnoId,
+        usuarioId: alumnoId,
         carreraId: materia.carreraId,
         activo: true
       }
@@ -207,7 +199,7 @@ class MateriaService {
     // Verificar que no esté ya inscripto
     const inscripcion = await prisma.inscripcionMateria.findFirst({
       where: {
-        alumnoId,
+        alumnoId: idAlumno,
         materiaId,
         cicloLectivo,
         estado: { in: ['ACTIVA', 'RECURSANDO'] }
@@ -220,7 +212,7 @@ class MateriaService {
     // Verificar que no esté aprobada
     const aprobada = await prisma.calificacion.findFirst({
       where: {
-        alumnoId,
+        alumnoId: idAlumno,
         cursada: {
           materiaId
         },

@@ -144,9 +144,9 @@ class AdministrativoController extends UserController {
       const { prisma } = await import('../config/prisma.js');
       
       const [total, activos, inactivos] = await Promise.all([
-        prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ADMINISTRATIVO } } } }),
-                prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ADMINISTRATIVO, activo: true } } } }),
-                prisma.usuario.count({ where: { roles: { some: { rol: ROLES.ADMINISTRATIVO, activo: false } } } })
+        prisma.usuario.count({ where: { rol: { contains: ROLES.ADMINISTRATIVO } } }),
+        prisma.usuario.count({ where: { rol: { contains: ROLES.ADMINISTRATIVO }, activo: true } }),
+        prisma.usuario.count({ where: { rol: { contains: ROLES.ADMINISTRATIVO }, activo: false } })
       ]);
       
       res.json({

@@ -11,70 +11,71 @@ export interface MateriaFilters {
 
 export interface MateriaCreateData {
   nombre: string;
-  descripcion?: string;
-  codigo?: string;
+  descripcion?: string | null;
   cargaHoraria: number;
-  horasCatedra?: string;
+  horasCatedra?: string | null;
   tipoEspacio: string;
-  modalidad?: string;
-  periodo?: string;
-  regimen?: string;
-  notaMinima?: number;
-  asistenciaRequerida?: number;
-  tpRequeridos?: number;
+  modalidad?: string | null;
+  periodo?: string | null;
+  regimen?: string | null;
+  notaMinima?: number | null;
+  asistenciaRequerida?: number | null;
+  tpRequeridos?: number | null;
   esPromocionable?: boolean;
-  notaPromocion?: number;
-  aniosRegularidad?: number;
+  notaPromocion?: number | null;
+  aniosRegularidad?: number | null;
   carreraId: number;
-  cursoId?: number;
-  espacioCurricularId?: number;
+  cursoId?: number | null;
+  espacioCurricularId?: number | null;
 }
 
 export interface MateriaUpdateData {
   nombre?: string;
-  descripcion?: string;
-  codigo?: string;
+  descripcion?: string | null;
   cargaHoraria?: number;
-  horasCatedra?: string;
+  horasCatedra?: string | null;
   tipoEspacio?: string;
-  modalidad?: string;
-  periodo?: string;
-  regimen?: string;
-  notaMinima?: number;
-  asistenciaRequerida?: number;
-  tpRequeridos?: number;
+  modalidad?: string | null;
+  periodo?: string | null;
+  regimen?: string | null;
+  notaMinima?: number | null;
+  asistenciaRequerida?: number | null;
+  tpRequeridos?: number | null;
   esPromocionable?: boolean;
-  notaPromocion?: number;
-  aniosRegularidad?: number;
+  notaPromocion?: number | null;
+  aniosRegularidad?: number | null;
   carreraId?: number;
-  cursoId?: number;
-  espacioCurricularId?: number;
+  cursoId?: number | null;
+  espacioCurricularId?: number | null;
   activo?: boolean;
 }
 
 class MateriaRepository {
   async create(data: MateriaCreateData): Promise<any> {
+    const cleanData: any = {
+      nombre: data.nombre,
+      cargaHoraria: data.cargaHoraria,
+      tipoEspacio: data.tipoEspacio as any,
+      carreraId: data.carreraId,
+      activo: true
+    };
+
+    if (data.descripcion !== undefined) cleanData.descripcion = data.descripcion ?? null;
+    if (data.horasCatedra !== undefined) cleanData.horasCatedra = data.horasCatedra ?? null;
+    if (data.modalidad !== undefined) cleanData.modalidad = data.modalidad as any ?? null;
+    if (data.periodo !== undefined) cleanData.periodo = data.periodo as any ?? null;
+    if (data.regimen !== undefined) cleanData.regimen = data.regimen as any ?? null;
+    if (data.notaMinima !== undefined) cleanData.notaMinima = data.notaMinima ?? null;
+    if (data.asistenciaRequerida !== undefined) cleanData.asistenciaRequerida = data.asistenciaRequerida ?? null;
+    if (data.tpRequeridos !== undefined) cleanData.tpRequeridos = data.tpRequeridos ?? null;
+    if (data.esPromocionable !== undefined) cleanData.esPromocionable = data.esPromocionable;
+    if (data.notaPromocion !== undefined) cleanData.notaPromocion = data.notaPromocion ?? null;
+    if (data.aniosRegularidad !== undefined) cleanData.aniosRegularidad = data.aniosRegularidad ?? null;
+    if (data.cursoId !== undefined) cleanData.cursoId = data.cursoId ?? null;
+    if (data.espacioCurricularId !== undefined) cleanData.espacioCurricularId = data.espacioCurricularId ?? null;
+
     return await prisma.materia.create({
-      data: {
-        nombre: data.nombre,
-        descripcion: data.descripcion,
-        codigo: data.codigo,
-        cargaHoraria: data.cargaHoraria,
-        horasCatedra: data.horasCatedra,
-        tipoEspacio: data.tipoEspacio as any,
-        modalidad: data.modalidad as any,
-        periodo: data.periodo as any,
-        regimen: data.regimen as any,
-        notaMinima: data.notaMinima,
-        asistenciaRequerida: data.asistenciaRequerida,
-        tpRequeridos: data.tpRequeridos,
-        esPromocionable: data.esPromocionable,
-        notaPromocion: data.notaPromocion,
-        aniosRegularidad: data.aniosRegularidad,
-        carreraId: data.carreraId,
-        cursoId: data.cursoId,
-        espacioCurricularId: data.espacioCurricularId
-      },
+      data: cleanData,
       include: {
         carrera: true,
         curso: true
@@ -104,7 +105,7 @@ class MateriaRepository {
           include: {
             profesor: {
               select: {
-                id: true,
+                idUsuario: true,
                 apellidoNombre: true,
                 email: true
               }
@@ -122,8 +123,7 @@ class MateriaRepository {
     const where: any = {};
     if (search) {
       where.OR = [
-        { nombre: { contains: search } },
-        { codigo: { contains: search } }
+        { nombre: { contains: search } }
       ];
     }
     if (carreraId) where.carreraId = carreraId;
@@ -161,7 +161,7 @@ class MateriaRepository {
             include: {
               profesor: {
                 select: {
-                  id: true,
+                  idUsuario: true,
                   apellidoNombre: true
                 }
               }
@@ -170,7 +170,7 @@ class MateriaRepository {
           _count: {
             select: {
               inscripciones: true,
-              examenes: true
+              mesas: true
             }
           }
         }
@@ -219,14 +219,8 @@ class MateriaRepository {
   }
 
   async findByNombre(nombre: string): Promise<any> {
-    return await prisma.materia.findUnique({
+    return await prisma.materia.findFirst({
       where: { nombre }
-    });
-  }
-
-  async findByCodigo(codigo: string): Promise<any> {
-    return await prisma.materia.findUnique({
-      where: { codigo }
     });
   }
 
@@ -244,7 +238,7 @@ class MateriaRepository {
           include: {
             profesor: {
               select: {
-                id: true,
+                idUsuario: true,
                 apellidoNombre: true
               }
             }
@@ -273,21 +267,23 @@ class MateriaRepository {
     materiaOrigenId: number;
     materiaRequeridaId: number;
     tipoRequisito: string;
-    grupo?: string;
-    cantidadMinimaAprobadas?: number;
+    grupo?: string | null;
+    cantidadMinimaAprobadas?: number | null;
     aplicaCursado?: boolean;
     aplicaRendir?: boolean;
   }): Promise<any> {
+    const cleanData: any = {
+      materiaOrigenId: data.materiaOrigenId,
+      materiaRequeridaId: data.materiaRequeridaId,
+      tipoRequisito: data.tipoRequisito as any,
+      aplicaCursado: data.aplicaCursado ?? true,
+      aplicaRendir: data.aplicaRendir ?? true
+    };
+    if (data.grupo !== undefined) cleanData.grupo = data.grupo ?? null;
+    if (data.cantidadMinimaAprobadas !== undefined) cleanData.cantidadMinimaAprobadas = data.cantidadMinimaAprobadas ?? null;
+
     return await prisma.correlatividad.create({
-      data: {
-        materiaOrigenId: data.materiaOrigenId,
-        materiaRequeridaId: data.materiaRequeridaId,
-        tipoRequisito: data.tipoRequisito as any,
-        grupo: data.grupo,
-        cantidadMinimaAprobadas: data.cantidadMinimaAprobadas,
-        aplicaCursado: data.aplicaCursado ?? true,
-        aplicaRendir: data.aplicaRendir ?? true
-      }
+      data: cleanData
     });
   }
 
@@ -302,7 +298,6 @@ class MateriaRepository {
   // ============================================
 
   async getMateriasDisponibles(alumnoId: number, carreraId: number, cicloLectivo: number): Promise<any> {
-    // Obtener materias de la carrera del alumno
     const materias = await prisma.materia.findMany({
       where: {
         carreraId,
@@ -310,10 +305,15 @@ class MateriaRepository {
       },
       include: {
         curso: true,
-        horarios: {
+        cursadas: {
           where: { activo: true },
           include: {
-            cursada: true
+            horarios: {
+              where: { activo: true },
+              include: {
+                cursada: true
+              }
+            }
           }
         },
         correlatividadesOrigen: {
@@ -325,7 +325,6 @@ class MateriaRepository {
       orderBy: { nombre: 'asc' }
     });
 
-    // Obtener materias en las que el alumno ya está inscripto
     const inscripciones = await prisma.inscripcionMateria.findMany({
       where: {
         alumnoId,
@@ -336,7 +335,6 @@ class MateriaRepository {
     });
     const materiasInscriptasIds = inscripciones.map((i: any) => i.materiaId);
 
-    // Obtener materias aprobadas del alumno (nota >= 6)
     const aprobadas = await prisma.calificacion.findMany({
       where: {
         alumnoId,
@@ -352,12 +350,10 @@ class MateriaRepository {
     });
     const materiasAprobadasIds = aprobadas.map((c: any) => c.cursada.materiaId);
 
-    // Marcar cada materia con su estado
     return materias.map((materia: any) => {
       const yaInscripto = materiasInscriptasIds.includes(materia.id);
       const yaAprobada = materiasAprobadasIds.includes(materia.id);
       
-      // Verificar correlatividades
       const correlativas = materia.correlatividadesOrigen || [];
       let cumpleCorrelativas = true;
       let correlativasPendientes: any[] = [];
@@ -369,7 +365,6 @@ class MateriaRepository {
             correlativasPendientes.push(corr.materiaRequerida);
           }
         } else if (corr.tipoRequisito === 'ALTERNATIVA') {
-          // Buscar alternativas del mismo grupo
           const alternativas = correlativas.filter((c: any) => 
             c.tipoRequisito === 'ALTERNATIVA' && c.grupo === corr.grupo
           );
@@ -392,7 +387,7 @@ class MateriaRepository {
         yaAprobada,
         cumpleCorrelativas,
         correlativasPendientes,
-        horarios: materia.horarios || []
+        horarios: (materia.cursadas ?? []).flatMap((c: any) => c.horarios ?? [])
       };
     });
   }
@@ -413,7 +408,7 @@ class MateriaRepository {
             materia: true,
             docente: {
               select: {
-                id: true,
+                idUsuario: true,
                 apellidoNombre: true,
                 email: true
               }

@@ -19,7 +19,6 @@ export const createMateriaSchema = Joi.object({
       'string.max': 'El nombre no puede exceder 255 caracteres'
     }),
   descripcion: Joi.string().allow('', null),
-  codigo: Joi.string().max(50).allow('', null),
   cargaHoraria: Joi.number()
     .required()
     .integer()
@@ -69,7 +68,6 @@ export const createMateriaSchema = Joi.object({
 export const updateMateriaSchema = Joi.object({
   nombre: Joi.string().max(255),
   descripcion: Joi.string().allow('', null),
-  codigo: Joi.string().max(50).allow('', null),
   cargaHoraria: Joi.number().integer().min(1).max(9999),
   horasCatedra: Joi.string().max(50).allow('', null),
   tipoEspacio: Joi.string().valid(...TIPOS_ESPACIO),

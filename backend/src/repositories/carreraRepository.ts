@@ -48,7 +48,6 @@ class CarreraRepository {
           select: {
             id: true,
             nombre: true,
-            codigo: true,
             tipoEspacio: true,
             cargaHoraria: true
           }
@@ -76,6 +75,15 @@ class CarreraRepository {
         take: limit,
         orderBy: { nombre: 'asc' },
         include: {
+          materias: {
+            select: {
+              id: true,
+              nombre: true,
+              tipoEspacio: true,
+              activo: true
+            },
+            orderBy: { nombre: 'asc' }
+          },
           _count: {
             select: { materias: true }
           }

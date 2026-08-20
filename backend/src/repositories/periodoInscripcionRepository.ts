@@ -4,14 +4,14 @@ export interface PeriodoInscripcionCreateData {
   tipo: string;
   fechaInicio: Date | string;
   fechaFin: Date | string;
-  descripcion?: string;
+  descripcion?: string | null;
 }
 
 export interface PeriodoInscripcionUpdateData {
   tipo?: string;
   fechaInicio?: Date | string;
   fechaFin?: Date | string;
-  descripcion?: string;
+  descripcion?: string | null;
   activo?: boolean;
 }
 
@@ -22,7 +22,7 @@ class PeriodoInscripcionRepository {
         tipo: data.tipo as any,
         fechaInicio: new Date(data.fechaInicio),
         fechaFin: new Date(data.fechaFin),
-        descripcion: data.descripcion,
+        descripcion: data.descripcion ?? null,
         activo: true
       }
     });

@@ -1,4 +1,5 @@
 import userRepository from '../repositories/userRepository.js';
+import alumnoRepository from '../repositories/alumnoRepository.js';
 import usuarioRolRepository from '../repositories/usuarioRolRepository.js';
 import { hashPassword, comparePassword } from '../utils/bcrypt.js';
 import { generateToken, generateRefreshToken, verifyToken, type TokenPayload } from '../utils/jwt.js';
@@ -20,22 +21,25 @@ interface RegisterData {
   rol?: string;
   contactoEmergencia?: string | null;
   foto?: string | null;
+  domicilio?: string | null;
+  anioEgreso?: number | null;
+  institucionProcedencia?: string | null;
 }
 
 class AuthService {
   // Registrar usuario (SOLO ADMIN)
   async register(userData: RegisterData) {
-    const { email, dni, password, roles, rol, ...rest } = userData;
-
+    const { email, dni, password, roles, rol, domicilio, anioEgreso, institucionProcedencia, ...rest } = userData;
+  
     // Verificar si ya existe
     const existingUser = await userRepository.findByEmailOrDni(email) || 
                          await userRepository.findByEmailOrDni(dni);
-    
+  
     if (existingUser) {
       if (existingUser.email === email) {
         throw new Error('El email ya está registrado');
       }
-      if (existingUser.dni === dni) {
+      if (existingUser.dni === parseInt(dni)) {
         throw new Error('El DNI ya está registrado');
       }
     }
@@ -43,74 +47,89 @@ class AuthService {
     // Hashear contraseña
     const passwordHash = await hashPassword(password);
 
-    // Crear usuario (sin rol, ahora es multi-rol)
+    // Determinar rol: si roles[] se pasa, unir con coma. Si rol se pasa, usarlo. Default ALUMNO.
+    let rolString: string;
+    if (roles && roles.length > 0) {
+      rolString = roles.join(',');
+    } else if (rol) {
+      rolString = rol;
+    } else {
+      rolString = ROLES.ALUMNO;
+    }
+
+    // Crear usuario
     const user = await userRepository.create({
       ...rest,
       email,
       dni,
-      passwordHash
+      passwordHash,
+      rol: rolString
     });
 
-    // Asignar roles
-    const rolesToAssign = roles && roles.length > 0 ? roles : (rol ? [rol] : [ROLES.ALUMNO]);
-    
-    for (const rolNombre of rolesToAssign) {
-      await usuarioRolRepository.asignarRol(user.id, rolNombre);
+    const { passwordHash: _, ...userWithoutPassword } = user;
+
+    // Devolver roles como array para compatibilidad
+    const userRoles = rolString.split(',').map((r: string) => r.trim());
+
+    const result: any = {
+      ...userWithoutPassword,
+      roles: userRoles
+    };
+
+    // Si el rol incluye ALUMNO, crear (o actualizar) la ficha del alumno
+    if (userRoles.includes(ROLES.ALUMNO)) {
+      result.alumno = await alumnoRepository.upsertByUsuarioId(user.idUsuario, {
+        domicilio: domicilio ?? null,
+        anioEgreso: anioEgreso ?? new Date().getFullYear(),
+        institucionProcedencia: institucionProcedencia ?? null
+      });
     }
 
-    const { passwordHash: _, ...userWithoutPassword } = user;
-    const userRoles = await usuarioRolRepository.getRolesByUsuario(user.id);
-    
-    return {
-      ...userWithoutPassword,
-      roles: userRoles.map((ur: any) => ur.rol)
-    };
+    return result;
   }
 
   // Login - retorna roles disponibles
   async login(identifier: string, password: string, ipAddress: string | undefined, userAgent: string | undefined) {
     const user = await userRepository.findByEmailOrDni(identifier);
-    
+  
     if (!user) {
       throw new Error('Credenciales inválidas');
     }
-
+  
     if (!user.activo) {
       throw new Error('Usuario desactivado. Contacte al administrador');
     }
-
+  
     const isValidPassword = await comparePassword(password, user.passwordHash);
     if (!isValidPassword) {
       throw new Error('Credenciales inválidas');
     }
 
-    // Obtener roles del usuario
-    const userRoles = await usuarioRolRepository.getRolesByUsuario(user.id);
-    const roles = userRoles.map((ur: any) => ur.rol);
+    // Obtener roles del usuario (string separado por coma)
+    const roles = user.rol ? user.rol.split(',').map((r: string) => r.trim()) : [];
 
     if (roles.length === 0) {
       throw new Error('Usuario sin roles asignados');
     }
 
-    await userRepository.updateLastAccess(user.id);
+    await userRepository.updateLastAccess(user.idUsuario);
 
     // ✅ Generar token SIN rol (se seleccionará después)
-    // Usamos 'as any' para evitar el error de TypeScript
     const payload = {
-      id: user.id,
+      id: user.idUsuario,
       email: user.email,
-      dni: user.dni,
+      dni: user.dni.toString(),
       nombre: user.apellidoNombre
     };
 
-    const token = generateToken(payload as any);
-    const refreshToken = generateRefreshToken(payload as any);
+    const token = generateToken(payload);
+    const refreshToken = generateRefreshToken(payload);
 
     const decodedToken = verifyToken(token);
     const session = await prisma.sesion.create({
       data: {
         token,
-        usuarioId: user.id,
+        usuarioId: user.idUsuario,
         expiraEn: new Date((decodedToken.exp || Date.now() / 1000 + 86400) * 1000),
         ipAddress: ipAddress ?? null,
         userAgent: userAgent ?? null,
@@ -144,9 +163,9 @@ class AuthService {
 
     // ✅ Generar nuevo token CON el rol seleccionado
     const payload = {
-      id: user.id,
+      id: user.idUsuario,
       email: user.email,
-      dni: user.dni,
+      dni: user.dni.toString(),
       nombre: user.apellidoNombre,
       rol: roleName
     };
@@ -188,7 +207,7 @@ class AuthService {
     try {
       const decoded = verifyToken(refreshToken);
       const user = await userRepository.findById(decoded.id);
-      
+  
       if (!user) {
         throw new Error('Usuario no encontrado');
       }
@@ -199,9 +218,9 @@ class AuthService {
 
       // ✅ Crear payload manteniendo el rol si existe
       const payload: any = {
-        id: user.id,
+        id: user.idUsuario,
         email: user.email,
-        dni: user.dni,
+        dni: user.dni.toString(),
         nombre: user.apellidoNombre
       };
 
@@ -275,7 +294,7 @@ class AuthService {
     }
 
     const resetPayload = {
-      id: user.id,
+      id: user.idUsuario,
       email: user.email,
       type: 'password_reset'
     };
@@ -292,7 +311,7 @@ class AuthService {
   async resetPassword(token: string, newPassword: string) {
     try {
       const decoded = verifyToken(token);
-      
+  
       if (decoded.type !== 'password_reset') {
         throw new Error('Token inválido');
       }
@@ -303,11 +322,11 @@ class AuthService {
       }
 
       const newPasswordHash = await hashPassword(newPassword);
-      await userRepository.updatePassword(user.id, newPasswordHash);
+      await userRepository.updatePassword(user.idUsuario, newPasswordHash);
 
       await prisma.sesion.updateMany({
         where: {
-          usuarioId: user.id,
+          usuarioId: user.idUsuario,
           cerradaEn: null
         },
         data: { cerradaEn: new Date() }

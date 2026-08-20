@@ -3,6 +3,7 @@ import materiaRepository from '../repositories/materiaRepository.js';
 import userRepository from '../repositories/userRepository.js';
 import inscripcionMateriaRepository from '../repositories/inscripcionMateriaRepository.js';
 import type { ExamenCreateData, ExamenUpdateData, TribunalCreateData } from '../repositories/examenRepository.js';
+import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { ROLES } from '../constants/roles.js';
 
 class ExamenService {
@@ -91,7 +92,7 @@ class ExamenService {
 
   // ===== INSCRIPCIÓN A EXÁMENES =====
   async inscribirAlumno(examenId: number, alumnoId: number, condicion: string, currentUser: any) {
-    // Verificar que el alumno existe
+    // `alumnoId` es el id de cuenta (Usuario.idUsuario). InscripcionExamen guarda idAlumno.
     const alumno = await userRepository.findById(alumnoId);
     if (!alumno || alumno.rol !== ROLES.ALUMNO) {
       throw new Error('Alumno no encontrado');
@@ -101,6 +102,8 @@ class ExamenService {
     if (currentUser.rol === ROLES.ALUMNO && currentUser.id !== alumnoId) {
       throw new Error('No puedes inscribir a otro alumno');
     }
+
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
 
     // Si es admin, puede inscribir a cualquier alumno
 
@@ -112,7 +115,7 @@ class ExamenService {
 
     // Verificar que el alumno está inscripto en la materia (RFGE9)
     const inscripcionMateria = await inscripcionMateriaRepository.findByAlumnoAndMateria(
-      alumnoId,
+      idAlumno,
       examen.materiaId,
       new Date().getFullYear()
     );
@@ -121,12 +124,12 @@ class ExamenService {
     }
 
     // Verificar correlatividades (RFGE9)
-    await this.verificarCorrelatividadesParaExamen(alumnoId, examen.materiaId);
+    await this.verificarCorrelatividadesParaExamen(idAlumno, examen.materiaId);
 
-    return await examenRepository.inscribirAlumno(examenId, alumnoId, condicion);
+    return await examenRepository.inscribirAlumno(examenId, idAlumno, condicion);
   }
 
-  async verificarCorrelatividadesParaExamen(alumnoId: number, materiaId: number) {
+  async verificarCorrelatividadesParaExamen(idAlumno: number, materiaId: number) {
     // Obtener correlatividades que aplican para rendir (aplicaRendir = true)
     const correlatividades = await materiaRepository.getCorrelatividades(materiaId);
     const correlatividadesRendir = correlatividades.filter((c: any) => c.aplicaRendir);
@@ -135,8 +138,8 @@ class ExamenService {
       return;
     }
 
-    // Obtener materias aprobadas del alumno
-    const aprobadas = await inscripcionMateriaRepository.getMateriasAprobadas(alumnoId);
+    // Obtener materias aprobadas del alumno (`idAlumno` es idAlumno)
+    const aprobadas = await inscripcionMateriaRepository.getMateriasAprobadas(idAlumno);
     const materiasAprobadasIds = aprobadas.map((a: any) => a.cursada.materiaId);
 
     // Verificar cada correlatividad
@@ -156,6 +159,8 @@ class ExamenService {
       throw new Error('No puedes desinscribir a otro alumno');
     }
 
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
+
     // Verificar que el examen existe
     const examen = await examenRepository.findExamenById(examenId);
     if (!examen) {
@@ -169,7 +174,7 @@ class ExamenService {
       throw new Error('No puedes darte de baja faltando menos de 24 horas para el examen');
     }
 
-    return await examenRepository.desinscribirAlumno(examenId, alumnoId);
+    return await examenRepository.desinscribirAlumno(examenId, idAlumno);
   }
 
   async getInscriptosByExamen(examenId: number) {
@@ -181,7 +186,9 @@ class ExamenService {
       throw new Error('No tienes permisos para ver estas inscripciones');
     }
 
-    return await examenRepository.getInscripcionesByAlumno(alumnoId);
+    // `alumnoId` es el id de cuenta (Usuario.idUsuario)
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
+    return await examenRepository.getInscripcionesByAlumno(idAlumno);
   }
 
   // ===== CALIFICACIONES =====
@@ -204,7 +211,9 @@ class ExamenService {
       throw new Error(`La nota mínima para este examen es ${notaMinima}`);
     }
 
-    return await examenRepository.registrarNota(examenId, alumnoId, nota);
+    // `alumnoId` es el id de cuenta (Usuario.idUsuario)
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
+    return await examenRepository.registrarNota(examenId, idAlumno, nota);
   }
 }
 

@@ -5,14 +5,14 @@ export interface HorarioCreateData {
   dia: string;
   horaInicio: string;
   horaFin: string;
-  aula?: string;
+  aula?: string | null;
 }
 
 export interface HorarioUpdateData {
   dia?: string;
   horaInicio?: string;
   horaFin?: string;
-  aula?: string;
+  aula?: string | null;
   activo?: boolean;
 }
 
@@ -24,7 +24,7 @@ class HorarioRepository {
         dia: data.dia as any,
         horaInicio: new Date(data.horaInicio),
         horaFin: new Date(data.horaFin),
-        aula: data.aula,
+        aula: data.aula ?? null,
         activo: true
       },
       include: {
