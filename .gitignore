@@ -1,2 +1,8 @@
 node_modules/
 .env
+
+# Documentación y artefactos locales de pruebas
+/docs/
+/backend/test-results/
+/backend/SECURITY.md
+/context.md

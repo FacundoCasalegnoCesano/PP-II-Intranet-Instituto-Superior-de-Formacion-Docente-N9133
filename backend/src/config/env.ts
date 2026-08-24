@@ -25,11 +25,12 @@ export interface Config {
   jwtExpire: string;
   jwtRefreshExpire: string;
   
-  // Email
-  emailHost: string;
-  emailPort: number;
-  emailUser: string;
-  emailPass: string;
+  // Email (SMTP)
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  emailFrom: string;
   
   // URLs
   frontendUrl: string;
@@ -53,11 +54,12 @@ const config: Config = {
   jwtExpire: process.env.JWT_EXPIRE || '7d',
   jwtRefreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
   
-  // Email
-  emailHost: process.env.EMAIL_HOST || '',
-  emailPort: parseInt(process.env.EMAIL_PORT || '587'),
-  emailUser: process.env.EMAIL_USER || '',
-  emailPass: process.env.EMAIL_PASS || '',
+  // Email (SMTP)
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: parseInt(process.env.SMTP_PORT || '587'),
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  emailFrom: process.env.EMAIL_FROM || 'Instituto <noreply@instituto.edu.ar>',
   
   // URLs
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',

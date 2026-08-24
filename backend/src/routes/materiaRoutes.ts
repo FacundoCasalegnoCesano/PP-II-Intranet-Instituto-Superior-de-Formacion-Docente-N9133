@@ -6,7 +6,8 @@ import {
   createMateriaSchema, 
   updateMateriaSchema, 
   listMateriasSchema,
-  correlatividadSchema 
+  correlatividadSchema,
+  asignarProfesorSchema
 } from '../validations/materiaValidation.js';
 import { ROLES } from '../constants/roles.js';
 
@@ -25,6 +26,12 @@ router.get('/',
 router.get('/carrera/:carreraId',
   roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
   materiaController.getMateriasByCarrera
+);
+
+// Materias agrupadas por año de cursada (selección para períodos de inscripción)
+router.get('/carrera/:carreraId/por-anio',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  materiaController.getMateriasPorAnio
 );
 
 router.get('/:id',
@@ -64,6 +71,25 @@ router.post('/:id/correlatividades',
 router.delete('/correlatividades/:id',
   roleCheck(ROLES.ADMINISTRATIVO),
   materiaController.removeCorrelatividad
+);
+
+// Asignación profesor ↔ materia
+// Ver profesores asignados (admin y profesor)
+router.get('/:id/profesores',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  materiaController.getProfesoresByMateria
+);
+
+// Asignar / desasignar (solo admin)
+router.post('/:id/profesores',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(asignarProfesorSchema),
+  materiaController.asignarProfesor
+);
+
+router.delete('/:id/profesores/:profesorId',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  materiaController.desasignarProfesor
 );
 
 export default router;

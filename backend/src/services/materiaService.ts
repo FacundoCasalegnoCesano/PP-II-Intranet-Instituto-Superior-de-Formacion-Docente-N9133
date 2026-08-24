@@ -1,9 +1,26 @@
 import materiaRepository from '../repositories/materiaRepository.js';
 import carreraRepository from '../repositories/carreraRepository.js';
 import cursadaRepository from '../repositories/cursadaRepository.js';
+import profesorMateriaRepository from '../repositories/profesorMateriaRepository.js';
+import userRepository from '../repositories/userRepository.js';
+import { AppError } from '../utils/AppError.js';
 import type { MateriaFilters, MateriaCreateData, MateriaUpdateData } from '../repositories/materiaRepository.js';
 
 class MateriaService {
+  /**
+   * Años de regularidad según tipo de espacio cuando el administrativo
+   * no carga un valor explícito: seminarios y talleres 1 año, resto 3.
+   */
+  private resolverAniosRegularidad(
+    tipoEspacio: string | null | undefined,
+    aniosRegularidad?: number | null
+  ): number {
+    if (aniosRegularidad) return aniosRegularidad;
+    return tipoEspacio === 'SEMINARIO' || tipoEspacio === 'TALLER' || tipoEspacio === 'TALLER_PRACTICA'
+      ? 1
+      : 3;
+  }
+
   async createMateria(data: MateriaCreateData) {
     // Verificar que la carrera existe
     const carrera = await carreraRepository.findById(data.carreraId);
@@ -17,7 +34,9 @@ class MateriaService {
       throw new Error('Ya existe una materia con ese nombre');
     }
 
-    return await materiaRepository.create(data);
+    const aniosRegularidad = this.resolverAniosRegularidad(data.tipoEspacio, data.aniosRegularidad);
+
+    return await materiaRepository.create({ ...data, aniosRegularidad });
   }
 
   async getMateriaById(id: number) {
@@ -46,6 +65,12 @@ class MateriaService {
       }
     }
 
+    // Si cambia el tipo de espacio sin cargar años de regularidad,
+    // se recalculan automáticamente (valor explícito = prioridad).
+    if (data.tipoEspacio && data.aniosRegularidad === undefined) {
+      data.aniosRegularidad = this.resolverAniosRegularidad(data.tipoEspacio, null);
+    }
+
     return await materiaRepository.update(id, data);
   }
 
@@ -65,6 +90,32 @@ class MateriaService {
     }
 
     return await materiaRepository.getMateriasByCarrera(carreraId);
+  }
+
+  /**
+   * Materias de una carrera agrupadas por año de cursada (curso.anio),
+   * para la pantalla de selección del período de inscripción
+   * (carrera → año → materias).
+   */
+  async getMateriasPorAnio(carreraId: number) {
+    const materias = await this.getMateriasByCarrera(carreraId);
+
+    const grupos = new Map<number, any[]>();
+    for (const m of materias) {
+      // Sin curso asignado se agrupan bajo anio=0 ("sin año") para que el
+      // admin igualmente pueda verlas y seleccionarlas
+      const anio = m.curso?.anio ?? 0;
+      if (!grupos.has(anio)) grupos.set(anio, []);
+      grupos.get(anio)!.push(m);
+    }
+
+    return Array.from(grupos.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([anio, materias]) => ({
+        anio: anio === 0 ? null : anio,
+        cantidad: materias.length,
+        materias: materias.map(({ curso, profesorMaterias, ...rest }: any) => rest)
+      }));
   }
 
   async getCorrelatividades(materiaId: number) {
@@ -109,6 +160,63 @@ class MateriaService {
   }
 
   // ============================================
+  // ASIGNACIÓN PROFESOR ↔ MATERIA
+  // ============================================
+
+  private async verificarUsuarioProfesor(profesorId: number): Promise<void> {
+    const usuario = await userRepository.findById(profesorId);
+    if (!usuario) {
+      throw new AppError(404, 'Usuario no encontrado');
+    }
+
+    const roles = (usuario.rol || '').split(',').map((r: string) => r.trim());
+    if (!roles.includes('PROFESOR')) {
+      throw new AppError(400, 'El usuario no tiene el rol PROFESOR');
+    }
+  }
+
+  async asignarProfesor(materiaId: number, profesorId: number) {
+    const materia = await materiaRepository.findById(materiaId);
+    if (!materia) {
+      throw new AppError(404, 'Materia no encontrada');
+    }
+
+    await this.verificarUsuarioProfesor(profesorId);
+
+    const existing = await profesorMateriaRepository.findByProfesorAndMateria(profesorId, materiaId);
+    if (existing && existing.activo && !existing.fechaBaja) {
+      throw new AppError(400, 'El profesor ya está asignado a esta materia');
+    }
+
+    return await profesorMateriaRepository.asignar(profesorId, materiaId);
+  }
+
+  async desasignarProfesor(materiaId: number, profesorId: number) {
+    const materia = await materiaRepository.findById(materiaId);
+    if (!materia) {
+      throw new AppError(404, 'Materia no encontrada');
+    }
+
+    await this.verificarUsuarioProfesor(profesorId);
+
+    const existing = await profesorMateriaRepository.findByProfesorAndMateria(profesorId, materiaId);
+    if (!existing || !existing.activo || existing.fechaBaja) {
+      throw new AppError(404, 'El profesor no está asignado a esta materia');
+    }
+
+    return await profesorMateriaRepository.desasignar(profesorId, materiaId);
+  }
+
+  async getProfesoresByMateria(materiaId: number) {
+    const materia = await materiaRepository.findById(materiaId);
+    if (!materia) {
+      throw new AppError(404, 'Materia no encontrada');
+    }
+
+    return await profesorMateriaRepository.findByMateria(materiaId);
+  }
+
+  // ============================================
   // MÉTODOS PARA MATERIAS DISPONIBLES (ALUMNOS)
   // ============================================
 
@@ -137,15 +245,11 @@ class MateriaService {
     // Obtener materias de todas las carreras del alumno
     const carrerasIds = inscripcionesCarreras.map((ic: any) => ic.carreraId);
     
-    let todasLasMaterias: any[] = [];
-    for (const carreraId of carrerasIds) {
-      const materias = await materiaRepository.getMateriasDisponibles(
-        idAlumno,
-        carreraId,
-        cicloLectivo
-      );
-      todasLasMaterias = [...todasLasMaterias, ...materias];
-    }
+    const todasLasMaterias = await materiaRepository.getMateriasDisponibles(
+      idAlumno,
+      carrerasIds,
+      cicloLectivo
+    );
 
     // Agrupar por materia (si está en múltiples carreras)
     const materiasMap = new Map();
@@ -161,7 +265,17 @@ class MateriaService {
       }
     }
 
-    return Array.from(materiasMap.values());
+    // Flag habilitada: ¿hay período MATERIA vigente que incluya explícitamente
+    // esta materia? La materia aparece igual, pero el frontend debe bloquear
+    // la inscripción si habilitada=false.
+    const materiasFinales = Array.from(materiasMap.values());
+    const { default: periodoInscripcionRepository } = await import('../repositories/periodoInscripcionRepository.js');
+    const habilitadas = await periodoInscripcionRepository.materiasHabilitadasEnPeriodoVigente(
+      materiasFinales.map(materia => materia.id)
+    );
+    for (const materia of materiasFinales) materia.habilitada = habilitadas.has(materia.id);
+
+    return materiasFinales;
   }
 
   async verificarInscripcion(alumnoId: number, materiaId: number, cicloLectivo: number) {

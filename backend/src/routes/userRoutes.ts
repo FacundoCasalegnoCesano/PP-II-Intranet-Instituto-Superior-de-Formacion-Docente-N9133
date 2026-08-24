@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import UserController from '../controllers/userController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
-import { updateUserSchema, listUsersSchema } from '../validations/userValidation.js';
+import { updateUserSchema, listUsersSchema, changeRoleSchema, toggleActiveSchema } from '../validations/userValidation.js';
 import { ROLES } from '../constants/roles.js';
 
 const router = Router();
@@ -21,11 +21,13 @@ router.get('/',
 
 router.put('/:id/role',
   roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(changeRoleSchema),
   userController.changeUserRole
 );
 
 router.put('/:id/activate',
   roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(toggleActiveSchema),
   userController.toggleUserActive
 );
 

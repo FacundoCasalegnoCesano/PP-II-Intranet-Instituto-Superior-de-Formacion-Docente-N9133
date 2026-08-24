@@ -51,7 +51,9 @@ export const createMateriaSchema = Joi.object({
   tpRequeridos: Joi.number().min(0).max(100).default(75),
   esPromocionable: Joi.boolean().default(false),
   notaPromocion: Joi.number().min(0).max(10).default(8),
-  aniosRegularidad: Joi.number().integer().min(1).max(5).default(3),
+  // Si no se carga, el service lo calcula según tipoEspacio
+  // (seminarios y talleres: 1 año, resto: 3). Valor explícito = prioridad.
+  aniosRegularidad: Joi.number().integer().min(1).max(5),
   carreraId: Joi.number()
     .required()
     .integer()
@@ -61,7 +63,16 @@ export const createMateriaSchema = Joi.object({
       'number.integer': 'El ID de carrera debe ser un número entero',
       'number.min': 'El ID de carrera debe ser mayor a 0'
     }),
-  cursoId: Joi.number().integer().min(1).allow(null),
+  cursoId: Joi.number()
+    .required()
+    .integer()
+    .min(1)
+    .messages({
+      'any.required': 'El curso (año de la carrera) es requerido: 1° Año, 2° Año, etc.',
+      'number.base': 'El ID de curso debe ser un número',
+      'number.integer': 'El ID de curso debe ser un número entero',
+      'number.min': 'El ID de curso debe ser mayor a 0'
+    }),
   espacioCurricularId: Joi.number().integer().min(1).allow(null)
 });
 
@@ -88,11 +99,23 @@ export const updateMateriaSchema = Joi.object({
 
 export const listMateriasSchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(10),
+  limit: Joi.number().integer().min(1).max(100).default(20),
   search: Joi.string().allow('', null),
   carreraId: Joi.number().integer().min(1),
   tipoEspacio: Joi.string().valid(...TIPOS_ESPACIO),
   activo: Joi.boolean()
+});
+
+export const asignarProfesorSchema = Joi.object({
+  profesorId: Joi.number()
+    .required()
+    .integer()
+    .min(1)
+    .messages({
+      'number.base': 'El ID del profesor debe ser un número',
+      'number.integer': 'El ID del profesor debe ser un número entero',
+      'any.required': 'El ID del profesor es requerido'
+    })
 });
 
 export const correlatividadSchema = Joi.object({

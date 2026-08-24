@@ -48,7 +48,7 @@ export const updateCursadaSchema = Joi.object({
 
 export const listCursadasSchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(10),
+  limit: Joi.number().integer().min(1).max(100).default(20),
   anioLectivo: Joi.number().integer().min(2000).max(2100),
   materiaId: Joi.number().integer().min(1),
   docenteId: Joi.number().integer().min(1),

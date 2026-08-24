@@ -117,7 +117,7 @@ class MateriaRepository {
   }
 
   async findAll(filters: MateriaFilters = {}) {
-    const { search, carreraId, tipoEspacio, activo, page = 1, limit = 10 } = filters;
+    const { search, carreraId, tipoEspacio, activo, page = 1, limit = 20 } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -297,13 +297,14 @@ class MateriaRepository {
   // MÉTODOS PARA MATERIAS DISPONIBLES (ALUMNOS)
   // ============================================
 
-  async getMateriasDisponibles(alumnoId: number, carreraId: number, cicloLectivo: number): Promise<any> {
+  async getMateriasDisponibles(alumnoId: number, carreraIds: number[], cicloLectivo: number): Promise<any> {
     const materias = await prisma.materia.findMany({
       where: {
-        carreraId,
+        carreraId: { in: carreraIds },
         activo: true
       },
       include: {
+        carrera: true,
         curso: true,
         cursadas: {
           where: { activo: true },

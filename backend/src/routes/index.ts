@@ -13,6 +13,10 @@ import horarioRoutes from './horarioRoutes.js';
 import periodoInscripcionRoutes from './periodoInscripcionRoutes.js';
 import cursadaRoutes from './cursadaRoutes.js';
 import libroDeTemaRoutes from './libroDeTemaRoutes.js';
+import asistenciaRoutes from './asistenciaRoutes.js';
+import calificacionRoutes from './calificacionRoutes.js';
+import estadoAcademicoRoutes from './estadoAcademicoRoutes.js';
+import homologacionRoutes from './homologacionRoutes.js';
 
 const router = Router();
 
@@ -47,6 +51,18 @@ router.use('/cursadas', cursadaRoutes);
 
 // Rutas de libro de temas
 router.use('/libro-de-temas', libroDeTemaRoutes);
+
+// Rutas de asistencias
+router.use('/asistencias', asistenciaRoutes);
+
+// Rutas de calificaciones de cursada
+router.use('/calificaciones', calificacionRoutes);
+
+// Rutas de estado académico
+router.use('/estado-academico', estadoAcademicoRoutes);
+
+// Rutas de homologaciones
+router.use('/homologaciones', homologacionRoutes);
 
 router.get('/health', (req, res) => {
   res.json({

@@ -2,6 +2,7 @@ import userRepository from '../repositories/userRepository.js';
 import { hashPassword } from '../utils/bcrypt.js';
 import { ROLES } from '../constants/roles.js';
 import { prisma } from '../config/prisma.js';
+import { toPublicUser } from '../utils/publicUser.js';
 
 interface UserFilters {
   page?: number;
@@ -46,9 +47,8 @@ class UserService {
     // Obtener roles del usuario
     const roles = user.rol ? user.rol.split(',').map((r: string) => r.trim()) : [];
   
-    const { passwordHash: _, ...userWithoutPassword } = user;
     return {
-      ...userWithoutPassword,
+      ...toPublicUser(user),
       roles
     };
   }
@@ -88,13 +88,11 @@ class UserService {
     }
   
     const updatedUser = await userRepository.update(id, updateData);
-    const { passwordHash: _, ...userWithoutPassword } = updatedUser;
-  
     // Obtener roles actualizados
     const roles = updatedUser.rol ? updatedUser.rol.split(',').map((r: string) => r.trim()) : [];
   
     return {
-      ...userWithoutPassword,
+      ...toPublicUser(updatedUser),
       roles
     };
   }
@@ -122,9 +120,8 @@ class UserService {
   
     // Obtener usuario actualizado
     const updatedUser = await userRepository.findById(id);
-    const { passwordHash: _, ...userWithoutPassword } = updatedUser!;
     return {
-      ...userWithoutPassword,
+      ...toPublicUser(updatedUser!),
       roles: updatedRoles
     };
   }
@@ -157,9 +154,8 @@ class UserService {
   
     // Obtener usuario actualizado
     const updatedUser = await userRepository.findById(id);
-    const { passwordHash: _, ...userWithoutPassword } = updatedUser!;
     return {
-      ...userWithoutPassword,
+      ...toPublicUser(updatedUser!),
       roles: updatedRoles
     };
   }
@@ -179,13 +175,11 @@ class UserService {
     }
 
     const updatedUser = await userRepository.toggleActive(id, active);
-    const { passwordHash: _, ...userWithoutPassword } = updatedUser;
-  
     // Obtener roles actualizados
     const roles = updatedUser.rol ? updatedUser.rol.split(',').map((r: string) => r.trim()) : [];
   
     return {
-      ...userWithoutPassword,
+      ...toPublicUser(updatedUser),
       roles
     };
   }

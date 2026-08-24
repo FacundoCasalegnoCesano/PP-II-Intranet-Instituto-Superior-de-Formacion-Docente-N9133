@@ -180,19 +180,52 @@ class ProfesorController extends UserController {
       }
       
       const { prisma } = await import('../config/prisma.js');
-      const materias = await prisma.profesorMateria.findMany({
-        where: {
-          profesorId: userId,
-          activo: true
-        },
-        include: {
-          materia: true
+
+      // Unificado: asignaciones formales + materias que dicta como docente de cursada
+      const [asignaciones, cursadas] = await Promise.all([
+        prisma.profesorMateria.findMany({
+          where: {
+            profesorId: userId,
+            activo: true
+          },
+          include: {
+            materia: true
+          }
+        }),
+        prisma.cursada.findMany({
+          where: {
+            docenteId: userId,
+            activo: true
+          },
+          include: {
+            materia: true
+          }
+        })
+      ]);
+
+      // Combinar sin duplicar materias, indicando el origen de cada una
+      const materiasMap = new Map<number, any>();
+      for (const asignacion of asignaciones) {
+        materiasMap.set(asignacion.materiaId, {
+          ...asignacion.materia,
+          origen: 'ASIGNACION'
+        });
+      }
+      for (const cursada of cursadas) {
+        if (!materiasMap.has(cursada.materiaId)) {
+          materiasMap.set(cursada.materiaId, {
+            ...cursada.materia,
+            origen: 'CURSADA',
+            cursadaId: cursada.id,
+            anioLectivo: cursada.anioLectivo,
+            periodo: cursada.periodo
+          });
         }
-      });
-      
+      }
+
       res.json({
         success: true,
-        data: materias
+        data: Array.from(materiasMap.values())
       });
     } catch (error) {
       next(error);

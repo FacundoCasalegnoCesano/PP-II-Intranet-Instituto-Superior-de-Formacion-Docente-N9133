@@ -2,23 +2,54 @@ import nodemailer from 'nodemailer';
 import config from '../config/env.js';
 
 let transporter: nodemailer.Transporter | null = null;
+let testAccount: nodemailer.TestAccount | null = null;
 
-const createTransporter = (): nodemailer.Transporter => {
-  if (!transporter) {
+const createTransporter = async (): Promise<nodemailer.Transporter> => {
+  if (transporter) return transporter;
+
+  const isDev = config.nodeEnv === 'development';
+  const hasSmtpConfig = config.smtpHost && config.smtpUser && config.smtpPass;
+
+  if (isDev && !hasSmtpConfig) {
+    // Development: Ethereal Email (fake SMTP for testing)
+    testAccount = await nodemailer.createTestAccount();
     transporter = nodemailer.createTransport({
-      host: config.emailHost,
-      port: config.emailPort,
-      secure: config.emailPort === 465,
+      host: 'smtp.ethereal.email',
+      port: 587,
+      secure: false,
       auth: {
-        user: config.emailUser,
-        pass: config.emailPass
+        user: testAccount.user,
+        pass: testAccount.pass
+      }
+    });
+    console.log('📧 [DEV] Ethereal Email configured');
+    console.log(`📧 [DEV] Test account: ${testAccount.user}`);
+    console.log(`📧 [DEV] Preview URLs: https://ethereal.email`);
+  } else {
+    // Production: Real SMTP
+    transporter = nodemailer.createTransport({
+      host: config.smtpHost,
+      port: config.smtpPort,
+      secure: config.smtpPort === 465,
+      auth: {
+        user: config.smtpUser,
+        pass: config.smtpPass
       },
       tls: {
         rejectUnauthorized: false
       }
     });
+    console.log(`📧 [${config.nodeEnv.toUpperCase()}] SMTP configured: ${config.smtpHost}:${config.smtpPort}`);
   }
+
   return transporter;
+};
+
+export const getTestMessageUrl = (info: nodemailer.SentMessageInfo): string | null => {
+  if (testAccount && info.messageId) {
+    return `https://ethereal.email/message/${info.messageId.replace(/[<>]/g, '')}`;
+  }
+  return null;
 };
 
 interface EmailOptions {
@@ -30,10 +61,10 @@ interface EmailOptions {
 
 export const sendEmail = async ({ to, subject, html, text }: EmailOptions): Promise<nodemailer.SentMessageInfo> => {
   try {
-    const transporter = createTransporter();
-    
+    const transporter = await createTransporter();
+
     const mailOptions: nodemailer.SendMailOptions = {
-      from: `"Sistema Instituto" <${config.emailUser}>`,
+      from: config.emailFrom,
       to,
       subject,
       html,
@@ -42,6 +73,13 @@ export const sendEmail = async ({ to, subject, html, text }: EmailOptions): Prom
 
     const info = await transporter.sendMail(mailOptions);
     console.log(`📧 Email sent: ${info.messageId}`);
+
+    // Log preview URL in development
+    const previewUrl = getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`📧 [DEV] Preview: ${previewUrl}`);
+    }
+
     return info;
   } catch (error) {
     console.error('❌ Error sending email:', error);

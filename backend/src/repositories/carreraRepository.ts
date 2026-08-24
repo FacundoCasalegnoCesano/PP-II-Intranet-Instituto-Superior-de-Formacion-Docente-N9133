@@ -57,7 +57,7 @@ class CarreraRepository {
   }
 
   async findAll(filters: CarreraFilters = {}) {
-    const { search, activo, page = 1, limit = 10 } = filters;
+    const { search, activo, page = 1, limit = 20 } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = {};

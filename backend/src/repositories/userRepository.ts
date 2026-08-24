@@ -19,6 +19,7 @@ export interface UserCreateData {
   rol: string;
   contactoEmergencia?: string | null;
   foto?: string | null;
+  backupCodes?: string | null;
 }
 
 export interface UserUpdateData {
@@ -67,7 +68,8 @@ class UserRepository {
         cuil: data.cuil ?? null,
         rol: data.rol,
         contactoEmergencia: data.contactoEmergencia ?? null,
-        foto: data.foto ?? null
+        foto: data.foto ?? null,
+        backupCodes: data.backupCodes ?? null
       }
     });
   }
@@ -117,7 +119,7 @@ class UserRepository {
   }
 
   async findAll(filters: UserFilters = {}) {
-    const { rol, activo, search, page = 1, limit = 10 } = filters;
+    const { rol, activo, search, page = 1, limit = 20 } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -210,6 +212,20 @@ class UserRepository {
     return await prisma.usuario.update({
       where: { idUsuario: id },
       data: { passwordHash }
+    });
+  }
+
+  async updateBackupCodes(id: number, backupCodes: string) {
+    return await prisma.usuario.update({
+      where: { idUsuario: id },
+      data: { backupCodes }
+    });
+  }
+
+  async updatePasswordAndActivate(id: number, passwordHash: string) {
+    return await prisma.usuario.update({
+      where: { idUsuario: id },
+      data: { passwordHash, activo: true }
     });
   }
 

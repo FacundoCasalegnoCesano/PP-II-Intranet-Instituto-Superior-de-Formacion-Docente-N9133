@@ -15,8 +15,12 @@ class LibroDeTemaService {
     if (currentUser.rol !== ROLES.PROFESOR) {
       throw new AppError(403, 'No tienes permisos para realizar esta acción');
     }
-    const asignado = await libroDeTemaRepository.isProfesorAsignado(currentUser.id, materiaId);
-    if (!asignado) {
+    // Unificado: basta ser docente asignado a la materia O dictar una cursada activa de ella
+    const [asignado, dictaCursada] = await Promise.all([
+      libroDeTemaRepository.isProfesorAsignado(currentUser.id, materiaId),
+      libroDeTemaRepository.isDocenteDeCursada(currentUser.id, materiaId)
+    ]);
+    if (!asignado && !dictaCursada) {
       throw new AppError(403, 'Solo el profesor asignado a la materia puede registrar temas');
     }
   }

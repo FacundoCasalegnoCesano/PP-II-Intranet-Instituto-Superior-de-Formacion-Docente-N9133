@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import { normalizePagination, paginated, type PaginationInput } from '../utils/pagination.js';
 
 export interface InscripcionCarreraCreateData {
   usuarioId: number;
@@ -67,12 +68,16 @@ class InscripcionCarreraRepository {
     });
   }
 
-  async findByCarreraId(carreraId: number): Promise<any[]> {
-    return await prisma.inscripcionCarrera.findMany({
+  async findByCarreraId(carreraId: number, pagination: PaginationInput = {}) {
+    const { page, limit, skip } = normalizePagination(pagination);
+    const where = { carreraId, activo: true };
+    const [data, total] = await Promise.all([prisma.inscripcionCarrera.findMany({
       where: {
         carreraId,
         activo: true
       },
+      skip,
+      take: limit,
       include: {
         usuario: {
           select: {
@@ -82,8 +87,10 @@ class InscripcionCarreraRepository {
             dni: true
           }
         }
-      }
-    });
+      },
+      orderBy: [{ fechaInscripcion: 'desc' }, { id: 'desc' }]
+    }), prisma.inscripcionCarrera.count({ where })]);
+    return paginated(data, total, page, limit);
   }
 
   async findByUsuarioAndCarrera(usuarioId: number, carreraId: number): Promise<any> {

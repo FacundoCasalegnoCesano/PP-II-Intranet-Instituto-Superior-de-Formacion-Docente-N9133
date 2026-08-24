@@ -114,18 +114,23 @@ enum TipoPeriodo {
 // ============================================
 
 model Sesion {
-  id        Int       @id @default(autoincrement())
-  token     String    @unique @db.VarChar(500)
-  usuarioId Int       @map("usuario_id")
-  creadaEn  DateTime  @default(now()) @map("creada_en")
-  expiraEn  DateTime  @map("expira_en")
-  cerradaEn DateTime? @map("cerrada_en")
-  ipAddress String?   @map("ip_address") @db.VarChar(45)
-  userAgent String?   @map("user_agent") @db.VarChar(255)
+  id                 Int       @id @default(autoincrement())
+  token              String    @unique @db.VarChar(500)
+  refreshTokenHash   String?   @map("refresh_token_hash") @db.VarChar(255)
+  refreshTokenExpira DateTime? @map("refresh_token_expira")
+  familiaId          String    @map("familia_id") @db.VarChar(36) @default(uuid())
+  usuarioId          Int       @map("usuario_id")
+  creadaEn           DateTime  @default(now()) @map("creada_en")
+  expiraEn           DateTime  @map("expira_en")
+  cerradaEn          DateTime? @map("cerrada_en")
+  revocadaEn         DateTime? @map("revocada_en")
+  ipAddress          String?   @map("ip_address") @db.VarChar(45)
+  userAgent          String?   @map("user_agent") @db.VarChar(255)
 
   usuario Usuario @relation(fields: [usuarioId], references: [idUsuario])
 
   @@unique([usuarioId, token])
+  @@index([familiaId])
   @@map("sesiones")
 }
 
@@ -150,6 +155,7 @@ model Usuario {
   rol                String    @db.VarChar(255)
   contactoEmergencia String?   @db.VarChar(255)
   foto               String?   @db.VarChar(255) // URL del almacenamiento
+  backupCodes        String?   @db.Text // JSON string: string[] de hashes bcrypt
   ultimoAcceso       DateTime? @map("ultimo_acceso")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -249,6 +255,7 @@ model Materia {
   profesorMaterias ProfesorMateria[]
   homologaciones   Homologacion[]
   librosDeTemas    LibroDeTema[]
+  periodosHabilitadores PeriodoMateriaHabilitada[]
 
   @@map("materias")
 }
@@ -447,6 +454,8 @@ model Calificacion {
   cursadaId        Int              @map("cursada_id")
   alumnoId         Int              @map("alumno_id")
   tipoCalificacion TipoCalificacion @map("tipo_calificacion")
+  /// Número de instancia: Parcial 1, Parcial 2, TP 3, etc.
+  numero           Int              @default(1)
   nota             Float
   fechaRegistro    DateTime         @default(now()) @map("fecha_registro")
   observacion      String?          @db.Text
@@ -456,8 +465,7 @@ model Calificacion {
   cursada Cursada @relation(fields: [cursadaId], references: [id])
   alumno  Alumno  @relation(fields: [alumnoId], references: [idAlumno])
 
-  @@unique([cursadaId, alumnoId, tipoCalificacion])
-  @@map("calificaciones")
+  @@unique([cursadaId, alumnoId, tipoCalificacion, numero])
 }
 
 /// Mesa de examen. folioExamen/libroExamen son del acta de la mesa
@@ -478,6 +486,7 @@ model Mesa {
   materia       Materia             @relation(fields: [materiaId], references: [id])
   tribunales    MesaTribunal[]
   inscripciones InscripcionExamen[]
+  periodosHabilitadores PeriodoMesaHabilitada[]
 
   @@map("mesas")
 }
@@ -575,14 +584,49 @@ model LibroDeTema {
 // ============================================
 
 model PeriodoInscripcion {
-  id          Int         @id @default(autoincrement())
-  tipo        TipoPeriodo // MATERIA o EXAMEN
-  fechaInicio DateTime    @map("fecha_inicio")
-  fechaFin    DateTime    @map("fecha_fin")
-  descripcion String?     @db.VarChar(255)
-  activo      Boolean     @default(true)
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  id           Int         @id @default(autoincrement())
+  tipo         TipoPeriodo // MATERIA o EXAMEN
+  cicloLectivo Int         @map("ciclo_lectivo")
+  fechaInicio  DateTime    @map("fecha_inicio")
+  fechaFin     DateTime    @map("fecha_fin")
+  descripcion  String?     @db.VarChar(255)
+  activo       Boolean     @default(true)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  /// Materias habilitadas explícitamente por este período (tipo=MATERIA).
+  /// El administrativo las selecciona por carrera y año al crearlo.
+  materias PeriodoMateriaHabilitada[]
+  /// Mesas de examen habilitadas por este período (tipo=EXAMEN).
+  mesas    PeriodoMesaHabilitada[]
 
   @@map("periodos_inscripcion")
+}
+
+/// Materias que un período de inscripción habilita (selección explícita
+/// del administrativo por carrera/año).
+model PeriodoMateriaHabilitada {
+  id                   Int                 @id @default(autoincrement())
+  periodoInscripcionId Int                 @map("periodo_inscripcion_id")
+  materiaId            Int                 @map("materia_id")
+
+  periodoInscripcion PeriodoInscripcion @relation(fields: [periodoInscripcionId], references: [id], onDelete: Cascade)
+  materia            Materia            @relation(fields: [materiaId], references: [id])
+
+  @@unique([periodoInscripcionId, materiaId])
+  @@map("periodos_materias")
+}
+
+/// Mesas de examen que un período de inscripción habilita (selección
+/// explícita del administrativo al abrir el llamado).
+model PeriodoMesaHabilitada {
+  id                   Int                 @id @default(autoincrement())
+  periodoInscripcionId Int                 @map("periodo_inscripcion_id")
+  mesaId               Int                 @map("mesa_id")
+
+  periodoInscripcion PeriodoInscripcion @relation(fields: [periodoInscripcionId], references: [id], onDelete: Cascade)
+  mesa               Mesa               @relation(fields: [mesaId], references: [id])
+
+  @@unique([periodoInscripcionId, mesaId])
+  @@map("periodos_mesas")
 }

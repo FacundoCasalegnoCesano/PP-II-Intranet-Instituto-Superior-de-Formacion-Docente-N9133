@@ -2,12 +2,22 @@ import userRepository from '../repositories/userRepository.js';
 import alumnoRepository from '../repositories/alumnoRepository.js';
 import usuarioRolRepository from '../repositories/usuarioRolRepository.js';
 import { hashPassword, comparePassword } from '../utils/bcrypt.js';
-import { generateToken, generateRefreshToken, verifyToken, type TokenPayload } from '../utils/jwt.js';
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  hashRefreshToken,
+  verifyAccessToken,
+  verifyRefreshToken,
+  verifyToken,
+  type TokenPayload
+} from '../utils/jwt.js';
 import { sendPasswordResetEmail } from '../utils/email.js';
+import { generateBackupCodes, encryptBackupCodes, decryptBackupCodes } from '../utils/backupCodes.js';
 import { prisma } from '../config/prisma.js';
 import config from '../config/env.js';
 import jwt from 'jsonwebtoken';
 import { ROLES } from '../constants/roles.js';
+import { toPublicUser } from '../utils/publicUser.js';
 
 interface RegisterData {
   apellidoNombre: string;
@@ -57,22 +67,29 @@ class AuthService {
       rolString = ROLES.ALUMNO;
     }
 
+    // Si el usuario es administrativo, generar sus backup codes cifrados
+    const userRolesPreview = rolString.split(',').map((r: string) => r.trim());
+    const backupCodesEncrypted = userRolesPreview.includes(ROLES.ADMINISTRATIVO)
+      ? encryptBackupCodes(generateBackupCodes(8))
+      : null;
+
     // Crear usuario
     const user = await userRepository.create({
       ...rest,
       email,
       dni,
       passwordHash,
-      rol: rolString
+      rol: rolString,
+      backupCodes: backupCodesEncrypted
     });
 
-    const { passwordHash: _, ...userWithoutPassword } = user;
+    const publicUser = toPublicUser(user);
 
     // Devolver roles como array para compatibilidad
     const userRoles = rolString.split(',').map((r: string) => r.trim());
 
     const result: any = {
-      ...userWithoutPassword,
+      ...publicUser,
       roles: userRoles
     };
 
@@ -122,26 +139,29 @@ class AuthService {
       nombre: user.apellidoNombre
     };
 
-    const token = generateToken(payload);
+    const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
+    const refreshTokenHash = hashRefreshToken(refreshToken);
 
-    const decodedToken = verifyToken(token);
+    const decodedAccess = verifyAccessToken(accessToken);
+    const decodedRefresh = verifyRefreshToken(refreshToken);
+
     const session = await prisma.sesion.create({
       data: {
-        token,
+        token: accessToken,
+        refreshTokenHash,
+        refreshTokenExpira: new Date(decodedRefresh.exp! * 1000),
         usuarioId: user.idUsuario,
-        expiraEn: new Date((decodedToken.exp || Date.now() / 1000 + 86400) * 1000),
+        expiraEn: new Date(decodedAccess.exp! * 1000),
         ipAddress: ipAddress ?? null,
         userAgent: userAgent ?? null,
       }
     });
 
-    const { passwordHash: _, ...userWithoutPassword } = user;
-
     return {
-      user: userWithoutPassword,
+      user: toPublicUser(user),
       roles, // Lista de roles disponibles
-      token, // Token sin rol
+      accessToken,
       refreshToken,
       sessionId: session.id
     };
@@ -161,22 +181,46 @@ class AuthService {
       throw new Error('Usuario no encontrado');
     }
 
+    // Obtener la sesión actual para la familia
+    const session = await prisma.sesion.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new Error('Sesión no encontrada');
+    }
+
     // ✅ Generar nuevo token CON el rol seleccionado
     const payload = {
       id: user.idUsuario,
       email: user.email,
       dni: user.dni.toString(),
       nombre: user.apellidoNombre,
-      rol: roleName
+      rol: roleName,
+      familiaId: session.familiaId
     };
 
-    const token = generateToken(payload);
+    const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
+    const refreshTokenHash = hashRefreshToken(refreshToken);
 
-    // Actualizar la sesión existente con el nuevo token
-    await prisma.sesion.update({
-      where: { id: sessionId },
-      data: { token }
+    const decodedAccess = verifyAccessToken(accessToken);
+    const decodedRefresh = verifyRefreshToken(refreshToken);
+
+    // Rotación: invalidar toda la familia y crear nueva sesión
+    await prisma.sesion.updateMany({
+      where: { familiaId: session.familiaId, revocadaEn: null },
+      data: { revocadaEn: new Date() }
+    });
+
+    const newSession = await prisma.sesion.create({
+      data: {
+        token: accessToken,
+        refreshTokenHash,
+        refreshTokenExpira: new Date(decodedRefresh.exp! * 1000),
+        familiaId: session.familiaId,
+        usuarioId: user.idUsuario,
+        expiraEn: new Date(decodedAccess.exp! * 1000),
+        ipAddress: session.ipAddress ?? null,
+        userAgent: session.userAgent ?? null,
+      }
     });
 
     // Obtener los roles del usuario para mostrar
@@ -184,30 +228,39 @@ class AuthService {
     const roles = userRoles.map((ur: any) => ur.rol);
 
     return {
-      token,
+      accessToken,
       refreshToken,
-      sessionId,
+      sessionId: newSession.id,
       rol: roleName,
       rolesDisponibles: roles
     };
   }
 
-  // Logout
+  // Logout - invalida toda la familia de tokens
   async logout(sessionId: number) {
-    await prisma.sesion.update({
-      where: { id: sessionId },
-      data: { cerradaEn: new Date() }
+    const session = await prisma.sesion.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      return { message: 'Sesión ya cerrada' };
+    }
+
+    // Invalidar toda la familia
+    await prisma.sesion.updateMany({
+      where: { familiaId: session.familiaId, revocadaEn: null },
+      data: { 
+        revocadaEn: new Date(),
+        cerradaEn: new Date()
+      }
     });
 
     return { message: 'Sesión cerrada exitosamente' };
   }
 
-  // Refresh token
+// Refresh token con rotación y invalidación de familia
   async refreshToken(refreshToken: string) {
     try {
-      const decoded = verifyToken(refreshToken);
+      const decoded = verifyRefreshToken(refreshToken);
       const user = await userRepository.findById(decoded.id);
-  
+
       if (!user) {
         throw new Error('Usuario no encontrado');
       }
@@ -216,32 +269,58 @@ class AuthService {
         throw new Error('Usuario desactivado');
       }
 
-      // ✅ Crear payload manteniendo el rol si existe
-      const payload: any = {
+      // Buscar la sesión por hash del refresh token
+      const refreshTokenHash = hashRefreshToken(refreshToken);
+      const session = await prisma.sesion.findFirst({
+        where: {
+          refreshTokenHash,
+          refreshTokenExpira: { gte: new Date() },
+          revocadaEn: null
+        }
+      });
+
+      if (!session) {
+        throw new Error('Refresh token inválido o expirado');
+      }
+
+      // ✅ Payload mantiene rol y familia
+      const payload: TokenPayload = {
         id: user.idUsuario,
         email: user.email,
         dni: user.dni.toString(),
-        nombre: user.apellidoNombre
+        nombre: user.apellidoNombre,
+        rol: decoded.rol,
+        familiaId: session.familiaId
       };
 
-      // Si el token original tenía rol, mantenerlo
-      if (decoded.rol) {
-        payload.rol = decoded.rol;
-      }
-
-      const newToken = generateToken(payload);
+      const newAccessToken = generateAccessToken(payload);
       const newRefreshToken = generateRefreshToken(payload);
+      const newRefreshTokenHash = hashRefreshToken(newRefreshToken);
 
+      const decodedAccess = verifyAccessToken(newAccessToken);
+      const decodedRefresh = verifyRefreshToken(newRefreshToken);
+
+      // Rotación: invalidar TODA la familia (revocadaEn) y crear nueva sesión
       await prisma.sesion.updateMany({
-        where: {
-          token: refreshToken,
-          cerradaEn: null
-        },
-        data: { cerradaEn: new Date() }
+        where: { familiaId: session.familiaId, revocadaEn: null },
+        data: { revocadaEn: new Date() }
+      });
+
+      await prisma.sesion.create({
+        data: {
+          token: newAccessToken,
+          refreshTokenHash: newRefreshTokenHash,
+          refreshTokenExpira: new Date(decodedRefresh.exp! * 1000),
+          familiaId: session.familiaId,
+          usuarioId: user.idUsuario,
+          expiraEn: new Date(decodedAccess.exp! * 1000),
+          ipAddress: session.ipAddress ?? null,
+          userAgent: session.userAgent ?? null,
+        }
       });
 
       return {
-        token: newToken,
+        accessToken: newAccessToken,
         refreshToken: newRefreshToken
       };
     } catch (error) {
@@ -259,9 +338,8 @@ class AuthService {
     const userRoles = await usuarioRolRepository.getRolesByUsuario(userId);
     const roles = userRoles.map((ur: any) => ur.rol);
 
-    const { passwordHash: _, ...userWithoutPassword } = user;
     return {
-      ...userWithoutPassword,
+      ...toPublicUser(user),
       roles
     };
   }
@@ -308,10 +386,10 @@ class AuthService {
   }
 
   // Reset password
-  async resetPassword(token: string, newPassword: string) {
+async resetPassword(token: string, newPassword: string) {
     try {
       const decoded = verifyToken(token);
-  
+
       if (decoded.type !== 'password_reset') {
         throw new Error('Token inválido');
       }
@@ -324,12 +402,16 @@ class AuthService {
       const newPasswordHash = await hashPassword(newPassword);
       await userRepository.updatePassword(user.idUsuario, newPasswordHash);
 
+      // Invalidar TODA la familia de sesiones del usuario
       await prisma.sesion.updateMany({
         where: {
           usuarioId: user.idUsuario,
-          cerradaEn: null
+          revocadaEn: null
         },
-        data: { cerradaEn: new Date() }
+        data: { 
+          revocadaEn: new Date(),
+          cerradaEn: new Date()
+        }
       });
 
       return { message: 'Contraseña restablecida exitosamente' };
@@ -349,6 +431,131 @@ class AuthService {
     } catch (error) {
       return { valid: false, error: (error as Error).message };
     }
+  }
+
+  // Recovery with backup code (admin only)
+  async recoveryWithBackupCode(email: string, code: string, newPassword: string, ip?: string) {
+    // 1. Buscar usuario por email
+    const user = await userRepository.findByEmail(email);
+
+    // 2. Si no existe O rol no incluye "ADMINISTRATIVO" → throw AppError(401, 'Código inválido')
+    if (!user) {
+      throw new Error('Código inválido');
+    }
+
+    const roles = (user.rol || '').split(',').map((r: string) => r.trim());
+    if (!roles.includes('ADMINISTRATIVO')) {
+      throw new Error('Código inválido');
+    }
+
+    // 3. Desencriptar backupCodes, si null/empty → throw 401
+    if (!user.backupCodes) {
+      throw new Error('Código inválido');
+    }
+
+    let storedCodes: string[];
+    try {
+      storedCodes = decryptBackupCodes(user.backupCodes);
+    } catch {
+      throw new Error('Código inválido');
+    }
+
+    if (!Array.isArray(storedCodes) || storedCodes.length === 0) {
+      throw new Error('Código inválido');
+    }
+
+    // 4. Comparar code contra códigos almacenados
+    const matchedIndex = storedCodes.indexOf(code);
+
+    // 5. Si no match → throw 401
+    if (matchedIndex === -1) {
+      throw new Error('Código inválido');
+    }
+
+    // 6. Si match → eliminar código usado, guardar array cifrado actualizado
+    storedCodes.splice(matchedIndex, 1);
+    await userRepository.updateBackupCodes(user.idUsuario, encryptBackupCodes(storedCodes));
+
+    // 7. Validar newPassword (reusar lógica de register - patrón ya validado por Joi)
+    const passwordHash = await hashPassword(newPassword);
+
+    // 8. Actualizar passwordHash + activo = true
+    await userRepository.updatePasswordAndActivate(user.idUsuario, passwordHash);
+
+    // 9. Invalidar TODA la familia de sesiones
+    await prisma.sesion.updateMany({
+      where: { usuarioId: user.idUsuario, revocadaEn: null },
+      data: {
+        revocadaEn: new Date(),
+        cerradaEn: new Date()
+      }
+    });
+
+    // 10. Log auditoría
+    console.log(`Admin recovery via backup code: ${email} at ${new Date().toISOString()} IP: ${ip || 'unknown'}`);
+
+    // 11. Return { remainingCodes }
+    return { remainingCodes: storedCodes.length };
+  }
+
+  // Ver propios backup codes (requiere re-ingresar contraseña)
+  async revealMyBackupCodes(userId: number, currentPassword: string) {
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new Error('Usuario no encontrado');
+    }
+
+    const isValid = await comparePassword(currentPassword, user.passwordHash);
+    if (!isValid) {
+      console.log(`[AUDIT] Failed backup codes reveal attempt: userId=${userId} at ${new Date().toISOString()}`);
+      throw new Error('Contraseña incorrecta');
+    }
+
+    const roles = (user.rol || '').split(',').map((r: string) => r.trim());
+    if (!roles.includes('ADMINISTRATIVO')) {
+      throw new Error('Solo disponible para administrativos');
+    }
+
+    if (!user.backupCodes) {
+      throw new Error('No tienes códigos de respaldo generados');
+    }
+
+    let codes: string[];
+    try {
+      codes = decryptBackupCodes(user.backupCodes);
+    } catch {
+      throw new Error('Error al leer los códigos. Regenerálos desde la opción correspondiente.');
+    }
+
+    console.log(`[AUDIT] Backup codes revealed: userId=${userId} at ${new Date().toISOString()}`);
+
+    return { codes };
+  }
+
+  // Regenerar propios backup codes (invalida los anteriores, requiere contraseña)
+  async regenerateMyBackupCodes(userId: number, currentPassword: string) {
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new Error('Usuario no encontrado');
+    }
+
+    const isValid = await comparePassword(currentPassword, user.passwordHash);
+    if (!isValid) {
+      console.log(`[AUDIT] Failed backup codes regeneration attempt: userId=${userId} at ${new Date().toISOString()}`);
+      throw new Error('Contraseña incorrecta');
+    }
+
+    const roles = (user.rol || '').split(',').map((r: string) => r.trim());
+    if (!roles.includes('ADMINISTRATIVO')) {
+      throw new Error('Solo disponible para administrativos');
+    }
+
+    const newCodes = generateBackupCodes(8);
+    await userRepository.updateBackupCodes(user.idUsuario, encryptBackupCodes(newCodes));
+
+    console.log(`[AUDIT] Backup codes regenerated: userId=${userId} at ${new Date().toISOString()}`);
+
+    return { codes: newCodes };
   }
 }
 
