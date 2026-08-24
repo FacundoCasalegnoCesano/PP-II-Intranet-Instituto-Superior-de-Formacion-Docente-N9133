@@ -3,6 +3,8 @@ node_modules/
 
 # Documentación y artefactos locales de pruebas
 /docs/
+/backend/scripts/
 /backend/test-results/
 /backend/SECURITY.md
+/backend/endpoints.http
 /context.md
