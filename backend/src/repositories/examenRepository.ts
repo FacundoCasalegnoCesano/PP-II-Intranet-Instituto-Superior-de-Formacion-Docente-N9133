@@ -20,7 +20,7 @@ export interface ExamenUpdateData {
 }
 
 export interface TribunalCreateData {
-  examenId: number;
+  mesaId: number;
   profesorId: number;
   rolTribunal: string;
 }
@@ -89,7 +89,7 @@ class ExamenRepository {
   }
 
   async findAllExamenes(filters: any = {}) {
-    const { materiaId, fechaDesde, fechaHasta, page = 1, limit = 10 } = filters;
+    const { materiaId, fechaDesde, fechaHasta, page = 1, limit = 20 } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -165,7 +165,7 @@ class ExamenRepository {
   async addTribunal(data: TribunalCreateData): Promise<any> {
     return await prisma.mesaTribunal.create({
       data: {
-        mesaId: data.examenId,
+        mesaId: data.mesaId,
         profesorId: data.profesorId,
         rolTribunal: data.rolTribunal as any
       },
@@ -203,6 +203,43 @@ class ExamenRepository {
   }
 
   // ===== INSCRIPCIÓN A EXÁMENES =====
+  async findInscripcionByMesaAndAlumno(mesaId: number, alumnoId: number): Promise<any> {
+    return await prisma.inscripcionExamen.findFirst({
+      where: { mesaId, alumnoId }
+    });
+  }
+
+  async reactivarInscripcion(id: number, condicion: string): Promise<any> {
+    return await prisma.inscripcionExamen.update({
+      where: { id },
+      data: {
+        condicion: condicion as any,
+        fechaInscripcion: new Date(),
+        fechaBaja: null,
+        aprobado: false
+      },
+      include: {
+        alumno: {
+          include: {
+            usuario: {
+              select: {
+                idUsuario: true,
+                apellidoNombre: true,
+                email: true,
+                dni: true
+              }
+            }
+          }
+        },
+        mesa: {
+          include: {
+            materia: true
+          }
+        }
+      }
+    });
+  }
+
   async inscribirAlumno(mesaId: number, alumnoId: number, condicion: string): Promise<any> {
     return await prisma.inscripcionExamen.create({
       data: {

@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import config from '../config/env.js';
 
 export interface TokenPayload {
@@ -7,30 +8,36 @@ export interface TokenPayload {
   dni: string;
   nombre: string;
   rol?: string; // ✅ Hacer opcional - para login sin rol
-  type?: string;
+  type?: 'access' | 'refresh' | 'password_reset';
+  familiaId?: string;
+  jti?: string;
   exp?: number;
   iat?: number;
 }
 
-export const generateToken = (payload: TokenPayload): string => {
+// Access token: 15 minutos
+export const generateAccessToken = (payload: Omit<TokenPayload, 'type'>): string => {
   const { exp, iat, ...cleanPayload } = payload;
-  
-  // Usar 'as any' para evitar problemas de tipos estrictos
   return jwt.sign(
-    cleanPayload,
+    { ...cleanPayload, type: 'access', jti: crypto.randomUUID() },
     config.jwtSecret,
-    { expiresIn: config.jwtExpire || '7d' } as any
+    { expiresIn: '15m' } as any
   );
 };
 
-export const generateRefreshToken = (payload: TokenPayload): string => {
+// Refresh token: 7 días
+export const generateRefreshToken = (payload: Omit<TokenPayload, 'type'>): string => {
   const { exp, iat, ...cleanPayload } = payload;
-  
   return jwt.sign(
-    cleanPayload,
+    { ...cleanPayload, type: 'refresh', jti: crypto.randomUUID() },
     config.jwtSecret,
-    { expiresIn: config.jwtRefreshExpire || '30d' } as any
+    { expiresIn: '7d' } as any
   );
+};
+
+// Hash del refresh token para almacenar en BD (sha256)
+export const hashRefreshToken = (token: string): string => {
+  return crypto.createHash('sha256').update(token).digest('hex');
 };
 
 export const verifyToken = (token: string): TokenPayload => {
@@ -45,6 +52,22 @@ export const verifyToken = (token: string): TokenPayload => {
     }
     throw new Error('Error al verificar token');
   }
+};
+
+export const verifyAccessToken = (token: string): TokenPayload => {
+  const payload = verifyToken(token);
+  if (payload.type !== 'access') {
+    throw new Error('Tipo de token inválido');
+  }
+  return payload;
+};
+
+export const verifyRefreshToken = (token: string): TokenPayload => {
+  const payload = verifyToken(token);
+  if (payload.type !== 'refresh') {
+    throw new Error('Tipo de token inválido');
+  }
+  return payload;
 };
 
 export const decodeToken = (token: string): TokenPayload | null => {

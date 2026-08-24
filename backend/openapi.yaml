@@ -32,6 +32,10 @@ tags:
   - name: Horarios
   - name: Libro de Temas
   - name: Períodos de Inscripción
+  - name: Asistencias
+  - name: Calificaciones
+  - name: Estado Academico
+  - name: Homologaciones
   - name: Health
 
 paths:
@@ -687,7 +691,7 @@ paths:
     get:
       tags: [Inscripciones a Carreras]
       summary: Carreras de un alumno
-      x-roles: [ALUMNO, ADMINISTRATIVO, PROFESOR]
+      x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
       responses:
@@ -1240,7 +1244,189 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
 
+  /auth/admin/backup-code:
+    post:
+      tags: [Auth]
+      summary: Recuperar cuenta administrativa con codigo de respaldo
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email, backupCode, newPassword], properties: { email: { type: string, format: email }, backupCode: { type: string }, newPassword: { type: string } } } } } }
+      responses: { '200': { $ref: '#/components/responses/OK' }, '400': { $ref: '#/components/responses/BadRequest' } }
+  /auth/my-backup-codes/reveal:
+    post:
+      tags: [Auth]
+      summary: Revelar codigos de respaldo propios
+      x-roles: [ADMINISTRATIVO]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string } } } } } }
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /auth/my-backup-codes/regenerate:
+    post:
+      tags: [Auth]
+      summary: Regenerar codigos de respaldo propios
+      x-roles: [ADMINISTRATIVO]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string } } } } } }
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+
+  /materias/carrera/{carreraId}/por-anio:
+    get:
+      tags: [Materias]
+      summary: Listar materias agrupadas por anio
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: carreraId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /materias/{id}/profesores:
+    get:
+      tags: [Materias]
+      summary: Listar profesores asignados
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+    post:
+      tags: [Materias]
+      summary: Asignar profesor
+      x-roles: [ADMINISTRATIVO]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [profesorId], properties: { profesorId: { type: integer } } } } } }
+      responses: { '201': { $ref: '#/components/responses/OK' } }
+  /materias/{id}/profesores/{profesorId}:
+    delete:
+      tags: [Materias]
+      summary: Desasignar profesor
+      x-roles: [ADMINISTRATIVO]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }, { name: profesorId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+
+  /asistencias/carga-masiva:
+    post:
+      tags: [Asistencias]
+      summary: Registrar asistencia de una clase
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CargaAsistenciaRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/OK' }, '400': { $ref: '#/components/responses/BadRequest' } }
+  /asistencias/cursada/{cursadaId}:
+    get:
+      tags: [Asistencias]
+      summary: Listar asistencias de una cursada
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: cursadaId, in: path, required: true, schema: { type: integer } }, { name: fecha, in: query, schema: { type: string, format: date } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /asistencias/resumen/{cursadaId}:
+    get:
+      tags: [Asistencias]
+      summary: Resumen de asistencia por alumno
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: cursadaId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /asistencias/alumno/{alumnoId}:
+    get:
+      tags: [Asistencias]
+      summary: Historial de asistencia del alumno
+      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+
+  /calificaciones/carga-masiva:
+    post:
+      tags: [Calificaciones]
+      summary: Registrar calificaciones en lote
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CargaCalificacionesRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/OK' }, '400': { $ref: '#/components/responses/BadRequest' } }
+  /calificaciones/cursada/{cursadaId}:
+    get:
+      tags: [Calificaciones]
+      summary: Listar calificaciones de una cursada
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: cursadaId, in: path, required: true, schema: { type: integer } }, { name: tipo, in: query, schema: { type: string } }, { name: numero, in: query, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /calificaciones/resumen/{cursadaId}:
+    get:
+      tags: [Calificaciones]
+      summary: Resumen de calificaciones por alumno
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: cursadaId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /calificaciones/alumno/{alumnoId}:
+    get:
+      tags: [Calificaciones]
+      summary: Historial de calificaciones del alumno
+      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /calificaciones/mis-calificaciones:
+    get:
+      tags: [Calificaciones]
+      summary: Calificaciones del usuario autenticado
+      x-roles: [ALUMNO]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+
+  /estado-academico/materia/{materiaId}:
+    get:
+      tags: [Estado Academico]
+      summary: Estado de los alumnos de una materia
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: materiaId, in: path, required: true, schema: { type: integer } }, { name: cicloLectivo, in: query, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /estado-academico/alumno/{alumnoId}:
+    get:
+      tags: [Estado Academico]
+      summary: Estado academico de un alumno
+      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /estado-academico/promedio/{alumnoId}:
+    get:
+      tags: [Estado Academico]
+      summary: Promedio general del alumno
+      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }, { name: carreraId, in: query, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+
+  /homologaciones/mis-solicitudes:
+    get:
+      tags: [Homologaciones]
+      summary: Solicitudes propias
+      x-roles: [ALUMNO]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /homologaciones:
+    get:
+      tags: [Homologaciones]
+      summary: Listar solicitudes
+      x-roles: [ADMINISTRATIVO]
+      parameters: [{ name: estado, in: query, schema: { type: string, enum: [PENDIENTE, APROBADA, RECHAZADA] } }, { $ref: '#/components/parameters/Page' }, { $ref: '#/components/parameters/Limit' }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+    post:
+      tags: [Homologaciones]
+      summary: Crear solicitud
+      x-roles: [ADMINISTRATIVO]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HomologacionRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/OK' } }
+  /homologaciones/{id}/nota-complementaria:
+    post:
+      tags: [Homologaciones]
+      summary: Registrar nota complementaria
+      x-roles: [ADMINISTRATIVO]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [notaExamenHomologacion], properties: { notaExamenHomologacion: { type: number, minimum: 0, maximum: 10 } } } } } }
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /homologaciones/{id}/resolver:
+    post:
+      tags: [Homologaciones]
+      summary: Aprobar o rechazar solicitud
+      x-roles: [ADMINISTRATIVO]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [accion], properties: { accion: { type: string, enum: [APROBAR, RECHAZAR] } } } } } }
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+
 components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
   securitySchemes:
     bearerAuth:
       type: http
@@ -1696,3 +1882,49 @@ components:
         fechaFin: { type: string, format: date-time }
         descripcion: { type: string, maxLength: 255, nullable: true }
         activo: { type: boolean }
+
+    CargaAsistenciaRequest:
+      type: object
+      required: [cursadaId, fecha, asistencias]
+      properties:
+        cursadaId: { type: integer, minimum: 1 }
+        fecha: { type: string, format: date }
+        asistencias:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [alumnoId, presente]
+            properties:
+              alumnoId: { type: integer, minimum: 1 }
+              presente: { type: boolean }
+              justificado: { type: boolean, default: false }
+              observacion: { type: string, nullable: true }
+
+    CargaCalificacionesRequest:
+      type: object
+      required: [cursadaId, tipoCalificacion, numero, calificaciones]
+      properties:
+        cursadaId: { type: integer, minimum: 1 }
+        tipoCalificacion: { type: string, enum: [PARCIAL, RECUPERATORIO, TRABAJO_PRACTICO, EXAMEN_FINAL] }
+        numero: { type: integer, minimum: 1 }
+        calificaciones:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [alumnoId, nota]
+            properties:
+              alumnoId: { type: integer, minimum: 1 }
+              nota: { type: number, minimum: 0, maximum: 10 }
+              observacion: { type: string, nullable: true }
+
+    HomologacionRequest:
+      type: object
+      required: [alumnoId, materiaId, tipoHomologacion, calificacion]
+      properties:
+        alumnoId: { type: integer, minimum: 1 }
+        materiaId: { type: integer, minimum: 1 }
+        tipoHomologacion: { type: string, enum: [TOTAL, PARCIAL] }
+        calificacion: { type: number, minimum: 0, maximum: 10 }
+        observacion: { type: string, maxLength: 2000, nullable: true }

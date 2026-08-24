@@ -67,8 +67,8 @@ class InscripcionCarreraService {
     return await inscripcionCarreraRepository.getCarrerasInscriptas(alumnoId);
   }
 
-  async getInscriptosByCarrera(carreraId: number) {
-    return await inscripcionCarreraRepository.findByCarreraId(carreraId);
+  async getInscriptosByCarrera(carreraId: number, pagination: { page?: number; limit?: number } = {}) {
+    return await inscripcionCarreraRepository.findByCarreraId(carreraId, pagination);
   }
 
   async getInscripcionById(id: number) {

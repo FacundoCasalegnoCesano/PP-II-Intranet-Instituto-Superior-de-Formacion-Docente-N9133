@@ -1,7 +1,13 @@
 import { Router } from 'express';
 import inscripcionMateriaController from '../controllers/inscripcionMateriaController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
+import { validationMiddleware } from '../middleware/validation.js';
+import {
+  inscripcionMateriaSchema,
+  cambiarModalidadSchema
+} from '../validations/inscripcionMateriaValidation.js';
 import { ROLES } from '../constants/roles.js';
+import { paginationQuerySchema } from '../validations/paginationValidation.js';
 
 const router = Router();
 
@@ -31,6 +37,7 @@ router.get('/verificar/:materiaId',
 // Admin puede inscribir a cualquier alumno
 router.post('/',
   roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
+  validationMiddleware(inscripcionMateriaSchema),
   inscripcionMateriaController.inscribirAlumno
 );
 
@@ -43,12 +50,14 @@ router.delete('/:id',
 // Ver materias de un alumno (Alumno puede ver las suyas, Admin todas)
 router.get('/alumno/:alumnoId',
   roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(paginationQuerySchema, 'query'),
   inscripcionMateriaController.getMateriasByAlumno
 );
 
 // Ver inscriptos por materia (Solo Admin)
 router.get('/materia/:materiaId/inscriptos',
   roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(paginationQuerySchema, 'query'),
   inscripcionMateriaController.getInscriptosByMateria
 );
 
@@ -61,6 +70,7 @@ router.get('/historial/:alumnoId/:materiaId',
 // Cambiar modalidad (Solo Admin)
 router.put('/:id/modalidad',
   roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(cambiarModalidadSchema),
   inscripcionMateriaController.cambiarModalidad
 );
 

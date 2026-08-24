@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import periodoInscripcionController from '../controllers/periodoInscripcionController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
+import { validationMiddleware } from '../middleware/validation.js';
+import {
+  crearPeriodoSchema,
+  actualizarPeriodoSchema
+  , listarPeriodosSchema
+} from '../validations/periodoInscripcionValidation.js';
 import { ROLES } from '../constants/roles.js';
 
 const router = Router();
@@ -10,11 +16,13 @@ router.use(authMiddleware);
 // Rutas solo para Admin
 router.post('/',
   roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(crearPeriodoSchema),
   periodoInscripcionController.crearPeriodo
 );
 
 router.put('/:id',
   roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(actualizarPeriodoSchema),
   periodoInscripcionController.updatePeriodo
 );
 
@@ -26,6 +34,7 @@ router.delete('/:id',
 // Rutas para todos los roles
 router.get('/',
   roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR, ROLES.ALUMNO),
+  validationMiddleware(listarPeriodosSchema, 'query'),
   periodoInscripcionController.listPeriodos
 );
 

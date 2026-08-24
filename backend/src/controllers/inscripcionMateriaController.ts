@@ -83,11 +83,14 @@ class InscripcionMateriaController {
       }
 
       const currentUser = req.user!;
-      const inscripciones = await inscripcionMateriaService.getInscripcionesByAlumno(alumnoId, currentUser);
+      const inscripciones = await inscripcionMateriaService.getInscripcionesByAlumno(alumnoId, currentUser, {
+        page: Number(req.query.page ?? 1), limit: Number(req.query.limit ?? 20)
+      });
       
       res.json({
         success: true,
-        data: inscripciones
+        data: inscripciones.data,
+        pagination: inscripciones.pagination
       });
     } catch (error) {
       next(error);
@@ -115,11 +118,14 @@ class InscripcionMateriaController {
         return;
       }
 
-      const inscriptos = await inscripcionMateriaService.getInscriptosByMateria(materiaId);
+      const inscriptos = await inscripcionMateriaService.getInscriptosByMateria(materiaId, {
+        page: Number(req.query.page ?? 1), limit: Number(req.query.limit ?? 20)
+      });
       
       res.json({
         success: true,
-        data: inscriptos
+        data: inscriptos.data,
+        pagination: inscriptos.pagination
       });
     } catch (error) {
       next(error);

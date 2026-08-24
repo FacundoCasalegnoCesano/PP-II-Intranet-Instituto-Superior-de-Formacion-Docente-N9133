@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import authService from '../services/authService.js';
 import { prisma } from '../config/prisma.js';
+import { validationMiddleware } from '../middleware/validation.js';
 
 class AuthController {
 // Registrar usuario (SOLO ADMIN)
@@ -138,16 +139,22 @@ async register(req: Request, res: Response, next: NextFunction): Promise<void> {
       
       const result = await authService.changePassword(userId, currentPassword, newPassword);
       
-      // Cerrar todas las sesiones excepto la actual
-      await prisma.sesion.updateMany({
-        where: {
-          usuarioId: userId,
-          cerradaEn: null,
-          id: { not: req.sessionId! }
-        },
-        data: { cerradaEn: new Date() }
-      });
-      
+      // Invalidar TODA la familia de sesiones excepto la actual
+      const session = await prisma.sesion.findUnique({ where: { id: req.sessionId! } });
+      if (session) {
+        await prisma.sesion.updateMany({
+          where: {
+            familiaId: session.familiaId,
+            revocadaEn: null,
+            id: { not: req.sessionId! }
+          },
+          data: {
+            revocadaEn: new Date(),
+            cerradaEn: new Date()
+          }
+        });
+      }
+
       res.json({
         success: true,
         message: 'Contraseña actualizada exitosamente',
@@ -163,7 +170,7 @@ async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { email } = req.body;
       const result = await authService.forgotPassword(email);
-      
+
       res.json({
         success: true,
         message: result.message
@@ -205,6 +212,55 @@ async register(req: Request, res: Response, next: NextFunction): Promise<void> {
       
       res.json({
         success: true,
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Recovery with backup code (admin only, público pero rate-limited)
+  async recoveryWithBackupCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { email, code, newPassword } = req.body;
+      const ip = req.ip || req.connection.remoteAddress || 'unknown';
+      const result = await authService.recoveryWithBackupCode(email, code, newPassword, ip);
+
+      res.json({
+        success: true,
+        message: `Contraseña restablecida. Códigos restantes: ${result.remainingCodes}`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Ver propios backup codes (requiere re-ingresar contraseña)
+  async revealMyBackupCodes(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const { currentPassword } = req.body;
+      const result = await authService.revealMyBackupCodes(userId, currentPassword);
+
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Regenerar propios backup codes (invalida los anteriores)
+  async regenerateMyBackupCodes(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const { currentPassword } = req.body;
+      const result = await authService.regenerateMyBackupCodes(userId, currentPassword);
+
+      res.json({
+        success: true,
+        message: 'Códigos regenerados. Los anteriores quedaron invalidados.',
         data: result
       });
     } catch (error) {

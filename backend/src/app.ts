@@ -3,6 +3,7 @@ import type { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import config from './config/env.js';
 import { connectDatabase, disconnectDatabase } from './config/prisma.js';
 import { pathToFileURL } from 'url';
@@ -11,8 +12,39 @@ import { errorHandler } from './middleware/errorHandler.js';
 
 const app: Express = express();
 
-// Configuración de seguridad
-app.use(helmet());
+// Nonce para CSP (inline scripts/styles permitidos solo con nonce)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
+// Configuración de seguridad - Helmet endurecido en producción
+const isProd = config.nodeEnv === 'production';
+
+const cspDirectives = isProd
+  ? ({
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", (req: any, res: any) => `'nonce-${res.locals?.nonce || ''}'`],
+      styleSrc: ["'self'", (req: any, res: any) => `'nonce-${res.locals?.nonce || ''}'`],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"]
+    } as any)
+  : false;
+
+app.use(helmet({
+  contentSecurityPolicy: cspDirectives,
+  hsts: isProd ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  crossOriginEmbedderPolicy: isProd,
+  crossOriginOpenerPolicy: isProd ? { policy: 'same-origin' } : false,
+  crossOriginResourcePolicy: isProd ? { policy: 'same-site' } : false,
+  xPoweredBy: false
+}));
 
 // Configuración de CORS
 app.use(cors({
@@ -26,6 +58,7 @@ app.use(cors({
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
+  skip: () => config.nodeEnv === 'test',
   message: {
     success: false,
     message: 'Demasiadas peticiones desde esta IP, por favor intenta de nuevo en 15 minutos'

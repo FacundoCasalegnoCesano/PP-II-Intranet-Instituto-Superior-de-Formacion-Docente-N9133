@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import { normalizePagination, paginated, type PaginationInput } from '../utils/pagination.js';
 
 export interface InscripcionMateriaCreateData {
   alumnoId: number;
@@ -9,10 +10,11 @@ export interface InscripcionMateriaCreateData {
 }
 
 export interface InscripcionMateriaUpdateData {
-  fechaBaja?: Date;
+  fechaInscripcion?: Date;
+  fechaBaja?: Date | null;
   modalidadElegida?: string;
   estado?: string;
-  cursadaId?: number;
+  cursadaId?: number | null;
 }
 
 class InscripcionMateriaRepository {
@@ -85,12 +87,16 @@ class InscripcionMateriaRepository {
     });
   }
 
-  async findByAlumnoId(alumnoId: number): Promise<any[]> {
-    return await prisma.inscripcionMateria.findMany({
+  async findByAlumnoId(alumnoId: number, pagination: PaginationInput = {}) {
+    const { page, limit, skip } = normalizePagination(pagination);
+    const where: any = { alumnoId, estado: { in: ['ACTIVA', 'RECURSANDO'] } };
+    const [data, total] = await Promise.all([prisma.inscripcionMateria.findMany({
       where: {
         alumnoId,
         estado: { in: ['ACTIVA', 'RECURSANDO'] }
       },
+      skip,
+      take: limit,
       include: {
         materia: {
           include: {
@@ -102,15 +108,20 @@ class InscripcionMateriaRepository {
       orderBy: {
         fechaInscripcion: 'desc'
       }
-    });
+    }), prisma.inscripcionMateria.count({ where })]);
+    return paginated(data, total, page, limit);
   }
 
-  async findByMateriaId(materiaId: number): Promise<any[]> {
-    return await prisma.inscripcionMateria.findMany({
+  async findByMateriaId(materiaId: number, pagination: PaginationInput = {}) {
+    const { page, limit, skip } = normalizePagination(pagination);
+    const where: any = { materiaId, estado: 'ACTIVA' };
+    const [data, total] = await Promise.all([prisma.inscripcionMateria.findMany({
       where: {
         materiaId,
         estado: 'ACTIVA'
       },
+      skip,
+      take: limit,
       include: {
         alumno: {
           include: {
@@ -124,8 +135,10 @@ class InscripcionMateriaRepository {
             }
           }
         }
-      }
-    });
+      },
+      orderBy: { id: 'asc' }
+    }), prisma.inscripcionMateria.count({ where })]);
+    return paginated(data, total, page, limit);
   }
 
   async findByAlumnoAndMateria(alumnoId: number, materiaId: number, cicloLectivo: number): Promise<any> {
@@ -135,6 +148,16 @@ class InscripcionMateriaRepository {
         materiaId,
         cicloLectivo,
         estado: { in: ['ACTIVA', 'RECURSANDO'] }
+      }
+    });
+  }
+
+  async findByAlumnoAndMateriaIncludingBaja(alumnoId: number, materiaId: number, cicloLectivo: number): Promise<any> {
+    return await prisma.inscripcionMateria.findFirst({
+      where: {
+        alumnoId,
+        materiaId,
+        cicloLectivo
       }
     });
   }

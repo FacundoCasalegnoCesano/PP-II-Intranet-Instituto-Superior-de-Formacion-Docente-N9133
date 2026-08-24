@@ -88,7 +88,7 @@ class LibroDeTemaRepository {
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }> {
     const page = filters.page ?? 1;
-    const limit = filters.limit ?? 10;
+    const limit = filters.limit ?? 20;
 
     const where: any = {};
     if (filters.materiaId) where.materiaId = filters.materiaId;
@@ -132,6 +132,17 @@ class LibroDeTemaRepository {
       }
     });
     return asignacion !== null;
+  }
+
+  async isDocenteDeCursada(profesorId: number, materiaId: number): Promise<boolean> {
+    const cursada = await prisma.cursada.findFirst({
+      where: {
+        docenteId: profesorId,
+        materiaId,
+        activo: true
+      }
+    });
+    return cursada !== null;
   }
 }
 

@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import { normalizePagination, paginated, type PaginationInput } from '../utils/pagination.js';
 
 export interface CursadaCreateData {
   materiaId: number;
@@ -138,15 +139,18 @@ class CursadaRepository {
     });
   }
 
-  async findAll(filters: { anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } = {}): Promise<any[]> {
+  async findAll(filters: { anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } & PaginationInput = {}) {
     const where: any = {};
     if (filters.anioLectivo) where.anioLectivo = filters.anioLectivo;
     if (filters.materiaId) where.materiaId = filters.materiaId;
     if (filters.docenteId) where.docenteId = filters.docenteId;
     if (filters.activo !== undefined) where.activo = filters.activo;
 
-    return await prisma.cursada.findMany({
+    const { page, limit, skip } = normalizePagination(filters);
+    const [data, total] = await Promise.all([prisma.cursada.findMany({
       where,
+      skip,
+      take: limit,
       include: {
         materia: {
           include: {
@@ -177,9 +181,11 @@ class CursadaRepository {
       },
       orderBy: [
         { anioLectivo: 'desc' },
-        { materia: { nombre: 'asc' } }
+        { materia: { nombre: 'asc' } },
+        { id: 'asc' }
       ]
-    });
+    }), prisma.cursada.count({ where })]);
+    return paginated(data, total, page, limit);
   }
 
   async update(id: number, data: CursadaUpdateData): Promise<any> {

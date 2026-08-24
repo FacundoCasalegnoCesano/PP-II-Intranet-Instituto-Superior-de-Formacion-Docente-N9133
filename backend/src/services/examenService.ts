@@ -68,7 +68,7 @@ class ExamenService {
     }
 
     // Verificar que el examen existe
-    const examen = await examenRepository.findExamenById(data.examenId);
+    const examen = await examenRepository.findExamenById(data.mesaId);
     if (!examen) {
       throw new Error('Examen no encontrado');
     }
@@ -113,18 +113,55 @@ class ExamenService {
       throw new Error('Examen no encontrado');
     }
 
-    // Verificar que el alumno está inscripto en la materia (RFGE9)
-    const inscripcionMateria = await inscripcionMateriaRepository.findByAlumnoAndMateria(
-      idAlumno,
-      examen.materiaId,
-      new Date().getFullYear()
-    );
-    if (!inscripcionMateria) {
-      throw new Error('El alumno no está inscripto en esta materia');
+    // Verificar la condición académica declarada para rendir (RFGE9).
+    if (condicion === 'REGULAR') {
+      const { default: estadoAcademicoService } = await import('./estadoAcademicoService.js');
+      const regularidadVigente = await estadoAcademicoService.tieneRegularidadVigente(
+        idAlumno,
+        examen.materiaId
+      );
+      if (!regularidadVigente) {
+        throw new Error('El alumno no tiene regularidad vigente en esta materia');
+      }
+    } else {
+      // Conserva el comportamiento previo para inscripciones en condición LIBRE.
+      const inscripcionMateria = await inscripcionMateriaRepository.findByAlumnoAndMateria(
+        idAlumno,
+        examen.materiaId,
+        new Date().getFullYear()
+      );
+      if (!inscripcionMateria) {
+        throw new Error('El alumno no está inscripto en esta materia');
+      }
     }
 
     // Verificar correlatividades (RFGE9)
     await this.verificarCorrelatividadesParaExamen(idAlumno, examen.materiaId);
+
+    // Corte por día de mesa y habilitación explícita en período EXAMEN:
+    // desde las 00:00 del día de la mesa no se permite inscribirse. El
+    // administrativo puede inscribir fuera de período (casos especiales).
+    if (currentUser.rol === ROLES.ALUMNO) {
+      const { default: periodoInscripcionService } = await import('./periodoInscripcionService.js');
+      const habilitada = await periodoInscripcionService.mesaHabilitada(examenId);
+      if (!habilitada) {
+        throw new Error('Esta mesa de examen no está habilitada para inscripción');
+      }
+      const inicioDiaMesa = this.inicioDelDia(new Date(examen.fecha));
+      if (new Date() >= inicioDiaMesa) {
+        throw new Error('La inscripción a esta mesa cerró: es el día del examen');
+      }
+    }
+
+    // La baja de examen es lógica (fechaBaja) y la unique (mesaId, alumnoId)
+    // incluye registros dados de baja: si existe uno, se reactiva en lugar de crear
+    const previa = await examenRepository.findInscripcionByMesaAndAlumno(examenId, idAlumno);
+    if (previa && !previa.fechaBaja) {
+      throw new Error('El alumno ya está inscripto a este examen');
+    }
+    if (previa) {
+      return await examenRepository.reactivarInscripcion(previa.id, condicion);
+    }
 
     return await examenRepository.inscribirAlumno(examenId, idAlumno, condicion);
   }
@@ -138,16 +175,16 @@ class ExamenService {
       return;
     }
 
-    // Obtener materias aprobadas del alumno (`idAlumno` es idAlumno)
-    const aprobadas = await inscripcionMateriaRepository.getMateriasAprobadas(idAlumno);
-    const materiasAprobadasIds = aprobadas.map((a: any) => a.cursada.materiaId);
+    // Obtener materias aprobadas del alumno con la derivación RAI completa
+    // (examen final ante tribunal, homologación, promoción Art. 37d)
+    const { default: estadoAcademicoService } = await import('./estadoAcademicoService.js');
+    const materiasAprobadas = await estadoAcademicoService.getMateriasAprobadasSet(idAlumno);
 
     // Verificar cada correlatividad
     for (const corr of correlatividadesRendir) {
       if (corr.tipoRequisito === 'OBLIGATORIA') {
-        if (!materiasAprobadasIds.includes(corr.materiaRequeridaId)) {
-          const materiaRequerida = await materiaRepository.findById(corr.materiaRequeridaId);
-          throw new Error(`Falta correlatividad obligatoria para rendir: ${materiaRequerida?.nombre}`);
+        if (!materiasAprobadas.has(corr.materiaRequeridaId)) {
+          throw new Error(`Falta correlatividad obligatoria para rendir: ${corr.materiaRequerida?.nombre}`);
         }
       }
     }
@@ -167,14 +204,20 @@ class ExamenService {
       throw new Error('Examen no encontrado');
     }
 
-    // Verificar que faltan más de 24 horas (RFBE1)
-    const ahora = new Date();
-    const horasRestantes = (examen.fecha.getTime() - ahora.getTime()) / (1000 * 60 * 60);
-    if (horasRestantes < 24) {
-      throw new Error('No puedes darte de baja faltando menos de 24 horas para el examen');
+    // Corte mismo-día (decisión institucional): desde las 00:00 del día de la
+    // mesa no se permite darse de baja. Reemplaza la regla previa de 24 horas.
+    const inicioDiaMesa = this.inicioDelDia(new Date(examen.fecha));
+    if (new Date() >= inicioDiaMesa) {
+      throw new Error('No puedes darte de baja el mismo día del examen');
     }
 
     return await examenRepository.desinscribirAlumno(examenId, idAlumno);
+  }
+
+  private inicioDelDia(fecha: Date): Date {
+    const d = new Date(fecha);
+    d.setHours(0, 0, 0, 0);
+    return d;
   }
 
   async getInscriptosByExamen(examenId: number) {

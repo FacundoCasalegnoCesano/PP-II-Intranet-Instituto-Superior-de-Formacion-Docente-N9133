@@ -129,11 +129,14 @@ class InscripcionCarreraController {
         return;
       }
 
-      const inscriptos = await inscripcionCarreraService.getInscriptosByCarrera(carreraId);
+      const inscriptos = await inscripcionCarreraService.getInscriptosByCarrera(carreraId, {
+        page: Number(req.query.page ?? 1), limit: Number(req.query.limit ?? 20)
+      });
       
       res.json({
         success: true,
-        data: inscriptos
+        data: inscriptos.data,
+        pagination: inscriptos.pagination
       });
     } catch (error) {
       next(error);

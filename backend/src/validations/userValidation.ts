@@ -66,6 +66,25 @@ export const updateUserSchema = Joi.object({
   activo: Joi.boolean()
 });
 
+export const changeRoleSchema = Joi.object({
+  rol: Joi.string()
+    .valid('ALUMNO', 'ADMINISTRATIVO', 'PROFESOR')
+    .required()
+    .messages({
+      'any.required': 'El nuevo rol es requerido',
+      'any.only': 'Rol inválido. Debe ser ALUMNO, ADMINISTRATIVO o PROFESOR'
+    })
+});
+
+export const toggleActiveSchema = Joi.object({
+  active: Joi.boolean()
+    .required()
+    .messages({
+      'any.required': 'El estado es requerido (true/false)',
+      'boolean.base': 'El estado debe ser true o false'
+    })
+});
+
 export const listUsersSchema = Joi.object({
   page: Joi.number()
     .integer()
@@ -76,7 +95,7 @@ export const listUsersSchema = Joi.object({
     .integer()
     .min(1)
     .max(100)
-    .default(10),
+    .default(20),
   
   rol: Joi.string()
     .valid('ALUMNO', 'ADMINISTRATIVO', 'PROFESOR'),

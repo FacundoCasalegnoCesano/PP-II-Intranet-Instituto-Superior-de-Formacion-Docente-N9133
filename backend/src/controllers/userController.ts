@@ -7,7 +7,7 @@ class UserController {
     try {
       const filters: Record<string, any> = {
         page: req.query.page ? parseInt(req.query.page as string) : 1,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 10
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20
       };
       
       if (req.query.rol !== undefined) {

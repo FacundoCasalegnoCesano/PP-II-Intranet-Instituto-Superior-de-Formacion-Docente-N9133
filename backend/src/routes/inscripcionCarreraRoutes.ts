@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import inscripcionCarreraController from '../controllers/inscripcionCarreraController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
+import { validationMiddleware } from '../middleware/validation.js';
+import { inscripcionCarreraSchema } from '../validations/inscripcionCarreraValidation.js';
 import { ROLES } from '../constants/roles.js';
+import { paginationQuerySchema } from '../validations/paginationValidation.js';
 
 const router = Router();
 
@@ -11,6 +14,7 @@ router.use(authMiddleware);
 // Admin puede inscribir a cualquier alumno
 router.post('/',
   roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
+  validationMiddleware(inscripcionCarreraSchema),
   inscripcionCarreraController.inscribirAlumno
 );
 
@@ -22,13 +26,14 @@ router.delete('/:id',
 
 // Ver carreras de un alumno (Alumno puede ver las suyas, Admin todas)
 router.get('/alumno/:alumnoId',
-  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
   inscripcionCarreraController.getCarrerasByAlumno
 );
 
 // Ver inscriptos por carrera (Solo Admin)
 router.get('/carrera/:carreraId/inscriptos',
   roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(paginationQuerySchema, 'query'),
   inscripcionCarreraController.getInscriptosByCarrera
 );
 

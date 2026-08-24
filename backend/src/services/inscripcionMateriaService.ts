@@ -2,6 +2,7 @@ import inscripcionMateriaRepository from '../repositories/inscripcionMateriaRepo
 import cursadaRepository from '../repositories/cursadaRepository.js';
 import userRepository from '../repositories/userRepository.js';
 import materiaRepository from '../repositories/materiaRepository.js';
+import periodoInscripcionService from './periodoInscripcionService.js';
 import type { InscripcionMateriaCreateData } from '../repositories/inscripcionMateriaRepository.js';
 import { ROLES } from '../constants/roles.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
@@ -29,6 +30,18 @@ class InscripcionMateriaService {
       throw new Error('Materia no encontrada');
     }
 
+    // Períodos de inscripción (RAM Art. 20a): el alumno solo puede auto-inscribirse
+    // si hay un período MATERIA vigente que habilite el tipo de cursada de la
+    // materia. El administrativo puede inscribir fuera de período.
+    if (currentUser.rol === ROLES.ALUMNO) {
+      const habilitada = await periodoInscripcionService.materiaHabilitada(materia.id);
+      if (!habilitada) {
+        throw new Error(
+          `La materia ${materia.nombre} no está habilitada para inscripción en este período`
+        );
+      }
+    }
+
     // Verificar que no esté ya inscripto
     const existing = await inscripcionMateriaRepository.findByAlumnoAndMateria(
       idAlumno,
@@ -46,6 +59,22 @@ class InscripcionMateriaService {
     // activa de la materia en el ciclo lectivo si existe (si no, queda NULL)
     const cursada = await cursadaRepository.getCursadaActivaByMateria(data.materiaId, cicloLectivo);
 
+    // La baja es lógica (estado BAJA) y la unique (alumnoId, materiaId, cicloLectivo)
+    // incluye registros dados de baja: si existe uno, se reactiva en lugar de crear
+    const previa = await inscripcionMateriaRepository.findByAlumnoAndMateriaIncludingBaja(
+      idAlumno,
+      data.materiaId,
+      cicloLectivo
+    );
+    if (previa) {
+      return await inscripcionMateriaRepository.update(previa.id, {
+        estado: 'ACTIVA',
+        fechaInscripcion: new Date(),
+        fechaBaja: null,
+        cursadaId: cursada?.id ?? null
+      });
+    }
+
     return await inscripcionMateriaRepository.create({
       ...data,
       alumnoId: idAlumno,
@@ -57,45 +86,56 @@ class InscripcionMateriaService {
   async verificarCorrelatividades(idAlumno: number, materiaId: number) {
     // Obtener correlatividades de la materia
     const correlatividades = await materiaRepository.getCorrelatividades(materiaId);
-    
+
     if (correlatividades.length === 0) {
       return; // No hay correlatividades, todo ok
     }
 
-    // Obtener materias aprobadas del alumno
-    const aprobadas = await inscripcionMateriaRepository.getMateriasAprobadas(idAlumno);
-    const materiasAprobadasIds = aprobadas.map((a: any) => a.cursada.materiaId);
+    // Régimen oficial: para CURSAR basta tener la correlativa REGULARIZADA
+    // (o aprobada). El estado se deriva de notas + asistencia (RAI Arts. 26-37).
+    const { default: estadoAcademicoService } = await import('./estadoAcademicoService.js');
+    const estadosPorMateria = await estadoAcademicoService.getMapaEstadosPorMateria(idAlumno);
+    const aprobadasSet = await estadoAcademicoService.getMateriasAprobadasSet(
+      idAlumno,
+      estadosPorMateria
+    );
+
+    const cumpleRequisito = (materiaRequeridaId: number): boolean => {
+      if (aprobadasSet.has(materiaRequeridaId)) return true; // aprobada ⊇ regularizada
+      return estadoAcademicoService.esRegularizado(estadosPorMateria.get(materiaRequeridaId));
+    };
 
     // Verificar cada correlatividad
     for (const corr of correlatividades) {
       if (corr.tipoRequisito === 'OBLIGATORIA') {
-        // Debe tener la materia aprobada
-        if (!materiasAprobadasIds.includes(corr.materiaRequeridaId)) {
-          const materiaRequerida = await materiaRepository.findById(corr.materiaRequeridaId);
-          throw new Error(`Falta correlatividad obligatoria: ${materiaRequerida?.nombre}`);
+        // Debe tener la materia regularizada o aprobada
+        if (!cumpleRequisito(corr.materiaRequeridaId)) {
+          throw new Error(
+            `Correlatividad no cumplida: necesitás tener REGULARIZADO ${corr.materiaRequerida?.nombre ?? 'la materia requerida'}`
+          );
         }
       } else if (corr.tipoRequisito === 'ALTERNATIVA') {
         // Debe tener al menos una del grupo
-        const alternativas = correlatividades.filter((c: any) => 
+        const alternativas = correlatividades.filter((c: any) =>
           c.tipoRequisito === 'ALTERNATIVA' && c.grupo === corr.grupo
         );
-        const tieneAlguna = alternativas.some((alt: any) => 
-          materiasAprobadasIds.includes(alt.materiaRequeridaId)
+        const tieneAlguna = alternativas.some((alt: any) =>
+          cumpleRequisito(alt.materiaRequeridaId)
         );
         if (!tieneAlguna) {
           throw new Error(`Falta alguna correlatividad alternativa del grupo ${corr.grupo}`);
         }
       } else if (corr.tipoRequisito === 'GRUPO') {
         // Debe tener la cantidad mínima del grupo
-        const grupo = correlatividades.filter((c: any) => 
+        const grupo = correlatividades.filter((c: any) =>
           c.tipoRequisito === 'GRUPO' && c.grupo === corr.grupo
         );
-        const aprobadasGrupo = grupo.filter((g: any) => 
-          materiasAprobadasIds.includes(g.materiaRequeridaId)
+        const cumplidasGrupo = grupo.filter((g: any) =>
+          cumpleRequisito(g.materiaRequeridaId)
         );
-        if (aprobadasGrupo.length < (corr.cantidadMinimaAprobadas || 0)) {
+        if (cumplidasGrupo.length < (corr.cantidadMinimaAprobadas || 0)) {
           throw new Error(
-            `Falta cumplir con el grupo ${corr.grupo}: necesita ${corr.cantidadMinimaAprobadas} materias aprobadas`
+            `Falta cumplir con el grupo ${corr.grupo}: necesita ${corr.cantidadMinimaAprobadas} materias regularizadas o aprobadas`
           );
         }
       }
@@ -119,18 +159,18 @@ class InscripcionMateriaService {
     return await inscripcionMateriaRepository.delete(id);
   }
 
-  async getInscripcionesByAlumno(alumnoId: number, currentUser: any) {
+  async getInscripcionesByAlumno(alumnoId: number, currentUser: any, pagination: { page?: number; limit?: number } = {}) {
     // `alumnoId` es el id de cuenta (Usuario.idUsuario)
     if (currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.id !== alumnoId) {
       throw new Error('No tienes permisos para ver estas inscripciones');
     }
 
     const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
-    return await inscripcionMateriaRepository.findByAlumnoId(idAlumno);
+    return await inscripcionMateriaRepository.findByAlumnoId(idAlumno, pagination);
   }
 
-  async getInscriptosByMateria(materiaId: number) {
-    return await inscripcionMateriaRepository.findByMateriaId(materiaId);
+  async getInscriptosByMateria(materiaId: number, pagination: { page?: number; limit?: number } = {}) {
+    return await inscripcionMateriaRepository.findByMateriaId(materiaId, pagination);
   }
 
   async getHistorialAlumnoMateria(alumnoId: number, materiaId: number) {

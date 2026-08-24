@@ -52,7 +52,7 @@ class MateriaController {
     try {
       const filters: any = {
         page: req.query.page ? parseInt(req.query.page as string) : 1,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 10
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20
       };
       
       if (req.query.search) filters.search = req.query.search as string;
@@ -167,6 +167,38 @@ class MateriaController {
     }
   }
 
+  // Materias de una carrera agrupadas por año (para seleccionar en el período)
+  async getMateriasPorAnio(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const idParam = req.params.carreraId;
+      if (!idParam) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de carrera no proporcionado'
+        });
+        return;
+      }
+
+      const carreraId = parseInt(idParam);
+      if (isNaN(carreraId)) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de carrera inválido'
+        });
+        return;
+      }
+
+      const grupos = await materiaService.getMateriasPorAnio(carreraId);
+
+      res.json({
+        success: true,
+        data: grupos
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getCorrelatividades(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const idParam = req.params.id;
@@ -259,6 +291,103 @@ class MateriaController {
       res.json({
         success: true,
         message: 'Correlatividad eliminada exitosamente'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async asignarProfesor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const idParam = req.params.id;
+      if (!idParam) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de materia no proporcionado'
+        });
+        return;
+      }
+
+      const materiaId = parseInt(idParam);
+      if (isNaN(materiaId)) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de materia inválido'
+        });
+        return;
+      }
+
+      const { profesorId } = req.body;
+      const asignacion = await materiaService.asignarProfesor(materiaId, profesorId);
+
+      res.status(201).json({
+        success: true,
+        message: 'Profesor asignado a la materia exitosamente',
+        data: asignacion
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async desasignarProfesor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const idParam = req.params.id;
+      const profParam = req.params.profesorId;
+      if (!idParam || !profParam) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de materia o profesor no proporcionado'
+        });
+        return;
+      }
+
+      const materiaId = parseInt(idParam);
+      const profesorId = parseInt(profParam);
+      if (isNaN(materiaId) || isNaN(profesorId)) {
+        res.status(400).json({
+          success: false,
+          message: 'IDs inválidos'
+        });
+        return;
+      }
+
+      await materiaService.desasignarProfesor(materiaId, profesorId);
+
+      res.json({
+        success: true,
+        message: 'Profesor desasignado de la materia exitosamente'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getProfesoresByMateria(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const idParam = req.params.id;
+      if (!idParam) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de materia no proporcionado'
+        });
+        return;
+      }
+
+      const materiaId = parseInt(idParam);
+      if (isNaN(materiaId)) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de materia inválido'
+        });
+        return;
+      }
+
+      const profesores = await materiaService.getProfesoresByMateria(materiaId);
+
+      res.json({
+        success: true,
+        data: profesores
       });
     } catch (error) {
       next(error);

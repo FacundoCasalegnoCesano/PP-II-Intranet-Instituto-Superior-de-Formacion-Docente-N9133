@@ -52,7 +52,7 @@ class CarreraController {
     try {
       const filters: any = {
         page: req.query.page ? parseInt(req.query.page as string) : 1,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 10
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20
       };
       
       if (req.query.search) filters.search = req.query.search as string;

@@ -34,11 +34,14 @@ class CursadaController {
       if (req.query.materiaId) filters.materiaId = parseInt(req.query.materiaId as string);
       if (req.query.docenteId) filters.docenteId = parseInt(req.query.docenteId as string);
       if (req.query.activo !== undefined) filters.activo = String(req.query.activo) === 'true';
+      filters.page = req.query.page ? parseInt(req.query.page as string) : 1;
+      filters.limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
 
       const result = await cursadaService.getCursadas(filters);
       res.json({
         success: true,
-        data: result
+        data: result.data,
+        pagination: result.pagination
       });
     } catch (error) {
       next(error);

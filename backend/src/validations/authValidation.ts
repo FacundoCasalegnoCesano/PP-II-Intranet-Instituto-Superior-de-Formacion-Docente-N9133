@@ -8,7 +8,7 @@ export const registerSchema = Joi.object({
       'string.empty': 'El nombre y apellido es requerido',
       'string.max': 'El nombre y apellido no puede exceder 255 caracteres'
     }),
-  
+
   dni: Joi.string()
     .required()
     .pattern(/^\d{7,8}$/)
@@ -134,6 +134,44 @@ export const changePasswordSchema = Joi.object({
     .required()
     .messages({
       'string.empty': 'La contraseña actual es requerida'
+    }),
+
+  newPassword: Joi.string()
+    .required()
+    .min(8)
+    .max(50)
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/)
+    .messages({
+      'string.empty': 'La nueva contraseña es requerida',
+      'string.min': 'La nueva contraseña debe tener al menos 8 caracteres',
+      'string.max': 'La nueva contraseña no puede exceder 50 caracteres',
+      'string.pattern.base': 'La contraseña debe tener al menos una mayúscula, una minúscula, un número y un carácter especial'
+    })
+});
+
+export const backupCodesActionSchema = Joi.object({
+  currentPassword: Joi.string()
+    .required()
+    .messages({
+      'string.empty': 'La contraseña es requerida'
+    })
+});
+
+export const backupCodeSchema = Joi.object({
+  email: Joi.string()
+    .required()
+    .email()
+    .messages({
+      'string.empty': 'El email es requerido',
+      'string.email': 'Formato de email inválido'
+    }),
+  
+  code: Joi.string()
+    .required()
+    .pattern(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
+    .messages({
+      'string.empty': 'El código es requerido',
+      'string.pattern.base': 'Formato de código inválido (XXXX-XXXX)'
     }),
   
   newPassword: Joi.string()

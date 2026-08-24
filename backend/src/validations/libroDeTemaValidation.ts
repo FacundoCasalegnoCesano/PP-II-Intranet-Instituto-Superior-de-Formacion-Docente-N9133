@@ -39,7 +39,7 @@ export const updateLibroDeTemaSchema = Joi.object({
 
 export const listLibroDeTemasSchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
-  limit: Joi.number().integer().min(1).max(100).default(10),
+  limit: Joi.number().integer().min(1).max(100).default(20),
   materiaId: Joi.number().integer().min(1),
   fechaDesde: Joi.date().messages({
     'date.base': 'fechaDesde debe ser una fecha válida (YYYY-MM-DD)'

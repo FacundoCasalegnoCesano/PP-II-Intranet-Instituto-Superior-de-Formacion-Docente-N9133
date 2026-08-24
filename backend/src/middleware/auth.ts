@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { verifyToken, extractTokenFromHeader } from '../utils/jwt.js';
+import { verifyAccessToken, extractTokenFromHeader } from '../utils/jwt.js';
 import userRepository from '../repositories/userRepository.js';
 import { prisma } from '../config/prisma.js';
 
@@ -38,7 +38,7 @@ async function authenticateRequest(
       return false;
     }
 
-    const decoded = verifyToken(token);
+    const decoded = verifyAccessToken(token);
 
     // Verificar que el usuario existe y está activo
     const user = await userRepository.findById(decoded.id);
@@ -58,12 +58,13 @@ async function authenticateRequest(
       return false;
     }
 
-    // Verificar que la sesión existe y no está cerrada
+    // Verificar que la sesión existe, no está cerrada ni revocada
     const session = await prisma.sesion.findFirst({
       where: {
         token,
         usuarioId: user.idUsuario,
-        cerradaEn: null
+        cerradaEn: null,
+        revocadaEn: null
       }
     });
 
