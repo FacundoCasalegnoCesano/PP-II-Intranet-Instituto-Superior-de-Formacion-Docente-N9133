@@ -457,13 +457,17 @@ model Calificacion {
   /// Número de instancia: Parcial 1, Parcial 2, TP 3, etc.
   numero           Int              @default(1)
   nota             Float
+  fechaEvaluacion  DateTime?        @map("fecha_evaluacion") @db.Date
   fechaRegistro    DateTime         @default(now()) @map("fecha_registro")
+  parcialOriginalId Int?            @unique @map("parcial_original_id")
   observacion      String?          @db.Text
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
   cursada Cursada @relation(fields: [cursadaId], references: [id])
   alumno  Alumno  @relation(fields: [alumnoId], references: [idAlumno])
+  parcialOriginal Calificacion? @relation("RecuperatorioParcial", fields: [parcialOriginalId], references: [id])
+  recuperatorio   Calificacion? @relation("RecuperatorioParcial")
 
   @@unique([cursadaId, alumnoId, tipoCalificacion, numero])
 }
