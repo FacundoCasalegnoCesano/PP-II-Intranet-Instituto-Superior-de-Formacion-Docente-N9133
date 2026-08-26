@@ -13,8 +13,21 @@ import {
 } from '../validations/authValidation.js';
 import { ROLES } from '../constants/roles.js';
 import rateLimit from 'express-rate-limit';
+import config from '../config/env.js';
 
 const router = Router();
+
+const publicAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  skip: () => config.nodeEnv === 'test',
+  message: {
+    success: false,
+    message: 'Demasiadas solicitudes. Intente de nuevo en 15 minutos.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // Rate limiter específico para backup codes (5 req/hora por IP)
 const backupCodeLimiter = rateLimit({
@@ -35,11 +48,11 @@ const backupCodesActionLimiter = rateLimit({
 });
 
 // Rutas públicas
-router.post('/login', validationMiddleware(loginSchema), authController.login);
+router.post('/login', publicAuthLimiter, validationMiddleware(loginSchema), authController.login);
 router.post('/select-role', authOnly, authController.selectRole); // Seleccionar rol después de login
-router.post('/forgot-password', validationMiddleware(forgotPasswordSchema), authController.forgotPassword);
-router.post('/reset-password', validationMiddleware(resetPasswordSchema), authController.resetPassword);
-router.get('/verify-reset-token/:token', authController.verifyResetToken);
+router.post('/forgot-password', publicAuthLimiter, validationMiddleware(forgotPasswordSchema), authController.forgotPassword);
+router.post('/reset-password', publicAuthLimiter, validationMiddleware(resetPasswordSchema), authController.resetPassword);
+router.get('/verify-reset-token/:token', publicAuthLimiter, authController.verifyResetToken);
 
 // Backup code recovery (admin only, público pero rate-limited)
 router.post('/admin/backup-code',
