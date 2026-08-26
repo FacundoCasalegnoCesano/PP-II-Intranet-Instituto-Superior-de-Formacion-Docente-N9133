@@ -27,6 +27,11 @@ router.get('/',
   examenController.listExamenes
 );
 
+router.get('/disponibles',
+  roleCheck(ROLES.ALUMNO),
+  examenController.getMesasDisponibles
+);
+
 router.get('/:id',
   roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR, ROLES.ALUMNO),
   examenController.getExamenById

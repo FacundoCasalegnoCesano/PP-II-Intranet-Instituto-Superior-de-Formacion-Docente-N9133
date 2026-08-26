@@ -74,6 +74,15 @@ class ExamenController {
     }
   }
 
+  async getMesasDisponibles(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await examenService.getMesasDisponibles(req.user!);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async updateExamen(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const idParam = req.params.id;

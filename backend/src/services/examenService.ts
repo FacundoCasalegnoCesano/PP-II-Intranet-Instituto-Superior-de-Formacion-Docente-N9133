@@ -5,6 +5,35 @@ import inscripcionMateriaRepository from '../repositories/inscripcionMateriaRepo
 import type { ExamenCreateData, ExamenUpdateData, TribunalCreateData } from '../repositories/examenRepository.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { ROLES } from '../constants/roles.js';
+import estadoAcademicoService from './estadoAcademicoService.js';
+import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
+
+type CurrentUser = {
+  id: number;
+  rol: string;
+};
+
+interface MesaDisponibleAlumno {
+  id: number;
+  materia: {
+    id: number;
+    nombre: string;
+    carrera: {
+      id: number;
+      nombre: string;
+    };
+  };
+  fecha: Date;
+  tipoExamen: string;
+  llamado: number;
+  tribunal: Array<{
+    profesorId: number;
+    apellidoNombre: string;
+    rolTribunal: string;
+  }>;
+  condicion: 'REGULAR' | 'LIBRE';
+  inscripto: boolean;
+}
 
 class ExamenService {
   // ===== EXÁMENES =====
@@ -33,6 +62,73 @@ class ExamenService {
 
   async listExamenes(filters: any) {
     return await examenRepository.findAllExamenes(filters);
+  }
+
+  async getMesasDisponibles(
+    currentUser: CurrentUser,
+    evaluadoEn = new Date()
+  ): Promise<MesaDisponibleAlumno[]> {
+    if (currentUser.rol !== ROLES.ALUMNO) {
+      throw new Error('Solo alumnos pueden consultar mesas disponibles');
+    }
+
+    const idAlumno = await getAlumnoIdByUsuarioId(currentUser.id);
+    const fechaDesde = this.inicioDelDia(evaluadoEn);
+    fechaDesde.setDate(fechaDesde.getDate() + 1);
+
+    const mesas = await examenRepository.findMesasDisponiblesParaAlumno({
+      usuarioId: currentUser.id,
+      alumnoId: idAlumno,
+      cicloLectivo: evaluadoEn.getFullYear(),
+      evaluadoEn,
+      fechaDesde
+    });
+    if (mesas.length === 0) return [];
+
+    const materiaIds = [...new Set(mesas.map(mesa => mesa.materiaId))];
+    const [regularidadesVigentes, materiasAprobadas] = await Promise.all([
+      estadoAcademicoService.getRegularidadesVigentesSet(
+        idAlumno,
+        materiaIds,
+        evaluadoEn
+      ),
+      estadoAcademicoService.getMateriasAprobadasSet(idAlumno)
+    ]);
+
+    return mesas.flatMap<MesaDisponibleAlumno>(mesa => {
+      const correlatividades = evaluarCorrelatividades({
+        modo: 'RENDIR',
+        correlatividades: mesa.materia.correlatividadesOrigen,
+        materiasCumplidas: materiasAprobadas
+      });
+      if (!correlatividades.cumple) return [];
+
+      const condicion = regularidadesVigentes.has(mesa.materiaId)
+        ? 'REGULAR'
+        : mesa.materia.inscripciones.length > 0
+          ? 'LIBRE'
+          : null;
+      if (condicion === null) return [];
+
+      return [{
+        id: mesa.id,
+        materia: {
+          id: mesa.materia.id,
+          nombre: mesa.materia.nombre,
+          carrera: mesa.materia.carrera
+        },
+        fecha: mesa.fecha,
+        tipoExamen: mesa.tipoExamen,
+        llamado: mesa.llamado,
+        tribunal: mesa.tribunales.map(tribunal => ({
+          profesorId: tribunal.profesorId,
+          apellidoNombre: tribunal.profesor.apellidoNombre,
+          rolTribunal: tribunal.rolTribunal
+        })),
+        condicion,
+        inscripto: mesa.inscripciones.some(inscripcion => inscripcion.fechaBaja === null)
+      }];
+    });
   }
 
   async updateExamen(id: number, data: ExamenUpdateData, currentUser: any) {
@@ -115,7 +211,6 @@ class ExamenService {
 
     // Verificar la condición académica declarada para rendir (RFGE9).
     if (condicion === 'REGULAR') {
-      const { default: estadoAcademicoService } = await import('./estadoAcademicoService.js');
       const regularidadVigente = await estadoAcademicoService.tieneRegularidadVigente(
         idAlumno,
         examen.materiaId
@@ -169,24 +264,22 @@ class ExamenService {
   async verificarCorrelatividadesParaExamen(idAlumno: number, materiaId: number) {
     // Obtener correlatividades que aplican para rendir (aplicaRendir = true)
     const correlatividades = await materiaRepository.getCorrelatividades(materiaId);
-    const correlatividadesRendir = correlatividades.filter((c: any) => c.aplicaRendir);
-
-    if (correlatividadesRendir.length === 0) {
+    if (correlatividades.length === 0) {
       return;
     }
 
     // Obtener materias aprobadas del alumno con la derivación RAI completa
     // (examen final ante tribunal, homologación, promoción Art. 37d)
-    const { default: estadoAcademicoService } = await import('./estadoAcademicoService.js');
     const materiasAprobadas = await estadoAcademicoService.getMateriasAprobadasSet(idAlumno);
 
-    // Verificar cada correlatividad
-    for (const corr of correlatividadesRendir) {
-      if (corr.tipoRequisito === 'OBLIGATORIA') {
-        if (!materiasAprobadas.has(corr.materiaRequeridaId)) {
-          throw new Error(`Falta correlatividad obligatoria para rendir: ${corr.materiaRequerida?.nombre}`);
-        }
-      }
+    const resultado = evaluarCorrelatividades({
+      modo: 'RENDIR',
+      correlatividades,
+      materiasCumplidas: materiasAprobadas
+    });
+
+    if (!resultado.cumple && resultado.primerError.tipo === 'OBLIGATORIA_NO_CUMPLIDA') {
+      throw new Error(`Falta correlatividad obligatoria para rendir: ${resultado.primerError.nombreMateria}`);
     }
   }
 

@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import type { RolTribunal, TipoExamen } from '@prisma/client';
 
 export interface ExamenCreateData {
   materiaId: number;
@@ -23,6 +24,32 @@ export interface TribunalCreateData {
   mesaId: number;
   profesorId: number;
   rolTribunal: string;
+}
+
+export interface MesaDisponibleParaAlumno {
+  id: number;
+  materiaId: number;
+  fecha: Date;
+  tipoExamen: TipoExamen;
+  llamado: number;
+  materia: {
+    id: number;
+    nombre: string;
+    carrera: { id: number; nombre: string };
+    correlatividadesOrigen: Array<{
+      materiaRequeridaId: number;
+      materiaRequerida: { id: number; nombre: string };
+      aplicaCursado: boolean;
+      aplicaRendir: boolean;
+    }>;
+    inscripciones: Array<{ id: number }>;
+  };
+  tribunales: Array<{
+    profesorId: number;
+    rolTribunal: RolTribunal;
+    profesor: { apellidoNombre: string };
+  }>;
+  inscripciones: Array<{ id: number; fechaBaja: Date | null }>;
 }
 
 class ExamenRepository {
@@ -137,6 +164,86 @@ class ExamenRepository {
       data: examenes,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
     };
+  }
+
+  async findMesasDisponiblesParaAlumno(filtros: {
+    usuarioId: number;
+    alumnoId: number;
+    cicloLectivo: number;
+    evaluadoEn: Date;
+    fechaDesde: Date;
+  }): Promise<MesaDisponibleParaAlumno[]> {
+    return await prisma.mesa.findMany({
+      where: {
+        activo: true,
+        estadoMesa: 'ABIERTA',
+        fecha: { gte: filtros.fechaDesde },
+        periodosHabilitadores: {
+          some: {
+            periodoInscripcion: {
+              tipo: 'EXAMEN',
+              activo: true,
+              fechaInicio: { lte: filtros.evaluadoEn },
+              fechaFin: { gte: filtros.evaluadoEn }
+            }
+          }
+        },
+        materia: {
+          carrera: {
+            inscripciones: {
+              some: {
+                usuarioId: filtros.usuarioId,
+                activo: true,
+                fechaBaja: null
+              }
+            }
+          }
+        }
+      },
+      select: {
+        id: true,
+        materiaId: true,
+        fecha: true,
+        tipoExamen: true,
+        llamado: true,
+        materia: {
+          select: {
+            id: true,
+            nombre: true,
+            carrera: { select: { id: true, nombre: true } },
+            correlatividadesOrigen: {
+              where: { tipoRequisito: 'OBLIGATORIA' },
+              select: {
+                materiaRequeridaId: true,
+                materiaRequerida: { select: { id: true, nombre: true } },
+                aplicaCursado: true,
+                aplicaRendir: true
+              }
+            },
+            inscripciones: {
+              where: {
+                alumnoId: filtros.alumnoId,
+                cicloLectivo: filtros.cicloLectivo,
+                estado: { in: ['ACTIVA', 'RECURSANDO'] }
+              },
+              select: { id: true }
+            }
+          }
+        },
+        tribunales: {
+          select: {
+            profesorId: true,
+            rolTribunal: true,
+            profesor: { select: { apellidoNombre: true } }
+          }
+        },
+        inscripciones: {
+          where: { alumnoId: filtros.alumnoId },
+          select: { id: true, fechaBaja: true }
+        }
+      },
+      orderBy: [{ fecha: 'asc' }, { id: 'asc' }]
+    });
   }
 
   async updateExamen(id: number, data: ExamenUpdateData): Promise<any> {
