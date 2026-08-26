@@ -1,4 +1,15 @@
 import { prisma } from '../config/prisma.js';
+import type { CorrelatividadSnapshot } from '../domain/academico/correlatividades.js';
+
+export type CorrelatividadConMateria = CorrelatividadSnapshot<{
+  id: number;
+  nombre: string;
+  carrera: { id: number; nombre: string };
+}> & {
+  id: number;
+  materiaOrigenId: number;
+  tipoRequisito: 'OBLIGATORIA';
+};
 
 export interface MateriaFilters {
   page?: number;
@@ -91,11 +102,13 @@ class MateriaRepository {
         curso: true,
         espacioCurricular: true,
         correlatividadesOrigen: {
+          where: { tipoRequisito: 'OBLIGATORIA' },
           include: {
             materiaRequerida: true
           }
         },
         correlatividadesRequeridas: {
+          where: { tipoRequisito: 'OBLIGATORIA' },
           include: {
             materiaOrigen: true
           }
@@ -248,10 +261,11 @@ class MateriaRepository {
     });
   }
 
-  async getCorrelatividades(materiaId: number): Promise<any> {
-    return await prisma.correlatividad.findMany({
+  async getCorrelatividades(materiaId: number): Promise<CorrelatividadConMateria[]> {
+    const correlatividades = await prisma.correlatividad.findMany({
       where: {
-        materiaOrigenId: materiaId
+        materiaOrigenId: materiaId,
+        tipoRequisito: 'OBLIGATORIA'
       },
       include: {
         materiaRequerida: {
@@ -261,29 +275,33 @@ class MateriaRepository {
         }
       }
     });
+
+    return correlatividades.map(correlatividad => ({
+      id: correlatividad.id,
+      materiaOrigenId: correlatividad.materiaOrigenId,
+      materiaRequeridaId: correlatividad.materiaRequeridaId,
+      materiaRequerida: correlatividad.materiaRequerida,
+      tipoRequisito: 'OBLIGATORIA',
+      aplicaCursado: correlatividad.aplicaCursado,
+      aplicaRendir: correlatividad.aplicaRendir
+    }));
   }
 
   async addCorrelatividad(data: {
     materiaOrigenId: number;
     materiaRequeridaId: number;
-    tipoRequisito: string;
-    grupo?: string | null;
-    cantidadMinimaAprobadas?: number | null;
+    tipoRequisito: 'OBLIGATORIA';
     aplicaCursado?: boolean;
     aplicaRendir?: boolean;
   }): Promise<any> {
-    const cleanData: any = {
-      materiaOrigenId: data.materiaOrigenId,
-      materiaRequeridaId: data.materiaRequeridaId,
-      tipoRequisito: data.tipoRequisito as any,
-      aplicaCursado: data.aplicaCursado ?? true,
-      aplicaRendir: data.aplicaRendir ?? true
-    };
-    if (data.grupo !== undefined) cleanData.grupo = data.grupo ?? null;
-    if (data.cantidadMinimaAprobadas !== undefined) cleanData.cantidadMinimaAprobadas = data.cantidadMinimaAprobadas ?? null;
-
     return await prisma.correlatividad.create({
-      data: cleanData
+      data: {
+        materiaOrigenId: data.materiaOrigenId,
+        materiaRequeridaId: data.materiaRequeridaId,
+        tipoRequisito: data.tipoRequisito,
+        aplicaCursado: data.aplicaCursado ?? true,
+        aplicaRendir: data.aplicaRendir ?? true
+      }
     });
   }
 
@@ -297,7 +315,7 @@ class MateriaRepository {
   // MÉTODOS PARA MATERIAS DISPONIBLES (ALUMNOS)
   // ============================================
 
-  async getMateriasDisponibles(alumnoId: number, carreraIds: number[], cicloLectivo: number): Promise<any> {
+  async getMateriasDisponibles(alumnoId: number, carreraIds: number[], cicloLectivo: number) {
     const materias = await prisma.materia.findMany({
       where: {
         carreraId: { in: carreraIds },
@@ -318,6 +336,7 @@ class MateriaRepository {
           }
         },
         correlatividadesOrigen: {
+          where: { tipoRequisito: 'OBLIGATORIA' },
           include: {
             materiaRequerida: true
           }
@@ -334,7 +353,7 @@ class MateriaRepository {
       },
       select: { materiaId: true }
     });
-    const materiasInscriptasIds = inscripciones.map((i: any) => i.materiaId);
+    const materiasInscriptasIds = inscripciones.map(i => i.materiaId);
 
     const aprobadas = await prisma.calificacion.findMany({
       where: {
@@ -349,48 +368,13 @@ class MateriaRepository {
         }
       }
     });
-    const materiasAprobadasIds = aprobadas.map((c: any) => c.cursada.materiaId);
+    const materiasAprobadasIds = aprobadas.map(c => c.cursada.materiaId);
 
-    return materias.map((materia: any) => {
-      const yaInscripto = materiasInscriptasIds.includes(materia.id);
-      const yaAprobada = materiasAprobadasIds.includes(materia.id);
-      
-      const correlativas = materia.correlatividadesOrigen || [];
-      let cumpleCorrelativas = true;
-      let correlativasPendientes: any[] = [];
-
-      for (const corr of correlativas) {
-        if (corr.tipoRequisito === 'OBLIGATORIA') {
-          if (!materiasAprobadasIds.includes(corr.materiaRequeridaId)) {
-            cumpleCorrelativas = false;
-            correlativasPendientes.push(corr.materiaRequerida);
-          }
-        } else if (corr.tipoRequisito === 'ALTERNATIVA') {
-          const alternativas = correlativas.filter((c: any) => 
-            c.tipoRequisito === 'ALTERNATIVA' && c.grupo === corr.grupo
-          );
-          const tieneAlguna = alternativas.some((alt: any) => 
-            materiasAprobadasIds.includes(alt.materiaRequeridaId)
-          );
-          if (!tieneAlguna) {
-            cumpleCorrelativas = false;
-            correlativasPendientes.push({
-              grupo: corr.grupo,
-              alternativas: alternativas.map((a: any) => a.materiaRequerida)
-            });
-          }
-        }
-      }
-
-      return {
-        ...materia,
-        yaInscripto,
-        yaAprobada,
-        cumpleCorrelativas,
-        correlativasPendientes,
-        horarios: (materia.cursadas ?? []).flatMap((c: any) => c.horarios ?? [])
-      };
-    });
+    return {
+      materias,
+      materiasInscriptasIds,
+      materiasAprobadasIds
+    };
   }
 
   async getHorariosByMateriaAndCiclo(materiaId: number, cicloLectivo: number): Promise<any> {

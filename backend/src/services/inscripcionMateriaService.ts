@@ -6,6 +6,8 @@ import periodoInscripcionService from './periodoInscripcionService.js';
 import type { InscripcionMateriaCreateData } from '../repositories/inscripcionMateriaRepository.js';
 import { ROLES } from '../constants/roles.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
+import estadoAcademicoService from './estadoAcademicoService.js';
+import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
 
 class InscripcionMateriaService {
   async inscribirAlumno(data: InscripcionMateriaCreateData, currentUser: any) {
@@ -93,52 +95,30 @@ class InscripcionMateriaService {
 
     // Régimen oficial: para CURSAR basta tener la correlativa REGULARIZADA
     // (o aprobada). El estado se deriva de notas + asistencia (RAI Arts. 26-37).
-    const { default: estadoAcademicoService } = await import('./estadoAcademicoService.js');
     const estadosPorMateria = await estadoAcademicoService.getMapaEstadosPorMateria(idAlumno);
     const aprobadasSet = await estadoAcademicoService.getMateriasAprobadasSet(
       idAlumno,
       estadosPorMateria
     );
 
-    const cumpleRequisito = (materiaRequeridaId: number): boolean => {
-      if (aprobadasSet.has(materiaRequeridaId)) return true; // aprobada ⊇ regularizada
-      return estadoAcademicoService.esRegularizado(estadosPorMateria.get(materiaRequeridaId));
-    };
-
-    // Verificar cada correlatividad
-    for (const corr of correlatividades) {
-      if (corr.tipoRequisito === 'OBLIGATORIA') {
-        // Debe tener la materia regularizada o aprobada
-        if (!cumpleRequisito(corr.materiaRequeridaId)) {
-          throw new Error(
-            `Correlatividad no cumplida: necesitás tener REGULARIZADO ${corr.materiaRequerida?.nombre ?? 'la materia requerida'}`
-          );
-        }
-      } else if (corr.tipoRequisito === 'ALTERNATIVA') {
-        // Debe tener al menos una del grupo
-        const alternativas = correlatividades.filter((c: any) =>
-          c.tipoRequisito === 'ALTERNATIVA' && c.grupo === corr.grupo
-        );
-        const tieneAlguna = alternativas.some((alt: any) =>
-          cumpleRequisito(alt.materiaRequeridaId)
-        );
-        if (!tieneAlguna) {
-          throw new Error(`Falta alguna correlatividad alternativa del grupo ${corr.grupo}`);
-        }
-      } else if (corr.tipoRequisito === 'GRUPO') {
-        // Debe tener la cantidad mínima del grupo
-        const grupo = correlatividades.filter((c: any) =>
-          c.tipoRequisito === 'GRUPO' && c.grupo === corr.grupo
-        );
-        const cumplidasGrupo = grupo.filter((g: any) =>
-          cumpleRequisito(g.materiaRequeridaId)
-        );
-        if (cumplidasGrupo.length < (corr.cantidadMinimaAprobadas || 0)) {
-          throw new Error(
-            `Falta cumplir con el grupo ${corr.grupo}: necesita ${corr.cantidadMinimaAprobadas} materias regularizadas o aprobadas`
-          );
-        }
+    const materiasCumplidas = new Set(aprobadasSet);
+    for (const [materiaRequeridaId, estado] of estadosPorMateria) {
+      if (estadoAcademicoService.esRegularizado(estado)) {
+        materiasCumplidas.add(materiaRequeridaId);
       }
+    }
+
+    const resultado = evaluarCorrelatividades({
+      modo: 'CURSAR',
+      correlatividades,
+      materiasCumplidas
+    });
+
+    if (!resultado.cumple) {
+      const error = resultado.primerError;
+      throw new Error(
+        `Correlatividad no cumplida: necesitás tener REGULARIZADO ${error.nombreMateria}`
+      );
     }
   }
 

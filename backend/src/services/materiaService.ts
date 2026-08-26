@@ -3,8 +3,24 @@ import carreraRepository from '../repositories/carreraRepository.js';
 import cursadaRepository from '../repositories/cursadaRepository.js';
 import profesorMateriaRepository from '../repositories/profesorMateriaRepository.js';
 import userRepository from '../repositories/userRepository.js';
+import { prisma } from '../config/prisma.js';
 import { AppError } from '../utils/AppError.js';
+import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import type { MateriaFilters, MateriaCreateData, MateriaUpdateData } from '../repositories/materiaRepository.js';
+import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
+
+type MateriasDisponiblesFacts = Awaited<ReturnType<typeof materiaRepository.getMateriasDisponibles>>;
+type MateriaDisponibleBase = MateriasDisponiblesFacts['materias'][number];
+type MateriaRequeridaDisponible = MateriaDisponibleBase['correlatividadesOrigen'][number]['materiaRequerida'];
+type MateriaDisponibleEvaluada = MateriaDisponibleBase & {
+  yaInscripto: boolean;
+  yaAprobada: boolean;
+  cumpleCorrelativas: boolean;
+  correlativasPendientes: MateriaRequeridaDisponible[];
+  horarios: unknown[];
+  carreras: MateriaDisponibleBase['carrera'][];
+  habilitada?: boolean;
+};
 
 class MateriaService {
   /**
@@ -130,9 +146,7 @@ class MateriaService {
   async addCorrelatividad(data: {
     materiaOrigenId: number;
     materiaRequeridaId: number;
-    tipoRequisito: string;
-    grupo?: string;
-    cantidadMinimaAprobadas?: number;
+    tipoRequisito: 'OBLIGATORIA';
     aplicaCursado?: boolean;
     aplicaRendir?: boolean;
   }) {
@@ -223,8 +237,6 @@ class MateriaService {
   async getMateriasDisponibles(alumnoId: number, cicloLectivo: number) {
     // `alumnoId` es el id de cuenta (Usuario.idUsuario). La tabla
     // InscripcionCarrera guarda usuarioId; las tablas de materias guardan idAlumno.
-    const { prisma } = await import('../config/prisma.js');
-    const { getAlumnoIdByUsuarioId } = await import('../utils/alumnoHelper.js');
     const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
 
     // Obtener carreras del alumno
@@ -243,25 +255,42 @@ class MateriaService {
     }
 
     // Obtener materias de todas las carreras del alumno
-    const carrerasIds = inscripcionesCarreras.map((ic: any) => ic.carreraId);
+    const carrerasIds = inscripcionesCarreras.map(ic => ic.carreraId);
     
-    const todasLasMaterias = await materiaRepository.getMateriasDisponibles(
+    const hechos = await materiaRepository.getMateriasDisponibles(
       idAlumno,
       carrerasIds,
       cicloLectivo
     );
 
     // Agrupar por materia (si está en múltiples carreras)
-    const materiasMap = new Map();
-    for (const materia of todasLasMaterias) {
-      if (materiasMap.has(materia.id)) {
-        const existing = materiasMap.get(materia.id);
+    const materiasMap = new Map<number, MateriaDisponibleEvaluada>();
+    for (const materia of hechos.materias) {
+      const resultadoCorrelatividades = evaluarCorrelatividades({
+        modo: 'MOSTRAR_DISPONIBILIDAD',
+        correlatividades: materia.correlatividadesOrigen,
+        materiasCumplidas: new Set(hechos.materiasAprobadasIds)
+      });
+      const correlativasPendientes = resultadoCorrelatividades.cumple
+        ? []
+        : resultadoCorrelatividades.pendientes.map(
+            pendiente => pendiente.materiaRequerida
+          );
+      const materiaEvaluada: MateriaDisponibleEvaluada = {
+        ...materia,
+        yaInscripto: hechos.materiasInscriptasIds.includes(materia.id),
+        yaAprobada: hechos.materiasAprobadasIds.includes(materia.id),
+        cumpleCorrelativas: resultadoCorrelatividades.cumple,
+        correlativasPendientes,
+        horarios: materia.cursadas.flatMap(cursada => cursada.horarios ?? []),
+        carreras: [materia.carrera]
+      };
+
+      const existing = materiasMap.get(materia.id);
+      if (existing) {
         existing.carreras = [...existing.carreras, materia.carrera];
       } else {
-        materiasMap.set(materia.id, {
-          ...materia,
-          carreras: [materia.carrera]
-        });
+        materiasMap.set(materia.id, materiaEvaluada);
       }
     }
 
@@ -281,8 +310,6 @@ class MateriaService {
   async verificarInscripcion(alumnoId: number, materiaId: number, cicloLectivo: number) {
     // `alumnoId` es el id de cuenta (Usuario.idUsuario). InscripcionCarrera
     // guarda usuarioId; InscripcionMateria y Calificacion guardan idAlumno.
-    const { prisma } = await import('../config/prisma.js');
-    const { getAlumnoIdByUsuarioId } = await import('../utils/alumnoHelper.js');
     const idAlumno = await getAlumnoIdByUsuarioId(alumnoId);
 
     // Verificar que la materia existe
@@ -292,7 +319,6 @@ class MateriaService {
     }
 
     // Verificar que el alumno existe
-    const userRepository = (await import('../repositories/userRepository.js')).default;
     const alumno = await userRepository.findById(alumnoId);
     if (!alumno) {
       throw new Error('Alumno no encontrado');
@@ -347,14 +373,9 @@ class MateriaService {
 
     if (!materiaDisponible.cumpleCorrelativas) {
       const pendientes = materiaDisponible.correlativasPendientes || [];
-      const mensaje = pendientes.map((p: any) => {
-        if (p.nombre) {
-          return `Falta: ${p.nombre}`;
-        } else if (p.grupo) {
-          return `Falta alguna alternativa del grupo: ${p.grupo}`;
-        }
-        return '';
-      }).filter(Boolean).join(', ');
+      const mensaje = pendientes
+        .map((pendiente: MateriaRequeridaDisponible) => `Falta: ${pendiente.nombre}`)
+        .join(', ');
       throw new Error(`No cumple con las correlatividades: ${mensaje}`);
     }
 
