@@ -38,6 +38,7 @@ export interface MateriaCreateData {
   aniosRegularidad?: number | null;
   carreraId: number;
   cursoId?: number | null;
+  cursoAnio?: number;
   espacioCurricularId?: number | null;
 }
 
@@ -58,6 +59,7 @@ export interface MateriaUpdateData {
   aniosRegularidad?: number | null;
   carreraId?: number;
   cursoId?: number | null;
+  cursoAnio?: number;
   espacioCurricularId?: number | null;
   activo?: boolean;
 }
@@ -300,6 +302,39 @@ class MateriaRepository {
     }));
   }
 
+  async findByCareerAndName(carreraId: number, nombre: string, excludeId?: number): Promise<any> {
+    return await prisma.materia.findFirst({
+      where: {
+        carreraId,
+        nombre,
+        ...(excludeId !== undefined ? { id: { not: excludeId } } : {})
+      }
+    });
+  }
+
+  async findCourseById(cursoId: number): Promise<any> {
+    return await prisma.curso.findUnique({ where: { id: cursoId } });
+  }
+
+  async resolveCursoId(carreraId: number, carreraNombre: string, anio: number): Promise<number> {
+    const used = await prisma.curso.findFirst({
+      where: {
+        anio,
+        materias: { some: { carreraId } }
+      },
+      orderBy: { id: 'asc' }
+    });
+    if (used) return used.id;
+
+    const descripcion = `${anio}° Año - ${carreraNombre}`;
+    const curso = await prisma.curso.upsert({
+      where: { anio_descripcion: { anio, descripcion } },
+      update: { activo: true },
+      create: { anio, descripcion, activo: true }
+    });
+    return curso.id;
+  }
+
   async addCorrelatividad(data: {
     materiaOrigenId: number;
     materiaRequeridaId: number;
@@ -388,6 +423,30 @@ class MateriaRepository {
       materiasInscriptasIds,
       materiasAprobadasIds
     };
+  }
+
+  async findCorrelativity(materiaOrigenId: number, materiaRequeridaId: number): Promise<any> {
+    return await prisma.correlatividad.findFirst({
+      where: {
+        materiaOrigenId,
+        materiaRequeridaId,
+        tipoRequisito: 'OBLIGATORIA'
+      }
+    });
+  }
+
+  async getCorrelativityEdges(carreraId: number): Promise<Array<{
+    materiaOrigenId: number;
+    materiaRequeridaId: number;
+  }>> {
+    return await prisma.correlatividad.findMany({
+      where: {
+        tipoRequisito: 'OBLIGATORIA',
+        materiaOrigen: { carreraId },
+        materiaRequerida: { carreraId }
+      },
+      select: { materiaOrigenId: true, materiaRequeridaId: true }
+    });
   }
 
   async getHorariosByMateriaAndCiclo(materiaId: number, cicloLectivo: number): Promise<any> {

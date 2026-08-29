@@ -25,6 +25,59 @@ type MateriaDisponibleEvaluada = MateriaDisponibleBase & {
 };
 
 class MateriaService {
+  private normalizeName(nombre: string): string {
+    return nombre.trim().replace(/\s+/g, ' ');
+  }
+
+  private validateCourseYear(cursoAnio: number, duracionAnios: number): void {
+    if (!Number.isInteger(cursoAnio) || cursoAnio < 1 || cursoAnio > duracionAnios) {
+      throw new AppError(400, `El año de la materia debe estar entre 1 y ${duracionAnios}, según la duración de la carrera`);
+    }
+  }
+
+  private async resolveCourseId(
+    carrera: { id: number; nombre: string; duracionAnios: number },
+    data: { cursoAnio?: number; cursoId?: number | null }
+  ): Promise<number> {
+    if (data.cursoAnio !== undefined) {
+      this.validateCourseYear(data.cursoAnio, carrera.duracionAnios);
+      return await materiaRepository.resolveCursoId(carrera.id, carrera.nombre, data.cursoAnio);
+    }
+
+    if (data.cursoId !== undefined && data.cursoId !== null) {
+      const curso = await materiaRepository.findCourseById(data.cursoId);
+      if (!curso) throw new AppError(400, 'Curso no encontrado');
+      this.validateCourseYear(curso.anio, carrera.duracionAnios);
+      return curso.id;
+    }
+
+    throw new AppError(400, 'cursoAnio o cursoId es requerido');
+  }
+
+  private createsCorrelationCycle(
+    originId: number,
+    requiredId: number,
+    edges: Array<{ materiaOrigenId: number; materiaRequeridaId: number }>
+  ): boolean {
+    const dependencies = new Map<number, number[]>();
+    for (const edge of edges) {
+      const current = dependencies.get(edge.materiaOrigenId) ?? [];
+      current.push(edge.materiaRequeridaId);
+      dependencies.set(edge.materiaOrigenId, current);
+    }
+
+    const pending = [requiredId];
+    const visited = new Set<number>();
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      if (current === originId) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      pending.push(...(dependencies.get(current) ?? []));
+    }
+    return false;
+  }
+
   /**
    * Años de regularidad según tipo de espacio cuando el administrativo
    * no carga un valor explícito: seminarios y talleres 1 año, resto 3.
@@ -47,14 +100,17 @@ class MateriaService {
     }
 
     // Verificar nombre único
-    const existing = await materiaRepository.findByNombre(data.nombre);
+    const nombre = this.normalizeName(data.nombre);
+    const existing = await materiaRepository.findByCareerAndName(data.carreraId, nombre);
     if (existing) {
-      throw new Error('Ya existe una materia con ese nombre');
+      throw new AppError(409, 'Ya existe una materia con ese nombre en la carrera');
     }
 
     const aniosRegularidad = this.resolverAniosRegularidad(data.tipoEspacio, data.aniosRegularidad);
+    const cursoId = await this.resolveCourseId(carrera, data);
+    const { cursoAnio: _cursoAnio, ...persistable } = data;
 
-    return await materiaRepository.create({ ...data, aniosRegularidad });
+    return await materiaRepository.create({ ...persistable, nombre, cursoId, aniosRegularidad });
   }
 
   async getMateriaById(id: number, currentUser?: any) {
@@ -78,10 +134,15 @@ class MateriaService {
     }
 
     // Verificar nombre único
-    if (data.nombre && data.nombre !== materia.nombre) {
-      const existing = await materiaRepository.findByNombre(data.nombre);
+    const carreraId = data.carreraId ?? materia.carreraId;
+    const carrera = await carreraRepository.findById(carreraId);
+    if (!carrera) throw new AppError(404, 'Carrera no encontrada');
+
+    const nombre = data.nombre === undefined ? materia.nombre : this.normalizeName(data.nombre);
+    if (nombre !== materia.nombre || carreraId !== materia.carreraId) {
+      const existing = await materiaRepository.findByCareerAndName(carreraId, nombre, id);
       if (existing) {
-        throw new Error('Ya existe una materia con ese nombre');
+        throw new AppError(409, 'Ya existe una materia con ese nombre en la carrera');
       }
     }
 
@@ -91,7 +152,20 @@ class MateriaService {
       data.aniosRegularidad = this.resolverAniosRegularidad(data.tipoEspacio, null);
     }
 
-    return await materiaRepository.update(id, data);
+    let cursoId = data.cursoId;
+    if (data.cursoAnio !== undefined || data.cursoId !== undefined) {
+      cursoId = await this.resolveCourseId(carrera, data);
+    } else if (carreraId !== materia.carreraId && materia.curso?.anio) {
+      cursoId = await this.resolveCourseId(carrera, { cursoAnio: materia.curso.anio });
+    }
+
+    const { cursoAnio: _cursoAnio, ...persistable } = data;
+    return await materiaRepository.update(id, {
+      ...persistable,
+      nombre,
+      carreraId,
+      ...(cursoId !== undefined ? { cursoId } : {})
+    });
   }
 
   async deleteMateria(id: number) {
@@ -168,7 +242,24 @@ class MateriaService {
 
     // Verificar que no sea la misma materia
     if (data.materiaOrigenId === data.materiaRequeridaId) {
-      throw new Error('Una materia no puede ser correlativa de sí misma');
+      throw new AppError(400, 'Una materia no puede ser correlativa de sí misma');
+    }
+
+    if (origen.carreraId !== requerida.carreraId) {
+      throw new AppError(400, 'Las correlatividades deben pertenecer a la misma carrera');
+    }
+
+    const duplicate = await materiaRepository.findCorrelativity(
+      data.materiaOrigenId,
+      data.materiaRequeridaId
+    );
+    if (duplicate) {
+      throw new AppError(409, 'La correlatividad ya existe');
+    }
+
+    const edges = await materiaRepository.getCorrelativityEdges(origen.carreraId);
+    if (this.createsCorrelationCycle(data.materiaOrigenId, data.materiaRequeridaId, edges)) {
+      throw new AppError(400, 'La correlatividad generaría un ciclo');
     }
 
     return await materiaRepository.addCorrelatividad(data);

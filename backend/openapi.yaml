@@ -1877,6 +1877,54 @@ components:
         refreshToken: { type: string }
 
     # -------- Carreras --------
+    Career:
+      type: object
+      required: [id, nombre, duracionAnios, activo]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        duracionAnios: { type: integer }
+        activo: { type: boolean }
+    Subject:
+      type: object
+      required: [id, nombre, cargaHoraria, tipoEspacio, carrera, curso, activo]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        descripcion: { type: string, nullable: true }
+        cargaHoraria: { type: integer }
+        tipoEspacio: { $ref: '#/components/schemas/TipoEspacio' }
+        carrera: { $ref: '#/components/schemas/Career' }
+        curso:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            anio: { type: integer }
+            descripcion: { type: string }
+        activo: { type: boolean }
+    Prerequisite:
+      type: object
+      required: [id, materiaOrigenId, materiaRequeridaId, materiaRequerida, tipoRequisito]
+      properties:
+        id: { type: integer }
+        materiaOrigenId: { type: integer }
+        materiaRequeridaId: { type: integer }
+        materiaRequerida: { $ref: '#/components/schemas/Subject' }
+        tipoRequisito: { type: string, enum: [OBLIGATORIA] }
+        aplicaCursado: { type: boolean }
+        aplicaRendir: { type: boolean }
+    TeachingAssignment:
+      type: object
+      required: [id, profesorId, materiaId, profesor, fechaAsignacion, activo]
+      properties:
+        id: { type: integer }
+        profesorId: { type: integer }
+        materiaId: { type: integer }
+        profesor: { $ref: '#/components/schemas/PublicUser' }
+        fechaAsignacion: { type: string, format: date-time }
+        fechaBaja: { type: string, format: date-time, nullable: true }
+        activo: { type: boolean }
     CarreraCreateRequest:
       type: object
       required: [nombre, duracionAnios]
@@ -1906,10 +1954,12 @@ components:
     MateriaCreateRequest:
       type: object
       required: [nombre, cargaHoraria, tipoEspacio, carreraId]
+      anyOf:
+        - required: [cursoAnio]
+        - required: [cursoId]
       properties:
         nombre: { type: string, maxLength: 255 }
         descripcion: { type: string, nullable: true }
-        codigo: { type: string, maxLength: 50, nullable: true }
         cargaHoraria: { type: integer, minimum: 1, maximum: 9999 }
         horasCatedra: { type: string, maxLength: 50, nullable: true }
         tipoEspacio: { $ref: '#/components/schemas/TipoEspacio' }
@@ -1923,6 +1973,7 @@ components:
         notaPromocion: { type: number, minimum: 0, maximum: 10, default: 8 }
         aniosRegularidad: { type: integer, minimum: 1, maximum: 5, default: 3 }
         carreraId: { type: integer, minimum: 1 }
+        cursoAnio: { type: integer, minimum: 1, description: Año dentro de la duración de la carrera. Entrada preferida. }
         cursoId: { type: integer, nullable: true }
         espacioCurricularId: { type: integer, nullable: true }
     MateriaUpdateRequest:
@@ -1930,7 +1981,6 @@ components:
       properties:
         nombre: { type: string, maxLength: 255 }
         descripcion: { type: string, nullable: true }
-        codigo: { type: string, maxLength: 50, nullable: true }
         cargaHoraria: { type: integer, minimum: 1, maximum: 9999 }
         horasCatedra: { type: string, maxLength: 50, nullable: true }
         tipoEspacio: { $ref: '#/components/schemas/TipoEspacio' }
@@ -1944,6 +1994,7 @@ components:
         notaPromocion: { type: number, minimum: 0, maximum: 10 }
         aniosRegularidad: { type: integer, minimum: 1, maximum: 5 }
         carreraId: { type: integer, minimum: 1 }
+        cursoAnio: { type: integer, minimum: 1, description: Entrada preferida; el backend resuelve o crea un curso compatible. }
         cursoId: { type: integer, nullable: true }
         espacioCurricularId: { type: integer, nullable: true }
         activo: { type: boolean }

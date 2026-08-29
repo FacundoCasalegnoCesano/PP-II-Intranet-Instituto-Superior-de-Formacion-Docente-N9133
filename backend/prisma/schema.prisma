@@ -274,6 +274,7 @@ model Materia {
   librosDeTemas    LibroDeTema[]
   periodosHabilitadores PeriodoMateriaHabilitada[]
 
+  @@unique([carreraId, nombre], map: "materias_carrera_nombre_unique")
   @@map("materias")
 }
 

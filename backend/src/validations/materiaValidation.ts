@@ -64,17 +64,16 @@ export const createMateriaSchema = Joi.object({
       'number.min': 'El ID de carrera debe ser mayor a 0'
     }),
   cursoId: Joi.number()
-    .required()
     .integer()
     .min(1)
     .messages({
-      'any.required': 'El curso (año de la carrera) es requerido: 1° Año, 2° Año, etc.',
       'number.base': 'El ID de curso debe ser un número',
       'number.integer': 'El ID de curso debe ser un número entero',
       'number.min': 'El ID de curso debe ser mayor a 0'
     }),
+  cursoAnio: Joi.number().integer().min(1).max(20),
   espacioCurricularId: Joi.number().integer().min(1).allow(null)
-});
+}).or('cursoAnio', 'cursoId');
 
 export const updateMateriaSchema = Joi.object({
   nombre: Joi.string().max(255),
@@ -93,6 +92,7 @@ export const updateMateriaSchema = Joi.object({
   aniosRegularidad: Joi.number().integer().min(1).max(5),
   carreraId: Joi.number().integer().min(1),
   cursoId: Joi.number().integer().min(1).allow(null),
+  cursoAnio: Joi.number().integer().min(1).max(20),
   espacioCurricularId: Joi.number().integer().min(1).allow(null),
   activo: Joi.boolean()
 });
