@@ -49,7 +49,7 @@ router.delete('/:id',
 
 // Ver materias de un alumno (Alumno puede ver las suyas, Admin todas)
 router.get('/alumno/:alumnoId',
-  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
   validationMiddleware(paginationQuerySchema, 'query'),
   inscripcionMateriaController.getMateriasByAlumno
 );

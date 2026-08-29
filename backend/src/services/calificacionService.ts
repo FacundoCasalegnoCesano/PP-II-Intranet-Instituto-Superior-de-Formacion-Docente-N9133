@@ -133,6 +133,9 @@ class CalificacionService {
   }
 
   async getByAlumno(alumnoUsuarioId: number, currentUser: any) {
+    if (currentUser.rol === ROLES.PROFESOR) {
+      throw new AppError(403, 'Los profesores deben consultar calificaciones desde sus cursadas');
+    }
     if (currentUser.rol === ROLES.ALUMNO && currentUser.id !== alumnoUsuarioId) {
       throw new AppError(403, 'Solo puedes consultar tus propias calificaciones');
     }

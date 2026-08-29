@@ -18,6 +18,7 @@ export interface MateriaFilters {
   carreraId?: number;
   tipoEspacio?: string;
   activo?: boolean;
+  profesorId?: number;
 }
 
 export interface MateriaCreateData {
@@ -142,6 +143,14 @@ class MateriaRepository {
     if (carreraId) where.carreraId = carreraId;
     if (tipoEspacio) where.tipoEspacio = tipoEspacio;
     if (activo !== undefined) where.activo = activo;
+    if (filters.profesorId !== undefined) {
+      where.AND = [{
+        OR: [
+          { profesorMaterias: { some: { profesorId: filters.profesorId, activo: true, fechaBaja: null } } },
+          { cursadas: { some: { docenteId: filters.profesorId } } }
+        ]
+      }];
+    }
 
     const [materias, total] = await Promise.all([
       prisma.materia.findMany({
@@ -237,12 +246,16 @@ class MateriaRepository {
     });
   }
 
-  async getMateriasByCarrera(carreraId: number): Promise<any> {
+  async getMateriasByCarrera(carreraId: number, profesorId?: number): Promise<any> {
+    const where: any = { carreraId, activo: true };
+    if (profesorId !== undefined) {
+      where.OR = [
+        { profesorMaterias: { some: { profesorId, activo: true, fechaBaja: null } } },
+        { cursadas: { some: { docenteId: profesorId } } }
+      ];
+    }
     return await prisma.materia.findMany({
-      where: {
-        carreraId,
-        activo: true
-      },
+      where,
       orderBy: { nombre: 'asc' },
       include: {
         curso: true,

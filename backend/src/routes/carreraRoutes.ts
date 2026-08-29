@@ -10,6 +10,13 @@ const router = Router();
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
 
+// Catálogo de carreras activas para alumnos (solo lectura)
+router.get('/catalogo',
+  roleCheck(ROLES.ALUMNO),
+  validationMiddleware(listCarrerasSchema, 'query'),
+  carreraController.listCatalogo
+);
+
 // Rutas para admin y profesores (pueden ver carreras)
 router.get('/',
   roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
@@ -18,7 +25,7 @@ router.get('/',
 );
 
 router.get('/:id/plan-estudio',
-  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR, ROLES.ALUMNO),
   carreraController.getPlanEstudio
 );
 

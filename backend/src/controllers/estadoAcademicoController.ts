@@ -2,6 +2,21 @@ import type { Request, Response, NextFunction } from 'express';
 import estadoAcademicoService from '../services/estadoAcademicoService.js';
 
 class EstadoAcademicoController {
+  async getTrayectoriaIntegral(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const alumnoId = parseInt(req.params.alumnoId!);
+      const carreraId = parseInt(req.query.carreraId as string);
+      if (isNaN(alumnoId) || isNaN(carreraId)) {
+        res.status(400).json({ success: false, message: 'alumnoId y carreraId son requeridos y deben ser numéricos' });
+        return;
+      }
+      const data = await estadoAcademicoService.getTrayectoriaIntegral(alumnoId, carreraId, req.user);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Estados de todos los alumnos de una materia (admin o profesor asignado)
   async getPorMateria(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

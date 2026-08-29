@@ -1,11 +1,11 @@
 import asistenciaRepository from '../repositories/asistenciaRepository.js';
 import cursadaRepository from '../repositories/cursadaRepository.js';
 import materiaRepository from '../repositories/materiaRepository.js';
-import profesorMateriaRepository from '../repositories/profesorMateriaRepository.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { AppError } from '../utils/AppError.js';
 import { ROLES } from '../constants/roles.js';
 import { MINIMO_CON_JUSTIFICACION, umbralAsistencia, permiteFlexionJustificadas } from '../utils/reglasAcademicas.js';
+import { verificarPermisoCursada as verificarPermisoCursadaDocente } from '../utils/docenteHelper.js';
 
 interface FilaCarga {
   alumnoId: number; // id de cuenta (Usuario.idUsuario)
@@ -20,27 +20,7 @@ class AsistenciaService {
    * o está asignado a la materia (profesores_materias).
    */
   private async verificarPermisoCursada(currentUser: any, cursadaId: number): Promise<void> {
-    if (currentUser.rol === ROLES.ADMINISTRATIVO) return;
-
-    if (currentUser.rol !== ROLES.PROFESOR) {
-      throw new AppError(403, 'No tienes permisos para gestionar asistencias');
-    }
-
-    const cursada = await cursadaRepository.findById(cursadaId);
-    if (!cursada) {
-      throw new AppError(404, 'Cursada no encontrada');
-    }
-
-    const esDocenteDeCursada = cursada.docenteId === currentUser.id;
-    const asignacion = await profesorMateriaRepository.findByProfesorAndMateria(
-      currentUser.id,
-      cursada.materiaId
-    );
-    const estaAsignado = asignacion !== null && asignacion.activo && !asignacion.fechaBaja;
-
-    if (!esDocenteDeCursada && !estaAsignado) {
-      throw new AppError(403, 'Solo el docente de la materia puede gestionar asistencias');
-    }
+    await verificarPermisoCursadaDocente(currentUser, cursadaId);
   }
 
   async cargarClase(
@@ -94,6 +74,9 @@ class AsistenciaService {
   }
 
   async getByAlumno(alumnoUsuarioId: number, currentUser: any) {
+    if (currentUser.rol === ROLES.PROFESOR) {
+      throw new AppError(403, 'Los profesores deben consultar asistencia desde sus cursadas');
+    }
     // El alumno solo puede ver su propio historial
     if (
       currentUser.rol === ROLES.ALUMNO &&

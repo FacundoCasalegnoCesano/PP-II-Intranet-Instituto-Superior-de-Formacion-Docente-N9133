@@ -2,6 +2,7 @@ import horarioRepository from '../repositories/horarioRepository.js';
 import cursadaRepository from '../repositories/cursadaRepository.js';
 import { ROLES } from '../constants/roles.js';
 import type { HorarioCreateData, HorarioUpdateData } from '../repositories/horarioRepository.js';
+import { verificarPermisoCursada, verificarPermisoMateria } from '../utils/docenteHelper.js';
 
 class HorarioService {
   async crearHorario(data: HorarioCreateData, currentUser: any) {
@@ -38,19 +39,22 @@ class HorarioService {
     return await horarioRepository.create(data);
   }
 
-  async getHorarioById(id: number) {
+  async getHorarioById(id: number, currentUser?: any) {
     const horario = await horarioRepository.findById(id);
     if (!horario) {
       throw new Error('Horario no encontrado');
     }
+    if (currentUser?.rol === ROLES.PROFESOR) await verificarPermisoCursada(currentUser, horario.cursadaId);
     return horario;
   }
 
-  async getHorariosByCursada(cursadaId: number) {
+  async getHorariosByCursada(cursadaId: number, currentUser?: any) {
+    if (currentUser?.rol === ROLES.PROFESOR) await verificarPermisoCursada(currentUser, cursadaId);
     return await horarioRepository.findByCursadaId(cursadaId);
   }
 
-  async getHorariosByMateria(materiaId: number) {
+  async getHorariosByMateria(materiaId: number, currentUser?: any) {
+    if (currentUser?.rol === ROLES.PROFESOR) await verificarPermisoMateria(currentUser, materiaId);
     return await horarioRepository.findByMateriaId(materiaId);
   }
 

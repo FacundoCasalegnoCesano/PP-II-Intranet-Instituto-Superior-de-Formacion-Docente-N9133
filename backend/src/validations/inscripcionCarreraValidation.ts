@@ -1,11 +1,11 @@
 import Joi from 'joi';
 
 export const inscripcionCarreraSchema = Joi.object({
-  // Opcional: los alumnos se inscriben a sí mismos (el controller usa su token);
-  // el administrativo puede enviar alumnoId (id de cuenta).
+  // El administrativo debe indicar el alumno (id de cuenta).
   alumnoId: Joi.number()
     .integer()
     .min(1)
+    .required()
     .messages({
       'number.base': 'El ID del alumno debe ser un número',
       'number.integer': 'El ID del alumno debe ser un número entero',

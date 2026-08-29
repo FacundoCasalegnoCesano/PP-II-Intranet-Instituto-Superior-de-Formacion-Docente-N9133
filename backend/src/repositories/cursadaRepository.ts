@@ -148,6 +148,13 @@ class CursadaRepository {
     });
   }
 
+  async findByDocenteAndMateria(materiaId: number, docenteId: number): Promise<any[]> {
+    return await prisma.cursada.findMany({
+      where: { materiaId, docenteId },
+      select: { id: true }
+    });
+  }
+
   async findDisponiblesParaCalificaciones(filtros: {
     anioLectivo: number;
     profesorId?: number;
@@ -195,12 +202,28 @@ class CursadaRepository {
     }));
   }
 
-  async findAll(filters: { anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } & PaginationInput = {}) {
+  async findAll(filters: { anioLectivo?: number; materiaId?: number; docenteId?: number; profesorId?: number; activo?: boolean } & PaginationInput = {}) {
     const where: any = {};
     if (filters.anioLectivo) where.anioLectivo = filters.anioLectivo;
     if (filters.materiaId) where.materiaId = filters.materiaId;
     if (filters.docenteId) where.docenteId = filters.docenteId;
     if (filters.activo !== undefined) where.activo = filters.activo;
+    if (filters.profesorId !== undefined) {
+      where.OR = [
+        { docenteId: filters.profesorId },
+        {
+          materia: {
+            profesorMaterias: {
+              some: {
+                profesorId: filters.profesorId,
+                activo: true,
+                fechaBaja: null
+              }
+            }
+          }
+        }
+      ];
+    }
 
     const { page, limit, skip } = normalizePagination(filters);
     const [data, total] = await Promise.all([prisma.cursada.findMany({
@@ -242,6 +265,12 @@ class CursadaRepository {
       ]
     }), prisma.cursada.count({ where })]);
     return paginated(data, total, page, limit);
+  }
+
+  async findAllForProfesor(filters: { anioLectivo?: number; materiaId?: number; activo?: boolean; profesorId?: number } & PaginationInput = {}, profesorId?: number) {
+    const id = profesorId ?? filters.profesorId;
+    if (id === undefined) throw new Error('profesorId es requerido');
+    return await this.findAll({ ...filters, profesorId: id });
   }
 
   async update(id: number, data: CursadaUpdateData): Promise<any> {

@@ -1,5 +1,7 @@
 import carreraRepository from '../repositories/carreraRepository.js';
 import type { CarreraFilters, CarreraCreateData, CarreraUpdateData } from '../repositories/carreraRepository.js';
+import { ROLES } from '../constants/roles.js';
+import { AppError } from '../utils/AppError.js';
 
 class CarreraService {
   async createCarrera(data: CarreraCreateData) {
@@ -22,6 +24,10 @@ class CarreraService {
 
   async listCarreras(filters: CarreraFilters = {}) {
     return await carreraRepository.findAll(filters);
+  }
+
+  async listCatalogo(filters: CarreraFilters = {}) {
+    return await carreraRepository.findAll({ ...filters, activo: true });
   }
 
   async updateCarrera(id: number, data: CarreraUpdateData) {
@@ -55,10 +61,13 @@ class CarreraService {
     return await carreraRepository.delete(id);
   }
 
-  async getPlanEstudio(id: number) {
+  async getPlanEstudio(id: number, currentUser?: any) {
     const plan = await carreraRepository.getPlanEstudio(id);
     if (!plan) {
-      throw new Error('Carrera no encontrada');
+      throw new AppError(404, 'Carrera no encontrada');
+    }
+    if (currentUser?.rol === ROLES.ALUMNO && !plan.activo) {
+      throw new AppError(404, 'Carrera no encontrada');
     }
     return plan;
   }

@@ -4,6 +4,29 @@ import { AppError } from '../utils/AppError.js';
 import { ROLES } from '../constants/roles.js';
 
 /**
+ * Una materia/cursada pertenece al profesor si tiene una asignación activa
+ * vigente o si existe una cursada cuyo docenteId es el profesor.
+ */
+export async function tieneAsignacionActivaAMateria(profesorId: number, materiaId: number): Promise<boolean> {
+  const asignacion = await profesorMateriaRepository.findByProfesorAndMateria(profesorId, materiaId);
+  return asignacion !== null && asignacion.activo && !asignacion.fechaBaja;
+}
+
+export async function esProfesorAsignadoAMateria(profesorId: number, materiaId: number): Promise<boolean> {
+  if (await tieneAsignacionActivaAMateria(profesorId, materiaId)) return true;
+
+  const cursadas = await cursadaRepository.findByDocenteAndMateria(materiaId, profesorId);
+  return cursadas.length > 0;
+}
+
+export async function verificarPermisoMateria(currentUser: any, materiaId: number): Promise<void> {
+  if (currentUser.rol === ROLES.ADMINISTRATIVO) return;
+  if (currentUser.rol !== ROLES.PROFESOR || !(await esProfesorAsignadoAMateria(currentUser.id, materiaId))) {
+    throw new AppError(403, 'No tienes permisos para acceder a esta materia');
+  }
+}
+
+/**
  * Verifica que el usuario pueda gestionar la cursada:
  * - ADMINISTRATIVO: siempre.
  * - PROFESOR: solo si es docente de la cursada o está asignado
@@ -23,11 +46,7 @@ export async function verificarPermisoCursada(currentUser: any, cursadaId: numbe
   }
 
   const esDocenteDeCursada = cursada.docenteId === currentUser.id;
-  const asignacion = await profesorMateriaRepository.findByProfesorAndMateria(
-    currentUser.id,
-    cursada.materiaId
-  );
-  const estaAsignado = asignacion !== null && asignacion.activo && !asignacion.fechaBaja;
+  const estaAsignado = esDocenteDeCursada || await tieneAsignacionActivaAMateria(currentUser.id, cursada.materiaId);
 
   if (!esDocenteDeCursada && !estaAsignado) {
     throw new AppError(403, 'Solo el docente de la materia puede realizar esta acción');

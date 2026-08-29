@@ -134,7 +134,7 @@ class CarreraRepository {
       include: {
         materias: {
           where: { activo: true },
-          orderBy: { nombre: 'asc' },
+          orderBy: [{ curso: { anio: 'asc' } }, { nombre: 'asc' }],
           include: {
             curso: true
           }

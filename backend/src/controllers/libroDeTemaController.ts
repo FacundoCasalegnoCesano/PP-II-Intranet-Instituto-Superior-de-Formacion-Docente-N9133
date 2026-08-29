@@ -21,7 +21,7 @@ class LibroDeTemaController {
       if (req.query.fechaDesde) filters.fechaDesde = req.query.fechaDesde as string;
       if (req.query.fechaHasta) filters.fechaHasta = req.query.fechaHasta as string;
 
-      const result = await libroDeTemaService.list(filters);
+      const result = await libroDeTemaService.list(filters, req.user!);
       res.json({
         success: true,
         data: result.data,
@@ -54,7 +54,7 @@ class LibroDeTemaController {
       const id = parseId(req, res, 'ID de registro');
       if (id === null) return;
 
-      const registro = await libroDeTemaService.getById(id);
+      const registro = await libroDeTemaService.getById(id, req.user!);
       res.json({
         success: true,
         data: registro
@@ -109,7 +109,7 @@ class LibroDeTemaController {
         return;
       }
 
-      const registros = await libroDeTemaService.getByMateria(materiaId);
+      const registros = await libroDeTemaService.getByMateria(materiaId, req.user!);
       res.json({
         success: true,
         data: registros

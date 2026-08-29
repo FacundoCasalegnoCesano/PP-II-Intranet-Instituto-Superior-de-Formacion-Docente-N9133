@@ -7,6 +7,7 @@ import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { ROLES } from '../constants/roles.js';
 import estadoAcademicoService from './estadoAcademicoService.js';
 import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
+import { AppError } from '../utils/AppError.js';
 
 type CurrentUser = {
   id: number;
@@ -52,15 +53,27 @@ class ExamenService {
     return await examenRepository.createExamen(data);
   }
 
-  async getExamenById(id: number) {
-    const examen = await examenRepository.findExamenById(id);
+  async getExamenById(id: number, currentUser?: CurrentUser) {
+    const examen = await examenRepository.findExamenById(
+      id,
+      currentUser?.rol === ROLES.PROFESOR ? currentUser.id : undefined
+    );
     if (!examen) {
-      throw new Error('Examen no encontrado');
+      throw new AppError(404, 'Examen no encontrado');
+    }
+    if (currentUser?.rol === ROLES.PROFESOR && !examen.tribunales?.some((tribunal: any) => tribunal.profesorId === currentUser.id)) {
+      throw new AppError(404, 'Mesa de examen no disponible');
     }
     return examen;
   }
 
-  async listExamenes(filters: any) {
+  async listExamenes(filters: any, currentUser?: CurrentUser) {
+    if (currentUser?.rol === ROLES.PROFESOR) {
+      return await examenRepository.findAllExamenes({ ...filters, profesorId: currentUser.id });
+    }
+    if (currentUser && currentUser.rol !== ROLES.ADMINISTRATIVO) {
+      throw new AppError(403, 'No tienes permisos para listar mesas');
+    }
     return await examenRepository.findAllExamenes(filters);
   }
 
@@ -171,7 +184,8 @@ class ExamenService {
 
     // Verificar que el profesor existe
     const profesor = await userRepository.findById(data.profesorId);
-    if (!profesor || profesor.rol !== ROLES.PROFESOR) {
+    const rolesProfesor = (profesor?.rol ?? '').split(',').map((rol: string) => rol.trim());
+    if (!profesor || !rolesProfesor.includes(ROLES.PROFESOR)) {
       throw new Error('Profesor no encontrado o no es profesor');
     }
 
@@ -190,7 +204,8 @@ class ExamenService {
   async inscribirAlumno(examenId: number, alumnoId: number, condicion: string, currentUser: any) {
     // `alumnoId` es el id de cuenta (Usuario.idUsuario). InscripcionExamen guarda idAlumno.
     const alumno = await userRepository.findById(alumnoId);
-    if (!alumno || alumno.rol !== ROLES.ALUMNO) {
+    const rolesAlumno = (alumno?.rol ?? '').split(',').map((rol: string) => rol.trim());
+    if (!alumno || !rolesAlumno.includes(ROLES.ALUMNO)) {
       throw new Error('Alumno no encontrado');
     }
 
@@ -313,11 +328,15 @@ class ExamenService {
     return d;
   }
 
-  async getInscriptosByExamen(examenId: number) {
+  async getInscriptosByExamen(examenId: number, currentUser?: CurrentUser) {
+    await this.getExamenById(examenId, currentUser);
     return await examenRepository.getInscriptosByExamen(examenId);
   }
 
   async getInscripcionesByAlumno(alumnoId: number, currentUser: any) {
+    if (currentUser.rol === ROLES.PROFESOR) {
+      throw new AppError(403, 'Los profesores no pueden consultar inscripciones globales a exámenes');
+    }
     if (currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.id !== alumnoId) {
       throw new Error('No tienes permisos para ver estas inscripciones');
     }
@@ -336,7 +355,10 @@ class ExamenService {
 
     const examen = await examenRepository.findExamenById(examenId);
     if (!examen) {
-      throw new Error('Examen no encontrado');
+      throw new AppError(404, 'Examen no encontrado');
+    }
+    if (currentUser.rol === ROLES.PROFESOR && !examen.tribunales?.some((tribunal: any) => tribunal.profesorId === currentUser.id)) {
+      throw new AppError(403, 'Solo integrantes del tribunal pueden registrar la calificación');
     }
 
     // Verificar que el examen existe y la materia tiene nota mínima

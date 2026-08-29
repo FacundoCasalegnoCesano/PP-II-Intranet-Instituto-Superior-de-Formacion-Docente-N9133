@@ -5,9 +5,11 @@ import profesorMateriaRepository from '../repositories/profesorMateriaRepository
 import userRepository from '../repositories/userRepository.js';
 import { prisma } from '../config/prisma.js';
 import { AppError } from '../utils/AppError.js';
+import { ROLES } from '../constants/roles.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import type { MateriaFilters, MateriaCreateData, MateriaUpdateData } from '../repositories/materiaRepository.js';
 import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
+import { verificarPermisoMateria } from '../utils/docenteHelper.js';
 
 type MateriasDisponiblesFacts = Awaited<ReturnType<typeof materiaRepository.getMateriasDisponibles>>;
 type MateriaDisponibleBase = MateriasDisponiblesFacts['materias'][number];
@@ -55,15 +57,17 @@ class MateriaService {
     return await materiaRepository.create({ ...data, aniosRegularidad });
   }
 
-  async getMateriaById(id: number) {
+  async getMateriaById(id: number, currentUser?: any) {
     const materia = await materiaRepository.findById(id);
     if (!materia) {
       throw new Error('Materia no encontrada');
     }
+    if (currentUser?.rol === ROLES.PROFESOR) await verificarPermisoMateria(currentUser, id);
     return materia;
   }
 
-  async listMaterias(filters: MateriaFilters = {}) {
+  async listMaterias(filters: MateriaFilters = {}, currentUser?: any) {
+    if (currentUser?.rol === ROLES.PROFESOR) filters = { ...filters, profesorId: currentUser.id };
     return await materiaRepository.findAll(filters);
   }
 
@@ -99,13 +103,13 @@ class MateriaService {
     return await materiaRepository.delete(id);
   }
 
-  async getMateriasByCarrera(carreraId: number) {
+  async getMateriasByCarrera(carreraId: number, currentUser?: any) {
     const carrera = await carreraRepository.findById(carreraId);
     if (!carrera) {
       throw new Error('Carrera no encontrada');
     }
 
-    return await materiaRepository.getMateriasByCarrera(carreraId);
+    return await materiaRepository.getMateriasByCarrera(carreraId, currentUser?.rol === ROLES.PROFESOR ? currentUser.id : undefined);
   }
 
   /**
@@ -113,8 +117,8 @@ class MateriaService {
    * para la pantalla de selección del período de inscripción
    * (carrera → año → materias).
    */
-  async getMateriasPorAnio(carreraId: number) {
-    const materias = await this.getMateriasByCarrera(carreraId);
+  async getMateriasPorAnio(carreraId: number, currentUser?: any) {
+    const materias = await this.getMateriasByCarrera(carreraId, currentUser);
 
     const grupos = new Map<number, any[]>();
     for (const m of materias) {
@@ -134,11 +138,12 @@ class MateriaService {
       }));
   }
 
-  async getCorrelatividades(materiaId: number) {
+  async getCorrelatividades(materiaId: number, currentUser?: any) {
     const materia = await materiaRepository.findById(materiaId);
     if (!materia) {
       throw new Error('Materia no encontrada');
     }
+    if (currentUser?.rol === ROLES.PROFESOR) await verificarPermisoMateria(currentUser, materiaId);
 
     return await materiaRepository.getCorrelatividades(materiaId);
   }
@@ -221,11 +226,12 @@ class MateriaService {
     return await profesorMateriaRepository.desasignar(profesorId, materiaId);
   }
 
-  async getProfesoresByMateria(materiaId: number) {
+  async getProfesoresByMateria(materiaId: number, currentUser?: any) {
     const materia = await materiaRepository.findById(materiaId);
     if (!materia) {
       throw new AppError(404, 'Materia no encontrada');
     }
+    if (currentUser?.rol === ROLES.PROFESOR) await verificarPermisoMateria(currentUser, materiaId);
 
     return await profesorMateriaRepository.findByMateria(materiaId);
   }

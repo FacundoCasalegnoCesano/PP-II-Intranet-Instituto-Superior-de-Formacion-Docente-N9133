@@ -37,7 +37,7 @@ class CursadaController {
       filters.page = req.query.page ? parseInt(req.query.page as string) : 1;
       filters.limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
 
-      const result = await cursadaService.getCursadas(filters);
+      const result = await cursadaService.getCursadas(filters, req.user!);
       res.json({
         success: true,
         data: result.data,
@@ -53,7 +53,7 @@ class CursadaController {
       const id = parseId(req, res, 'ID de cursada');
       if (id === null) return;
 
-      const cursada = await cursadaService.getCursadaById(id);
+      const cursada = await cursadaService.getCursadaById(id, req.user!);
       res.json({
         success: true,
         data: cursada

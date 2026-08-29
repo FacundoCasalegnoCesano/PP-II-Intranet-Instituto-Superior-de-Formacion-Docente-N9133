@@ -30,9 +30,10 @@ router.get('/resumen/:cursadaId',
   asistenciaController.getResumenCursada
 );
 
-// Historial del alumno (el propio, admin o profesor)
+// Historial del alumno (el propio o administrativo). Los profesores consultan
+// asistencia desde sus cursadas autorizadas.
 router.get('/alumno/:alumnoId',
-  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
   asistenciaController.getByAlumno
 );
 

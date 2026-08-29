@@ -120,7 +120,7 @@ class InscripcionMateriaController {
 
       const inscriptos = await inscripcionMateriaService.getInscriptosByMateria(materiaId, {
         page: Number(req.query.page ?? 1), limit: Number(req.query.limit ?? 20)
-      });
+      }, req.user!);
       
       res.json({
         success: true,

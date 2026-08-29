@@ -53,33 +53,46 @@ class CursadaService {
     return await cursadaRepository.create(data);
   }
 
-  async getCursadas(filters: { page?: number; limit?: number; anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } = {}) {
+  async getCursadas(filters: { page?: number; limit?: number; anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } = {}, currentUser?: any) {
+    if (currentUser?.rol === ROLES.PROFESOR) {
+      const { docenteId: _ignored, ...profesorFilters } = filters;
+      return await cursadaRepository.findAllForProfesor({ ...profesorFilters, profesorId: currentUser.id });
+    }
+    if (currentUser && currentUser.rol !== ROLES.ADMINISTRATIVO) {
+      throw new AppError(403, 'No tienes permisos para listar cursadas');
+    }
     return await cursadaRepository.findAll(filters);
   }
 
-  async getCursadaById(id: number) {
+  async getCursadaById(id: number, currentUser?: any) {
     const cursada = await cursadaRepository.findById(id);
     if (!cursada) {
       throw new AppError(404, 'Cursada no encontrada');
+    }
+    if (currentUser?.rol === ROLES.PROFESOR) {
+      await verificarPermisoCursada(currentUser, id);
+    }
+    if (currentUser && currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.rol !== ROLES.PROFESOR) {
+      throw new AppError(403, 'No tienes permisos para consultar cursadas');
     }
     return cursada;
   }
 
   async updateCursada(id: number, data: CursadaUpdateData, currentUser: any) {
     this.esAdministrativo(currentUser);
-    await this.getCursadaById(id);
+    await this.getCursadaById(id, currentUser);
     await this.validarDatos(data, id);
     return await cursadaRepository.update(id, data);
   }
 
   async deleteCursada(id: number, currentUser: any) {
     this.esAdministrativo(currentUser);
-    await this.getCursadaById(id);
+    await this.getCursadaById(id, currentUser);
     return await cursadaRepository.delete(id);
   }
 
   async getInscriptosByCursada(cursadaId: number, currentUser: any) {
-    await this.getCursadaById(cursadaId);
+    await this.getCursadaById(cursadaId, currentUser);
     if (currentUser.rol !== ROLES.ADMINISTRATIVO) {
       await verificarPermisoCursada(currentUser, cursadaId);
     }

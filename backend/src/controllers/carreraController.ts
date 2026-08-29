@@ -70,6 +70,22 @@ class CarreraController {
     }
   }
 
+  async listCatalogo(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const filters: any = {
+        page: req.query.page ? parseInt(req.query.page as string) : 1,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+        activo: true
+      };
+      if (req.query.search) filters.search = req.query.search as string;
+
+      const result = await carreraService.listCatalogo(filters);
+      res.json({ success: true, data: result.data, pagination: result.pagination });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async updateCarrera(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const idParam = req.params.id;
@@ -154,7 +170,7 @@ class CarreraController {
         return;
       }
 
-      const plan = await carreraService.getPlanEstudio(id);
+      const plan = await carreraService.getPlanEstudio(id, req.user!);
       
       res.json({
         success: true,

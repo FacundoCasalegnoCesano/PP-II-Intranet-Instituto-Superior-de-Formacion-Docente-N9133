@@ -6,8 +6,10 @@ import periodoInscripcionService from './periodoInscripcionService.js';
 import type { InscripcionMateriaCreateData } from '../repositories/inscripcionMateriaRepository.js';
 import { ROLES } from '../constants/roles.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
+import { AppError } from '../utils/AppError.js';
 import estadoAcademicoService from './estadoAcademicoService.js';
 import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
+import { verificarPermisoMateria } from '../utils/docenteHelper.js';
 
 class InscripcionMateriaService {
   async inscribirAlumno(data: InscripcionMateriaCreateData, currentUser: any) {
@@ -17,7 +19,8 @@ class InscripcionMateriaService {
       throw new Error('Alumno no encontrado');
     }
 
-    if (alumno.rol !== ROLES.ALUMNO) {
+    const rolesAlumno = (alumno.rol ?? '').split(',').map((rol: string) => rol.trim());
+    if (!rolesAlumno.includes(ROLES.ALUMNO)) {
       throw new Error('El usuario no es un alumno');
     }
 
@@ -141,6 +144,9 @@ class InscripcionMateriaService {
 
   async getInscripcionesByAlumno(alumnoId: number, currentUser: any, pagination: { page?: number; limit?: number } = {}) {
     // `alumnoId` es el id de cuenta (Usuario.idUsuario)
+    if (currentUser.rol === ROLES.PROFESOR) {
+      throw new AppError(403, 'Los profesores deben consultar inscripciones desde sus cursadas');
+    }
     if (currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.id !== alumnoId) {
       throw new Error('No tienes permisos para ver estas inscripciones');
     }
@@ -149,7 +155,10 @@ class InscripcionMateriaService {
     return await inscripcionMateriaRepository.findByAlumnoId(idAlumno, pagination);
   }
 
-  async getInscriptosByMateria(materiaId: number, pagination: { page?: number; limit?: number } = {}) {
+  async getInscriptosByMateria(materiaId: number, pagination: { page?: number; limit?: number } = {}, currentUser?: any) {
+    if (currentUser?.rol === ROLES.PROFESOR) {
+      await verificarPermisoMateria(currentUser, materiaId);
+    }
     return await inscripcionMateriaRepository.findByMateriaId(materiaId, pagination);
   }
 

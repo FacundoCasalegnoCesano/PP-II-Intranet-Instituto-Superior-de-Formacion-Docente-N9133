@@ -19,6 +19,7 @@ export interface LibroDeTemaListFilters {
   materiaId?: number;
   fechaDesde?: Date;
   fechaHasta?: Date;
+  profesorId?: number;
 }
 
 const MATERIA_SELECT = {
@@ -96,6 +97,24 @@ class LibroDeTemaRepository {
       where.fecha = {};
       if (filters.fechaDesde) where.fecha.gte = filters.fechaDesde;
       if (filters.fechaHasta) where.fecha.lte = filters.fechaHasta;
+    }
+    if (filters.profesorId !== undefined) {
+      where.materia = {
+        is: {
+          OR: [
+            {
+              profesorMaterias: {
+                some: { profesorId: filters.profesorId, activo: true, fechaBaja: null }
+              }
+            },
+            {
+              cursadas: {
+                some: { docenteId: filters.profesorId }
+              }
+            }
+          ]
+        }
+      };
     }
 
     const [registros, total] = await Promise.all([
