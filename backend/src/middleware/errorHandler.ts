@@ -1,11 +1,12 @@
 import type { Request, Response, NextFunction } from 'express';
 import config from '../config/env.js';
+import { sanitizeRequestPath } from '../utils/requestPrivacy.js';
 
 const SENSITIVE_FIELDS = [
   'password', 'passwordHash', 'currentPassword', 'newPassword',
   'token', 'code', 'backupCode', 'resetToken',
   'authorization', 'cookie', 'session'
-];
+].map((field) => field.toLowerCase());
 
 function sanitizeBody(body: any): any {
   if (!body || typeof body !== 'object') return body;
@@ -22,14 +23,18 @@ function sanitizeBody(body: any): any {
 }
 
 export const errorHandler = (err: any, req: Request, res: Response, next: NextFunction): void => {
+  const requestPath = req.route?.path
+    ? `${req.baseUrl}${String(req.route.path)}`
+    : sanitizeRequestPath(req.path);
+
   console.error('❌ Error:', {
     message: err.message,
     stack: config.nodeEnv === 'development' ? err.stack : undefined,
-    path: req.path,
+    path: requestPath,
     method: req.method,
     body: sanitizeBody(req.body),
     query: sanitizeBody(req.query),
-    params: req.params,
+    params: sanitizeBody(req.params),
     user: req.user?.id
   });
 

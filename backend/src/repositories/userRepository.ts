@@ -8,6 +8,12 @@ export interface UserFilters {
   search?: string;
 }
 
+export interface AlumnoProfesorFilters {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
 export interface UserCreateData {
   apellidoNombre: string;
   dni: string;
@@ -185,6 +191,88 @@ class UserRepository {
         totalPages: Math.ceil(total / limit)
       }
     };
+  }
+
+  async findAlumnosForProfesor(filters: AlumnoProfesorFilters = {}, profesorId: number) {
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 20;
+    const skip = (page - 1) * limit;
+    const where: any = {
+      rol: { contains: 'ALUMNO' },
+      alumno: {
+        inscripcionesMateria: {
+          some: {
+            estado: { in: ['ACTIVA', 'RECURSANDO'] },
+            fechaBaja: null,
+            cursada: {
+              OR: [
+                { docenteId: profesorId },
+                {
+                  materia: {
+                    profesorMaterias: {
+                      some: { profesorId, activo: true, fechaBaja: null }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    };
+    if (filters.search) {
+      where.OR = [
+        { apellidoNombre: { contains: filters.search } },
+        { email: { contains: filters.search } }
+      ];
+      if (/^\d{7,8}$/.test(filters.search)) where.OR.push({ dni: { equals: parseInt(filters.search) } });
+    }
+
+    const [usuarios, total] = await Promise.all([
+      prisma.usuario.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { apellidoNombre: 'asc' },
+        select: { idUsuario: true, apellidoNombre: true, dni: true, email: true, activo: true, rol: true, createdAt: true, updatedAt: true }
+      }),
+      prisma.usuario.count({ where })
+    ]);
+    return {
+      data: usuarios.map((user: any) => ({ ...user, roles: user.rol.split(',').map((rol: string) => rol.trim()) })),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    };
+  }
+
+  async alumnoVisibleParaProfesor(usuarioId: number, profesorId: number): Promise<boolean> {
+    const alumno = await prisma.usuario.findFirst({
+      where: {
+        idUsuario: usuarioId,
+        rol: { contains: 'ALUMNO' },
+        alumno: {
+          inscripcionesMateria: {
+            some: {
+              estado: { in: ['ACTIVA', 'RECURSANDO'] },
+              fechaBaja: null,
+              cursada: {
+                OR: [
+                  { docenteId: profesorId },
+                  {
+                    materia: {
+                      profesorMaterias: {
+                        some: { profesorId, activo: true, fechaBaja: null }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      select: { idUsuario: true }
+    });
+    return alumno !== null;
   }
 
   async update(id: number, data: UserUpdateData) {

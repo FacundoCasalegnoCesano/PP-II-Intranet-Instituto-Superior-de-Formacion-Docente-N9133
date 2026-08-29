@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import UserController from '../controllers/userController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
-import { updateUserSchema, listUsersSchema, changeRoleSchema, toggleActiveSchema } from '../validations/userValidation.js';
+import { updateUserSchema, updateOwnUserSchema, listUsersSchema, changeRoleSchema, toggleActiveSchema } from '../validations/userValidation.js';
 import { ROLES } from '../constants/roles.js';
 
 const router = Router();
@@ -23,6 +23,11 @@ router.put('/:id/role',
   roleCheck(ROLES.ADMINISTRATIVO),
   validationMiddleware(changeRoleSchema),
   userController.changeUserRole
+);
+
+router.delete('/:id/role/:rol',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  userController.removeUserRole
 );
 
 router.put('/:id/activate',
@@ -74,7 +79,9 @@ router.get('/:id',
 
 router.put('/:id',
   allowSelfOrAdmin,
-  validationMiddleware(updateUserSchema),
+  (req, res, next) => validationMiddleware(
+    req.user?.rol === ROLES.ADMINISTRATIVO ? updateUserSchema : updateOwnUserSchema
+  )(req, res, next),
   userController.updateUser
 );
 

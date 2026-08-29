@@ -221,6 +221,31 @@ class UserController {
       next(error);
     }
   }
+
+  async removeUserRole(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = parseInt(req.params.id as string, 10);
+      if (isNaN(userId)) {
+        res.status(400).json({ success: false, message: 'ID de usuario inválido' });
+        return;
+      }
+
+      const role = decodeURIComponent(req.params.rol as string);
+      if (!role) {
+        res.status(400).json({ success: false, message: 'El rol es requerido' });
+        return;
+      }
+
+      const updatedUser = await userService.removeUserRole(userId, role, req.user!);
+      res.json({
+        success: true,
+        message: 'Rol eliminado exitosamente',
+        data: updatedUser
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 // ✅ Exportar la CLASE (NO una instancia)

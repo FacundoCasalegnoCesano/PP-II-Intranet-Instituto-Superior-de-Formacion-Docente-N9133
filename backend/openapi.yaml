@@ -4,8 +4,8 @@ info:
   description: |
     Backend Express + TypeScript + Prisma (MariaDB) para gestión académica.
     ### Autenticación
-    - `POST /auth/login` devuelve un **token sin rol**.
-    - `POST /auth/select-role` (con ese token) devuelve un **token con rol**.
+    - `POST /auth/login` devuelve un **accessToken sin rol**.
+    - `POST /auth/select-role` (con ese token) devuelve un **accessToken con rol**.
     - Todas las demás rutas protegen el acceso por rol del token.
     - Envío del token: cabecera `Authorization: Bearer <token>`.
   version: 1.0.0
@@ -52,7 +52,7 @@ paths:
             schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
         '200':
-          description: Login exitoso. devuelve token sin rol.
+          description: Login exitoso. Devuelve accessToken sin rol y refreshToken.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoginResponse' }
@@ -61,7 +61,7 @@ paths:
   /auth/select-role:
     post:
       tags: [Auth]
-      summary: Seleccionar rol de la sesión (devuelve token con rol)
+      summary: Seleccionar rol de la sesión (devuelve accessToken con rol)
       operationId: selectRole
       requestBody:
         required: true
@@ -103,7 +103,7 @@ paths:
           description: Perfil del usuario
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/ProfileResponse' }
 
   /auth/logout:
     post:
@@ -131,12 +131,13 @@ paths:
           description: Token renovado
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/RefreshTokenResponse' }
 
   /auth/change-password:
     put:
       tags: [Auth]
-      summary: Cambiar contraseña propia
+      summary: Cambiar contraseña propia y revocar las demás sesiones de su familia
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
       requestBody:
         required: true
         content:
@@ -147,12 +148,12 @@ paths:
           description: Contraseña actualizada
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/ChangePasswordResponse' }
 
   /auth/forgot-password:
     post:
       tags: [Auth]
-      summary: Solicitar reset de contraseña (envía token por email)
+      summary: Solicitar reset de contraseña (envía un token de un solo uso por email)
       security: []
       requestBody:
         required: true
@@ -161,15 +162,16 @@ paths:
             schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
       responses:
         '200':
-          description: Email de reset enviado
+          description: Solicitud procesada. La respuesta no revela si el email existe.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /auth/reset-password:
     post:
       tags: [Auth]
-      summary: Resetear contraseña con el token del email
+      summary: Restablecer contraseña con el token de un solo uso del email
       security: []
       requestBody:
         required: true
@@ -181,12 +183,13 @@ paths:
           description: Contraseña reseteada
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
 
   /auth/verify-reset-token/{token}:
     get:
       tags: [Auth]
-      summary: Verificar validez de un token de reset
+      summary: Verificar validez de un token de recuperación no utilizado
       security: []
       parameters:
         - { name: token, in: path, required: true, schema: { type: string } }
@@ -195,7 +198,7 @@ paths:
           description: Token válido
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/VerifyResetTokenResponse' }
 
   # ========================= USUARIOS =========================
   /users:
@@ -220,6 +223,7 @@ paths:
     get:
       tags: [Usuarios]
       summary: Obtener usuario por ID (admin o el mismo usuario)
+      x-roles: [ADMINISTRATIVO, ALUMNO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -232,13 +236,18 @@ paths:
     put:
       tags: [Usuarios]
       summary: Actualizar usuario (admin o el mismo usuario)
+      x-roles: [ADMINISTRATIVO, ALUMNO, PROFESOR]
+      description: Los usuarios no administrativos solo pueden editar su propio perfil mediante la allowlist `apellidoNombre`, `dni`, `email`, `fechaNacimiento`, `telefono`, `cuil`, `contactoEmergencia` y `foto`. Los campos `rol`, `activo`, `password`, `passwordHash` y `backupCodes` se rechazan; la contraseña se cambia mediante `/auth/change-password`. Los administradores pueden usar los campos administrativos de `UserUpdateRequest`.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/UserUpdateRequest' }
+            schema:
+              anyOf:
+                - $ref: '#/components/schemas/OwnProfileUpdateRequest'
+                - $ref: '#/components/schemas/UserUpdateRequest'
       responses:
         '200':
           description: Usuario actualizado
@@ -277,6 +286,21 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
 
+  /users/{id}/role/{rol}:
+    delete:
+      tags: [Usuarios]
+      summary: Quitar un rol de un usuario (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: rol, in: path, required: true, schema: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] } }
+      responses:
+        '200':
+          description: Rol eliminado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
   /users/{id}/activate:
     put:
       tags: [Usuarios]
@@ -295,7 +319,8 @@ paths:
   /alumnos:
     get:
       tags: [Alumnos]
-      summary: Listar alumnos (admin o profesor)
+      summary: Listar alumnos (admin o alumnos de cursadas del profesor)
+      description: El profesor solo ve estudiantes con inscripción activa en alguna cursada o materia que le pertenece.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -328,7 +353,8 @@ paths:
   /alumnos/{id}:
     get:
       tags: [Alumnos]
-      summary: Obtener alumno (admin, profesor o el mismo alumno)
+      summary: Obtener alumno (admin, alumno propio o profesor autorizado)
+      description: El profesor solo puede consultar estudiantes con inscripción activa en una cursada o materia propia; los no autorizados se presentan como no disponibles.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -521,6 +547,18 @@ paths:
       responses:
         '201': { $ref: '#/components/responses/Created' }
 
+  /carreras/catalogo:
+    get:
+      tags: [Carreras]
+      summary: Catálogo de carreras activas para alumnos
+      x-roles: [ALUMNO]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/ListOK' }
+
   /carreras/{id}:
     get:
       tags: [Carreras]
@@ -556,7 +594,7 @@ paths:
     get:
       tags: [Carreras]
       summary: Plan de estudio de una carrera
-      x-roles: [ADMINISTRATIVO, PROFESOR]
+      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -566,7 +604,8 @@ paths:
   /materias:
     get:
       tags: [Materias]
-      summary: Listar materias (admin o profesor)
+      summary: Listar materias (admin o materias propias del profesor)
+      description: El profesor solo recibe materias con asignación activa o cursada propia.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -602,7 +641,7 @@ paths:
   /materias/{id}:
     get:
       tags: [Materias]
-      summary: Obtener materia por ID
+      summary: Obtener materia por ID (profesor solo si es propia)
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -667,8 +706,8 @@ paths:
   /inscripciones-carreras:
     post:
       tags: [Inscripciones a Carreras]
-      summary: Inscribir alumno a una carrera (alumno = él mismo, admin indica alumnoId)
-      x-roles: [ALUMNO, ADMINISTRATIVO]
+      summary: Inscribir un alumno a una carrera (solo admin)
+      x-roles: [ADMINISTRATIVO]
       requestBody:
         required: true
         content:
@@ -680,8 +719,8 @@ paths:
   /inscripciones-carreras/{id}:
     delete:
       tags: [Inscripciones a Carreras]
-      summary: Dar de baja inscripción a carrera
-      x-roles: [ALUMNO, ADMINISTRATIVO]
+      summary: Dar de baja inscripción a carrera (solo admin)
+      x-roles: [ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -758,7 +797,7 @@ paths:
     get:
       tags: [Inscripciones a Materias]
       summary: Materias de un alumno
-      x-roles: [ALUMNO, ADMINISTRATIVO, PROFESOR]
+      x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
       responses:
@@ -804,7 +843,8 @@ paths:
   /examenes:
     get:
       tags: [Exámenes]
-      summary: Listar exámenes (admin o profesor)
+      summary: Listar exámenes (admin o tribunal del profesor)
+      description: El profesor solo recibe mesas en cuyos tribunales participa.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -851,7 +891,7 @@ paths:
   /examenes/{id}:
     get:
       tags: [Exámenes]
-      summary: Obtener examen por ID
+      summary: Obtener examen por ID (profesor solo si integra tribunal)
       x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -935,7 +975,7 @@ paths:
   /examenes/{examenId}/inscriptos:
     get:
       tags: [Exámenes]
-      summary: Inscriptos de un examen (admin o profesor)
+      summary: Inscriptos de una mesa autorizada
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: examenId, in: path, required: true, schema: { type: integer } }
@@ -955,7 +995,8 @@ paths:
   /examenes/{examenId}/calificacion:
     post:
       tags: [Exámenes]
-      summary: Registrar nota a un alumno en un examen (admin o profesor)
+      summary: Registrar nota a un alumno en un examen (admin o integrante del tribunal)
+      description: Un profesor solo puede registrar la nota si forma parte del tribunal de la mesa.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: examenId, in: path, required: true, schema: { type: integer } }
@@ -1036,7 +1077,8 @@ paths:
   /cursadas:
     get:
       tags: [Cursadas]
-      summary: Listar cursadas (admin o profesor)
+      summary: Listar cursadas (admin o propias del profesor)
+      description: El profesor recibe únicamente cursadas cuyo docenteId coincide o cuya materia tiene una asignación activa vigente.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: anioLectivo, in: query, schema: { type: integer } }
@@ -1060,7 +1102,7 @@ paths:
   /cursadas/{id}:
     get:
       tags: [Cursadas]
-      summary: Obtener cursada por ID (admin o profesor)
+      summary: Obtener cursada por ID (admin o profesor autorizado)
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1091,7 +1133,7 @@ paths:
   /cursadas/{id}/inscriptos:
     get:
       tags: [Cursadas]
-      summary: Alumnos inscriptos a una cursada (admin o profesor)
+      summary: Alumnos inscriptos a una cursada autorizada
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1102,7 +1144,7 @@ paths:
   /libro-de-temas:
     get:
       tags: [Libro de Temas]
-      summary: Listar registros del libro de temas (admin o profesor)
+      summary: Listar registros del libro de temas (admin o materias propias)
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -1127,7 +1169,7 @@ paths:
   /libro-de-temas/{id}:
     get:
       tags: [Libro de Temas]
-      summary: Obtener registro del libro de temas por ID (admin o profesor)
+      summary: Obtener registro del libro de temas autorizado
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1342,7 +1384,7 @@ paths:
     get:
       tags: [Asistencias]
       summary: Historial de asistencia del alumno
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
 
@@ -1400,7 +1442,7 @@ paths:
       tags: [Calificaciones]
       summary: Historial de calificaciones del alumno
       description: Para PARCIAL y RECUPERATORIO, fechaEvaluacion se devuelve como DD/MM/YYYY, sin componente horaria.
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
   /calificaciones/mis-calificaciones:
@@ -1422,14 +1464,24 @@ paths:
     get:
       tags: [Estado Academico]
       summary: Estado academico de un alumno
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { $ref: '#/components/responses/OK' } }
+  /estado-academico/alumno/{alumnoId}/trayectoria:
+    get:
+      tags: [Estado Academico]
+      summary: Trayectoria académica integral por carrera
+      description: Devuelve una entrada por materia del plan, incluyendo materias pendientes, cursadas históricas, regularidad, promoción, finales y homologaciones.
+      x-roles: [ADMINISTRATIVO, ALUMNO]
+      parameters:
+        - { name: alumnoId, in: path, required: true, schema: { type: integer } }
+        - { name: carreraId, in: query, required: true, schema: { type: integer } }
       responses: { '200': { $ref: '#/components/responses/OK' } }
   /estado-academico/promedio/{alumnoId}:
     get:
       tags: [Estado Academico]
       summary: Promedio general del alumno
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }, { name: carreraId, in: query, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
 
@@ -1507,6 +1559,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RateLimited:
+      description: Demasiadas solicitudes desde el mismo origen
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
     OK:
       description: Operación exitosa. Envuelve en { success, message?, data }
       content:
@@ -1532,11 +1589,19 @@ components:
     # -------- Envoltorios de respuesta --------
     SuccessResponse:
       type: object
+      description: Envelope exitoso. `data` es opcional porque algunas operaciones solo responden `success` y `message`.
       properties:
         success: { type: boolean, example: true }
         message: { type: string, nullable: true, example: Operación exitosa }
         data: { type: object, nullable: true }
       additionalProperties: true
+    MessageResponse:
+      type: object
+      required: [success, message]
+      description: Envelope exitoso sin `data`.
+      properties:
+        success: { type: boolean, enum: [true] }
+        message: { type: string }
     PaginatedResponse:
       type: object
       properties:
@@ -1573,13 +1638,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
         - type: object
+          required: [success, message, data]
           properties:
             data:
               type: object
+              required: [user, roles, accessToken, refreshToken, sessionId]
               properties:
-                user: { type: object }
-                roles: { type: array, items: { type: string } }
-                token: { type: string, description: Token JWT sin rol }
+                user: { $ref: '#/components/schemas/PublicUser' }
+                roles: { type: array, items: { $ref: '#/components/schemas/Role' } }
+                accessToken: { type: string, description: Token JWT sin rol }
                 refreshToken: { type: string }
                 sessionId: { type: integer }
     SelectRoleRequest:
@@ -1593,15 +1660,87 @@ components:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
         - type: object
+          required: [success, message, data]
           properties:
             data:
               type: object
+              required: [accessToken, refreshToken, sessionId, rol, rolesDisponibles]
               properties:
-                token: { type: string, description: Token JWT con rol }
+                accessToken: { type: string, description: Token JWT con rol }
                 refreshToken: { type: string }
                 sessionId: { type: integer }
-                rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
-                rolesDisponibles: { type: array, items: { type: string } }
+                rol: { $ref: '#/components/schemas/Role' }
+                rolesDisponibles: { type: array, items: { $ref: '#/components/schemas/Role' } }
+    RefreshTokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data:
+              type: object
+              required: [accessToken, refreshToken]
+              properties:
+                accessToken: { type: string, description: Token JWT renovado que conserva el rol activo, si lo tenía. }
+                refreshToken: { type: string, description: Refresh token rotado. }
+    ProfileResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/PublicUser'
+                - type: object
+                  required: [roles]
+                  properties:
+                    roles: { type: array, items: { $ref: '#/components/schemas/Role' } }
+    ChangePasswordResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, example: Contraseña actualizada exitosamente }
+    VerifyResetTokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, data]
+          properties:
+            data:
+              type: object
+              required: [valid]
+              properties:
+                valid: { type: boolean }
+                email: { type: string, format: email, description: Solo se incluye si el token es válido. }
+    Role:
+      type: string
+      enum: [ALUMNO, ADMINISTRATIVO, PROFESOR]
+    PublicUser:
+      type: object
+      description: Usuario público; nunca incluye hashes de contraseñas ni códigos de respaldo.
+      required: [idUsuario, apellidoNombre, dni, email, fechaNacimiento, telefono, activo, rol]
+      properties:
+        idUsuario: { type: integer }
+        apellidoNombre: { type: string }
+        dni: { type: integer }
+        email: { type: string, format: email }
+        fechaNacimiento: { type: string, format: date-time }
+        telefono: { type: string }
+        cuil: { type: string, nullable: true }
+        activo: { type: boolean }
+        rol: { type: string, description: Lista de roles histórica, separada por comas. }
+        contactoEmergencia: { type: string, nullable: true }
+        foto: { type: string, nullable: true }
+        ultimoAcceso: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     RegisterRequest:
       type: object
       required: [apellidoNombre, dni, email, fechaNacimiento, telefono, password, cuil, rol]
@@ -1646,6 +1785,19 @@ components:
         contactoEmergencia: { type: string, nullable: true }
         foto: { type: string, nullable: true }
         activo: { type: boolean }
+    OwnProfileUpdateRequest:
+      type: object
+      description: Allowlist del perfil propio. No admite rol, estado ni secretos.
+      additionalProperties: false
+      properties:
+        apellidoNombre: { type: string, maxLength: 255 }
+        dni: { type: string, pattern: '^\\d{7,8}$' }
+        email: { type: string, format: email, maxLength: 255 }
+        fechaNacimiento: { type: string, format: date }
+        telefono: { type: string, pattern: '^\\d{10,11}$' }
+        cuil: { type: string, pattern: '^\\d{11}$', nullable: true }
+        contactoEmergencia: { type: string, nullable: true, maxLength: 255 }
+        foto: { type: string, nullable: true, maxLength: 255 }
     ChangeRoleRequest:
       type: object
       required: [rol]
@@ -1758,9 +1910,9 @@ components:
     # -------- Inscripciones --------
     InscripcionCarreraRequest:
       type: object
-      required: [carreraId]
+      required: [alumnoId, carreraId]
       properties:
-        alumnoId: { type: integer, description: Solo para admin; el alumno se inscribe solo }
+        alumnoId: { type: integer, description: Alumno que el administrativo inscribe }
         carreraId: { type: integer }
         cicloLectivo: { type: integer, default: 2026 }
       example:

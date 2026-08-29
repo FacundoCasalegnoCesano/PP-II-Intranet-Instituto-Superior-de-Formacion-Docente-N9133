@@ -8,16 +8,16 @@ import {
   hashRefreshToken,
   verifyAccessToken,
   verifyRefreshToken,
-  verifyToken,
   type TokenPayload
 } from '../utils/jwt.js';
 import { sendPasswordResetEmail } from '../utils/email.js';
+import passwordResetTokenRepository from '../repositories/passwordResetTokenRepository.js';
+import { generatePasswordResetToken, hashPasswordResetToken } from '../utils/passwordResetToken.js';
 import { generateBackupCodes, encryptBackupCodes, decryptBackupCodes } from '../utils/backupCodes.js';
 import { prisma } from '../config/prisma.js';
-import config from '../config/env.js';
-import jwt from 'jsonwebtoken';
 import { ROLES } from '../constants/roles.js';
 import { toPublicUser } from '../utils/publicUser.js';
+import { AppError } from '../utils/AppError.js';
 
 interface RegisterData {
   apellidoNombre: string;
@@ -35,6 +35,14 @@ interface RegisterData {
   anioEgreso?: number | null;
   institucionProcedencia?: string | null;
 }
+
+interface PasswordResetOptions {
+  sendEmail?: typeof sendPasswordResetEmail;
+  now?: () => Date;
+}
+
+const PASSWORD_RESET_MESSAGE = 'Si el email existe, recibirás un enlace para recuperar tu contraseña';
+const PASSWORD_RESET_COOLDOWN_MS = 60 * 1000;
 
 class AuthService {
   // Registrar usuario (SOLO ADMIN)
@@ -363,74 +371,83 @@ class AuthService {
   }
 
   // Forgot password
-  async forgotPassword(email: string) {
-    const user = await userRepository.findByEmail(email);
-    if (!user) {
-      return { 
-        message: 'Si el email existe, recibirás un enlace para recuperar tu contraseña' 
-      };
+  async forgotPassword(email: string, options: PasswordResetOptions = {}) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await userRepository.findByEmail(normalizedEmail);
+    const publicResponse = { message: PASSWORD_RESET_MESSAGE };
+
+    if (!user || !user.activo) {
+      return publicResponse;
     }
 
-    const resetPayload = {
-      id: user.idUsuario,
-      email: user.email,
-      type: 'password_reset'
-    };
-    const resetToken = jwt.sign(resetPayload, config.jwtSecret, { expiresIn: '1h' });
+    const now = options.now?.() ?? new Date();
+    const recentRequest = await passwordResetTokenRepository.hasRecentRequest(
+      user.idUsuario,
+      new Date(now.getTime() - PASSWORD_RESET_COOLDOWN_MS)
+    );
+    if (recentRequest) {
+      return publicResponse;
+    }
 
-    await sendPasswordResetEmail(user.email, resetToken, user.apellidoNombre);
+    const resetToken = generatePasswordResetToken();
+    const tokenHash = hashPasswordResetToken(resetToken);
+    await passwordResetTokenRepository.invalidateForUser(user.idUsuario, now);
+    await passwordResetTokenRepository.create({
+      usuarioId: user.idUsuario,
+      tokenHash,
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000)
+    });
 
-    return { 
-      message: 'Si el email existe, recibirás un enlace para recuperar tu contraseña' 
-    };
+    try {
+      await (options.sendEmail ?? sendPasswordResetEmail)(user.email, resetToken, user.apellidoNombre);
+    } catch (error) {
+      try {
+        await passwordResetTokenRepository.deleteByHash(tokenHash);
+      } catch (cleanupError) {
+        console.error('Password reset token cleanup failed', {
+          name: cleanupError instanceof Error ? cleanupError.name : 'UnknownError',
+          code: typeof (cleanupError as { code?: unknown })?.code === 'string'
+            ? (cleanupError as { code: string }).code
+            : 'DATABASE_ERROR'
+        });
+      }
+      console.error('Password reset email delivery failed', {
+        name: error instanceof Error ? error.name : 'UnknownError',
+        code: typeof (error as { code?: unknown })?.code === 'string'
+          ? (error as { code: string }).code
+          : 'SMTP_ERROR'
+      });
+    }
+
+    return publicResponse;
   }
 
   // Reset password
-async resetPassword(token: string, newPassword: string) {
+  async resetPassword(token: string, newPassword: string) {
+    const tokenHash = hashPasswordResetToken(token);
+    const newPasswordHash = await hashPassword(newPassword);
+
     try {
-      const decoded = verifyToken(token);
-
-      if (decoded.type !== 'password_reset') {
-        throw new Error('Token inválido');
-      }
-
-      const user = await userRepository.findById(decoded.id);
-      if (!user) {
-        throw new Error('Usuario no encontrado');
-      }
-
-      const newPasswordHash = await hashPassword(newPassword);
-      await userRepository.updatePassword(user.idUsuario, newPasswordHash);
-
-      // Invalidar TODA la familia de sesiones del usuario
-      await prisma.sesion.updateMany({
-        where: {
-          usuarioId: user.idUsuario,
-          revocadaEn: null
-        },
-        data: { 
-          revocadaEn: new Date(),
-          cerradaEn: new Date()
-        }
-      });
-
+      await passwordResetTokenRepository.consumeAndReset({ tokenHash, newPasswordHash });
       return { message: 'Contraseña restablecida exitosamente' };
     } catch (error) {
-      throw new Error('Token inválido o expirado');
+      if (error instanceof Error && error.message === 'Token inválido o expirado') {
+        throw new AppError(400, 'Token inválido o expirado');
+      }
+      throw error;
     }
   }
 
   // Verify reset token
   async verifyResetToken(token: string) {
-    try {
-      const decoded = verifyToken(token);
-      if (decoded.type !== 'password_reset') {
-        throw new Error('Token inválido');
-      }
-      return { valid: true, email: decoded.email };
-    } catch (error) {
-      return { valid: false, error: (error as Error).message };
+    const tokenHash = hashPasswordResetToken(token);
+    const resetToken = await passwordResetTokenRepository.findValidByHash(tokenHash);
+
+    if (!resetToken) {
+      return { valid: false };
     }
+
+    return { valid: true, email: resetToken.usuario.email };
   }
 
   // Recovery with backup code (admin only)
