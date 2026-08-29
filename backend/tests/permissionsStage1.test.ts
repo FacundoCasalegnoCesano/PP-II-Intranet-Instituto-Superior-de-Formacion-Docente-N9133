@@ -62,6 +62,7 @@ test('un administrativo puede quitar un rol sin eliminar el último', async () =
     passwordHash: 'hash',
     backupCodes: null
   }) as any);
+  replaceMethod(prisma.sesion, 'updateMany', async () => ({ count: 0 }) as any);
 
   const result = await userService.removeUserRole(
     8,

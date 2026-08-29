@@ -199,7 +199,7 @@ class UserController {
         return;
       }
 
-      const { rol } = req.body;
+      const { rol, alumno } = req.body;
       const currentUser = req.user!;
       
       if (!rol) {
@@ -210,7 +210,7 @@ class UserController {
         return;
       }
       
-      const updatedUser = await userService.changeUserRole(userId, rol, currentUser);
+      const updatedUser = await userService.changeUserRole(userId, rol, currentUser, alumno);
       
       res.json({
         success: true,

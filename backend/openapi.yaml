@@ -231,7 +231,7 @@ paths:
           description: Usuario
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
         '403': { $ref: '#/components/responses/Forbidden' }
     put:
       tags: [Usuarios]
@@ -253,16 +253,17 @@ paths:
           description: Usuario actualizado
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
     delete:
       tags: [Usuarios]
-      summary: Eliminar un usuario (solo admin)
+      summary: Aplicar baja lógica a un usuario (solo admin)
+      description: Conserva la cuenta y el historial académico, marca `activo=false` y revoca sus sesiones.
       x-roles: [ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
         '200':
-          description: Usuario eliminado
+          description: Usuario desactivado
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
@@ -284,7 +285,7 @@ paths:
           description: Rol actualizado
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
 
   /users/{id}/role/{rol}:
     delete:
@@ -299,7 +300,7 @@ paths:
           description: Rol eliminado
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
 
   /users/{id}/activate:
     put:
@@ -1741,6 +1742,51 @@ components:
         ultimoAcceso: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    AlumnoProfileInput:
+      type: object
+      additionalProperties: false
+      required: [domicilio, anioEgreso]
+      properties:
+        domicilio: { type: string, maxLength: 255 }
+        anioEgreso: { type: integer, minimum: 1900, maximum: 2100 }
+        institucionProcedencia: { type: string, nullable: true, maxLength: 255 }
+    AlumnoProfileUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        domicilio: { type: string, maxLength: 255 }
+        anioEgreso: { type: integer, minimum: 1900, maximum: 2100 }
+        institucionProcedencia: { type: string, nullable: true, maxLength: 255 }
+    AlumnoProfile:
+      allOf:
+        - $ref: '#/components/schemas/AlumnoProfileInput'
+        - type: object
+          required: [idAlumno, idCuenta, adeudaMateria]
+          properties:
+            idAlumno: { type: integer }
+            idCuenta: { type: integer, description: ID público de la cuenta Usuario }
+            adeudaMateria: { type: boolean }
+    AdminUserDetail:
+      allOf:
+        - $ref: '#/components/schemas/PublicUser'
+        - type: object
+          required: [roles, alumno]
+          properties:
+            roles:
+              type: array
+              items: { $ref: '#/components/schemas/Role' }
+            alumno:
+              nullable: true
+              allOf:
+                - $ref: '#/components/schemas/AlumnoProfile'
+    AdminUserResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminUserDetail' }
     RegisterRequest:
       type: object
       required: [apellidoNombre, dni, email, fechaNacimiento, telefono, password, cuil, rol]
@@ -1773,18 +1819,17 @@ components:
         institucionProcedencia: Escuela Secundaria Nº 42
     UserUpdateRequest:
       type: object
+      additionalProperties: false
       properties:
         apellidoNombre: { type: string, maxLength: 255 }
         dni: { type: string, pattern: '^\\d{7,8}$' }
         email: { type: string, format: email }
         fechaNacimiento: { type: string, format: date }
         telefono: { type: string, pattern: '^\\d{10,11}$' }
-        password: { type: string, format: password, minLength: 8 }
         cuil: { type: string, pattern: '^\\d{11}$' }
-        rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
         contactoEmergencia: { type: string, nullable: true }
         foto: { type: string, nullable: true }
-        activo: { type: boolean }
+        alumno: { $ref: '#/components/schemas/AlumnoProfileUpdate' }
     OwnProfileUpdateRequest:
       type: object
       description: Allowlist del perfil propio. No admite rol, estado ni secretos.
@@ -1800,9 +1845,14 @@ components:
         foto: { type: string, nullable: true, maxLength: 255 }
     ChangeRoleRequest:
       type: object
+      additionalProperties: false
       required: [rol]
       properties:
         rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
+        alumno:
+          allOf:
+            - $ref: '#/components/schemas/AlumnoProfileInput'
+          description: Solo se admite con rol ALUMNO; es obligatorio si no existe una ficha preservada.
     ChangePasswordRequest:
       type: object
       required: [currentPassword, newPassword]

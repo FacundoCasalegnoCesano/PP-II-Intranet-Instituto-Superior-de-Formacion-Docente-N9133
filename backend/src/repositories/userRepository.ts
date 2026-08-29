@@ -40,6 +40,7 @@ export interface UserUpdateData {
   contactoEmergencia?: string | null;
   foto?: string | null;
   activo?: boolean;
+  backupCodes?: string | null;
 }
 
 // Tipo para el resultado de usuario (sin tipos de Prisma)
@@ -84,6 +85,7 @@ class UserRepository {
     return await prisma.usuario.findUnique({
       where: { idUsuario: id },
       include: {
+        alumno: true,
         sesiones: {
           where: {
             cerradaEn: null

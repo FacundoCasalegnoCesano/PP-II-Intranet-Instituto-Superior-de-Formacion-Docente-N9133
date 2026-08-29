@@ -1,9 +1,17 @@
 import userRepository from '../repositories/userRepository.js';
+import alumnoRepository from '../repositories/alumnoRepository.js';
 import { hashPassword } from '../utils/bcrypt.js';
 import { ROLES, ROLES_LIST } from '../constants/roles.js';
 import { prisma } from '../config/prisma.js';
 import { toPublicUser } from '../utils/publicUser.js';
 import { AppError } from '../utils/AppError.js';
+import { encryptBackupCodes, generateBackupCodes } from '../utils/backupCodes.js';
+
+interface AlumnoProfileInput {
+  domicilio: string;
+  anioEgreso: number;
+  institucionProcedencia?: string | null;
+}
 
 interface UserFilters {
   page?: number;
@@ -24,6 +32,8 @@ interface UserUpdateData {
   contactoEmergencia?: string | null;
   foto?: string | null;
   activo?: boolean;
+  backupCodes?: string | null;
+  alumno?: AlumnoProfileInput;
 }
 
 interface CurrentUser {
@@ -35,6 +45,13 @@ interface CurrentUser {
 }
 
 class UserService {
+  private async revokeAllSessions(userId: number) {
+    await prisma.sesion.updateMany({
+      where: { usuarioId: userId, revocadaEn: null },
+      data: { revocadaEn: new Date(), cerradaEn: new Date() }
+    });
+  }
+
   async listUsers(filters: UserFilters = {}) {
     return await userRepository.findAll(filters);
   }
@@ -58,7 +75,8 @@ class UserService {
   
     return {
       ...toPublicUser(user),
-      roles
+      roles,
+      alumno: user.alumno ?? null
     };
   }
 
@@ -74,7 +92,7 @@ class UserService {
     }
 
     if (currentUser.rol !== ROLES.ADMINISTRATIVO) {
-      const protectedFields = ['rol', 'activo', 'password', 'passwordHash', 'backupCodes'];
+      const protectedFields = ['rol', 'activo', 'password', 'passwordHash', 'backupCodes', 'alumno'];
       const attempted = protectedFields.filter(field => Object.prototype.hasOwnProperty.call(userData, field));
       if (attempted.length > 0) {
         throw new AppError(403, 'No puedes modificar campos administrativos desde tu perfil');
@@ -98,24 +116,39 @@ class UserService {
     }
   
     // Si se actualiza contraseña
-    const updateData: any = { ...userData };
+    const { alumno, ...commonData } = userData;
+    const updateData: any = { ...commonData };
     if (updateData.password) {
       updateData.passwordHash = await hashPassword(updateData.password);
       delete updateData.password;
     }
   
     const updatedUser = await userRepository.update(id, updateData);
+    let updatedAlumno = user.alumno ?? null;
+    if (alumno !== undefined) {
+      const currentRoles = user.rol ? user.rol.split(',').map((role: string) => role.trim()) : [];
+      if (!updatedAlumno && !currentRoles.includes(ROLES.ALUMNO)) {
+        throw new AppError(400, 'La ficha Alumno solo puede editarse para una cuenta con ese perfil');
+      }
+      updatedAlumno = await alumnoRepository.upsertByUsuarioId(id, alumno);
+    }
     // Obtener roles actualizados
     const roles = updatedUser.rol ? updatedUser.rol.split(',').map((r: string) => r.trim()) : [];
   
     return {
       ...toPublicUser(updatedUser),
-      roles
+      roles,
+      alumno: updatedAlumno
     };
   }
 
   // ✅ NUEVO MÉTODO: Cambiar rol de usuario
-  async changeUserRole(id: number, newRole: string, currentUser: CurrentUser) {
+  async changeUserRole(
+    id: number,
+    newRole: string,
+    currentUser: CurrentUser,
+    alumnoData?: AlumnoProfileInput
+  ) {
     if (currentUser.rol !== ROLES.ADMINISTRATIVO) {
       throw new AppError(403, 'Solo los administradores pueden cambiar roles');
     }
@@ -134,15 +167,31 @@ class UserService {
       throw new AppError(400, `El usuario ya tiene el rol ${newRole}`);
     }
 
+    let alumno = user.alumno ?? null;
+    if (newRole === ROLES.ALUMNO) {
+      if (!alumno && !alumnoData) {
+        throw new AppError(400, 'La ficha Alumno es obligatoria porque no existe una preservada');
+      }
+      if (alumnoData) {
+        alumno = await alumnoRepository.upsertByUsuarioId(id, alumnoData);
+      }
+    }
+
     // Agregar rol (se agrega, no reemplaza)
     const updatedRoles = [...currentRoles, newRole];
-    await userRepository.update(id, { rol: updatedRoles.join(',') });
-  
-    // Obtener usuario actualizado
-    const updatedUser = await userRepository.findById(id);
+    const securityData = newRole === ROLES.ADMINISTRATIVO
+      ? { backupCodes: encryptBackupCodes(generateBackupCodes(8)) }
+      : {};
+    const updatedUser = await userRepository.update(id, {
+      rol: updatedRoles.join(','),
+      ...securityData
+    });
+    await this.revokeAllSessions(id);
+
     return {
-      ...toPublicUser(updatedUser!),
-      roles: updatedRoles
+      ...toPublicUser(updatedUser),
+      roles: updatedRoles,
+      alumno
     };
   }
 
@@ -178,13 +227,16 @@ class UserService {
 
     // Quitar rol
     const updatedRoles = currentRoles.filter((r: string) => r !== roleToRemove);
-    await userRepository.update(id, { rol: updatedRoles.join(',') });
-  
-    // Obtener usuario actualizado
-    const updatedUser = await userRepository.findById(id);
+    const updatedUser = await userRepository.update(id, {
+      rol: updatedRoles.join(','),
+      ...(roleToRemove === ROLES.ADMINISTRATIVO ? { backupCodes: null } : {})
+    });
+    await this.revokeAllSessions(id);
+
     return {
-      ...toPublicUser(updatedUser!),
-      roles: updatedRoles
+      ...toPublicUser(updatedUser),
+      roles: updatedRoles,
+      alumno: user.alumno ?? null
     };
   }
 
@@ -203,6 +255,9 @@ class UserService {
     }
 
     const updatedUser = await userRepository.toggleActive(id, active);
+    if (!active) {
+      await this.revokeAllSessions(id);
+    }
     // Obtener roles actualizados
     const roles = updatedUser.rol ? updatedUser.rol.split(',').map((r: string) => r.trim()) : [];
   
@@ -226,13 +281,9 @@ class UserService {
       throw new Error('No tienes permisos para realizar esta acción');
     }
 
-    // Eliminar sesiones del usuario
-    await prisma.sesion.deleteMany({
-      where: { usuarioId: id }
-    });
-
-    await userRepository.delete(id);
-    return { message: 'Usuario eliminado exitosamente' };
+    await userRepository.toggleActive(id, false);
+    await this.revokeAllSessions(id);
+    return { message: 'Usuario desactivado exitosamente' };
   }
 }
 
