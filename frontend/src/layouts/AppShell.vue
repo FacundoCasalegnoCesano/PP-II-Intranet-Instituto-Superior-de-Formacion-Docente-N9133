@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { BookOpen, ChevronDown, Home, LogOut, Menu, Repeat2, UserRound, X } from 'lucide-vue-next'
+import { BookOpen, ChevronDown, Home, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AppButton from '@/ui/AppButton.vue'
@@ -13,10 +13,18 @@ const drawerOpen = ref(false)
 const userMenuOpen = ref(false)
 const confirmLogoutOpen = ref(false)
 const loggingOut = ref(false)
-const navItems = [
+const baseNavItems = [
   { name: 'home', label: 'Inicio', icon: Home },
   { name: 'profile', label: 'Mi perfil', icon: UserRound },
 ] as const
+const adminNavItems = [
+  { name: 'admin-users', label: 'Usuarios', icon: ShieldCheck },
+  { name: 'admin-careers', label: 'Carreras', icon: BookOpen },
+  { name: 'admin-subjects', label: 'Materias', icon: BookOpen },
+  { name: 'admin-courses', label: 'Cursadas', icon: BookOpen },
+  { name: 'admin-periods', label: 'Períodos', icon: BookOpen },
+] as const
+const navItems = computed(() => auth.activeRole === 'ADMINISTRATIVO' ? [...baseNavItems, ...adminNavItems] : baseNavItems)
 const roleLabel = computed(() => ({ ALUMNO: 'Alumno/a', PROFESOR: 'Profesor/a', ADMINISTRATIVO: 'Administrativo/a' }[auth.activeRole ?? ''] ?? 'Sin rol'))
 const canChangeRole = computed(() => auth.roles.length > 1)
 

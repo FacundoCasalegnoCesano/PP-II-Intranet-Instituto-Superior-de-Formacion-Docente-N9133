@@ -37,7 +37,7 @@ describe('navigation guards', () => {
     await router.push('/app/inicio')
     await router.isReady()
 
-    expect(router.currentRoute.value.fullPath).toBe('/login')
+    expect(router.currentRoute.value.fullPath).toBe('/login?redirect=/app/inicio')
   })
 
   it('limits a pending session to the role selector', async () => {
@@ -46,7 +46,7 @@ describe('navigation guards', () => {
     await router.push('/app/perfil')
     await router.isReady()
 
-    expect(router.currentRoute.value.fullPath).toBe('/app/seleccionar-rol')
+    expect(router.currentRoute.value.fullPath).toBe('/app/seleccionar-rol?redirect=/app/perfil')
   })
 
   it('keeps an authenticated session out of guest pages and allows protected routes', async () => {
@@ -76,5 +76,20 @@ describe('navigation guards', () => {
 
     expect(home).toHaveProperty('render', expect.any(Function))
     expect(profile).toHaveProperty('render', expect.any(Function))
+  })
+
+  it('guards the administrative console by the selected role and exposes its module routes', async () => {
+    sessionStorage.save({ ...session('ALUMNO'), roles: ['ALUMNO'], role: 'ALUMNO' })
+    const studentRouter = createAppRouter()
+    await studentRouter.push('/app/administracion/usuarios')
+    await studentRouter.isReady()
+    expect(studentRouter.currentRoute.value.name).toBe('home')
+
+    sessionStorage.save({ ...session('ALUMNO'), roles: ['ADMINISTRATIVO'], role: 'ADMINISTRATIVO', user: { ...user, rol: 'ADMINISTRATIVO' } })
+    const adminRouter = createAppRouter()
+    await adminRouter.push('/app/administracion/usuarios')
+    await adminRouter.isReady()
+    expect(adminRouter.currentRoute.value.name).toBe('admin-users')
+    expect(adminRouter.getRoutes().filter((route) => String(route.name).startsWith('admin-')).length).toBeGreaterThanOrEqual(20)
   })
 })
