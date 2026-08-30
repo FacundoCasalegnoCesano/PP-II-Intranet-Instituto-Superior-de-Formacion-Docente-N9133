@@ -1944,9 +1944,11 @@ components:
       required: [id, materia, anioLectivo, periodo, horarios, activo]
       properties:
         id: { type: integer }
+        materiaId: { type: integer }
         materia: { $ref: '#/components/schemas/Subject' }
         anioLectivo: { type: integer }
         periodo: { type: string, enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE] }
+        docenteId: { type: integer, nullable: true }
         docente: { allOf: [{ $ref: '#/components/schemas/PublicUser' }], nullable: true }
         horarios:
           type: array
@@ -1963,7 +1965,12 @@ components:
         fechaFin: { type: string, format: date-time }
         materias:
           type: array
-          items: { $ref: '#/components/schemas/Subject' }
+          items:
+            type: object
+            required: [materiaId, materia]
+            properties:
+              materiaId: { type: integer }
+              materia: { $ref: '#/components/schemas/Subject' }
         mesas:
           type: array
           description: Mesas de períodos EXAMEN heredados, informativas en la consola de esta etapa.
