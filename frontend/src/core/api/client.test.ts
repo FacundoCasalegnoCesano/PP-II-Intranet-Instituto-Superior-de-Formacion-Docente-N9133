@@ -94,6 +94,24 @@ describe('ApiClient', () => {
     await expect(api.post<void>('/auth/forgot-password', { email: 'ada@example.test' })).resolves.toBeUndefined()
   })
 
+  it('preserves pagination only through the explicit paginated helper and supports delete', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        success: true,
+        data: [{ id: 1 }],
+        pagination: { page: 2, limit: 10, total: 11, totalPages: 2 },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ success: true, data: { removed: true } }))
+    const { api } = client(fetcher)
+
+    await expect(api.getPaginated<{ id: number }>('/users?page=2')).resolves.toEqual({
+      data: [{ id: 1 }],
+      pagination: { page: 2, limit: 10, total: 11, totalPages: 2 },
+    })
+    await expect(api.delete<{ removed: boolean }>('/users/1')).resolves.toEqual({ removed: true })
+    expect(fetcher.mock.calls[1]?.[1]?.method).toBe('DELETE')
+  })
+
   it('refreshes once after a 401 and retries the original request with rotated tokens', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ success: false, message: 'Token expirado' }, 401))

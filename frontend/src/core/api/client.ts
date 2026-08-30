@@ -1,12 +1,13 @@
 import type { SessionTokens } from '@/core/auth/contracts'
 import { SessionStorage, sessionStorage } from '@/core/storage/sessionStorage'
-import type { ApiEnvelope, ApiErrorPayload } from './contracts'
+import type { ApiEnvelope, ApiErrorPayload, PaginatedResult } from './contracts'
 import { ApiError, apiErrorFromPayload, normalizeApiError } from './errors'
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body' | 'headers'> {
   auth?: boolean
   body?: unknown
   headers?: HeadersInit
+  preservePagination?: boolean
 }
 
 export interface ApiClientOptions {
@@ -68,6 +69,14 @@ export class ApiClient {
     return this.request<T>(path, { ...options, method: 'PUT', body })
   }
 
+  delete<T = void>(path: string, options: Omit<ApiRequestOptions, 'method' | 'body'> = {}): Promise<T> {
+    return this.request<T>(path, { ...options, method: 'DELETE' })
+  }
+
+  getPaginated<T>(path: string, options: Omit<ApiRequestOptions, 'method' | 'body'> = {}): Promise<PaginatedResult<T>> {
+    return this.request<PaginatedResult<T>>(path, { ...options, method: 'GET', preservePagination: true })
+  }
+
   request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
     return this.requestOnce<T>(path, options, false)
   }
@@ -91,7 +100,7 @@ export class ApiClient {
     }
 
     try {
-      return await this.unwrap<T>(response)
+      return await this.unwrap<T>(response, options.preservePagination)
     } catch (error) {
       const normalized = normalizeApiError(error)
       if (normalized.status === 401 && useAuth) this.invalidateSession()
@@ -101,7 +110,7 @@ export class ApiClient {
 
   private async send(path: string, options: ApiRequestOptions, useAuth: boolean): Promise<Response> {
     const headers = new Headers(options.headers)
-    const { auth: _auth, body, headers: _headers, ...requestOptions } = options
+    const { auth: _auth, body, headers: _headers, preservePagination: _preservePagination, ...requestOptions } = options
 
     if (useAuth) {
       const accessToken = this.storage.read()?.accessToken
@@ -165,7 +174,7 @@ export class ApiClient {
     this.sessionInvalidationHandler?.()
   }
 
-  private async unwrap<T>(response: Response): Promise<T> {
+  private async unwrap<T>(response: Response, preservePagination = false): Promise<T> {
     const text = await response.text()
     let payload: unknown
 
@@ -185,6 +194,9 @@ export class ApiClient {
     }
 
     if (!payload.success) throw apiErrorFromPayload(response.status, payload as ApiErrorPayload)
+    if (preservePagination && 'pagination' in payload && payload.pagination) {
+      return { data: Array.isArray(payload.data) ? payload.data : [], pagination: payload.pagination } as T
+    }
     return ('data' in payload ? payload.data : undefined) as T
   }
 
