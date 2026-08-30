@@ -4,6 +4,35 @@ import { ROLES } from '../constants/roles.js';
 import type { HorarioCreateData, HorarioUpdateData } from '../repositories/horarioRepository.js';
 import { verificarPermisoCursada, verificarPermisoMateria } from '../utils/docenteHelper.js';
 
+function minutoDelDia(fecha: Date): number {
+  return fecha.getUTCHours() * 60 + fecha.getUTCMinutes();
+}
+
+function validarRangoHorario(horaInicio: Date, horaFin: Date): void {
+  if (Number.isNaN(horaInicio.getTime()) || Number.isNaN(horaFin.getTime())) {
+    throw new Error('El horario ingresado no es válido');
+  }
+  if (minutoDelDia(horaInicio) >= minutoDelDia(horaFin)) {
+    throw new Error('La hora de inicio debe ser menor que la hora de fin');
+  }
+}
+
+async function existeConflicto(
+  cursadaId: number,
+  dia: string,
+  horaInicio: Date,
+  horaFin: Date,
+  excludeId?: number
+): Promise<boolean> {
+  const inicio = minutoDelDia(horaInicio);
+  const fin = minutoDelDia(horaFin);
+  const horarios = await horarioRepository.findActiveByCursadaAndDay(cursadaId, dia, excludeId);
+  return horarios.some(horario => (
+    inicio < minutoDelDia(horario.horaFin)
+    && fin > minutoDelDia(horario.horaInicio)
+  ));
+}
+
 class HorarioService {
   async crearHorario(data: HorarioCreateData, currentUser: any) {
     // Solo Admin puede crear horarios
@@ -21,11 +50,9 @@ class HorarioService {
     const horaInicio = new Date(data.horaInicio);
     const horaFin = new Date(data.horaFin);
 
-    if (horaInicio >= horaFin) {
-      throw new Error('La hora de inicio debe ser menor que la hora de fin');
-    }
+    validarRangoHorario(horaInicio, horaFin);
 
-    const tieneConflicto = await horarioRepository.verificarConflictos(
+    const tieneConflicto = await existeConflicto(
       data.cursadaId,
       data.dia,
       horaInicio,
@@ -74,15 +101,14 @@ class HorarioService {
       const horaInicio = data.horaInicio ? new Date(data.horaInicio) : horario.horaInicio;
       const horaFin = data.horaFin ? new Date(data.horaFin) : horario.horaFin;
 
-      if (horaInicio >= horaFin) {
-        throw new Error('La hora de inicio debe ser menor que la hora de fin');
-      }
+      validarRangoHorario(horaInicio, horaFin);
 
-      const tieneConflicto = await horarioRepository.verificarConflictos(
+      const tieneConflicto = await existeConflicto(
         horario.cursadaId,
         dia,
         horaInicio,
-        horaFin
+        horaFin,
+        id
       );
 
       if (tieneConflicto) {

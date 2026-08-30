@@ -19,3 +19,11 @@ test('OpenAPI documenta carrera, materia, correlativa y designacion con cursoAni
   assert.match(openapi, /TeachingAssignment:[\s\S]*?profesor:/);
   assert.match(openapi, /MateriaCreateRequest:[\s\S]*?anyOf:[\s\S]*?cursoAnio:[\s\S]*?cursoId:/);
 });
+
+test('OpenAPI documenta cursadas, horarios y periodos con filtro por ciclo lectivo', () => {
+  assert.match(openapi, /CourseOffering:[\s\S]*?materia:[\s\S]*?anioLectivo:[\s\S]*?periodo:[\s\S]*?horarios:/);
+  assert.match(openapi, /Schedule:[\s\S]*?dia:[\s\S]*?horaInicio:[\s\S]*?horaFin:/);
+  assert.match(openapi, /EnrollmentPeriod:[\s\S]*?cicloLectivo:[\s\S]*?materias:[\s\S]*?mesas:/);
+  assert.match(openapi, /\/periodos-inscripcion:[\s\S]*?name: cicloLectivo/);
+  assert.match(openapi, /PeriodoRequest:[\s\S]*?required: \[tipo, cicloLectivo, fechaInicio, fechaFin\][\s\S]*?materiasIds:/);
+});

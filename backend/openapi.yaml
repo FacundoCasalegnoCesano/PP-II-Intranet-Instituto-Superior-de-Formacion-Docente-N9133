@@ -1216,6 +1216,9 @@ paths:
       parameters:
         - { name: tipo, in: query, schema: { $ref: '#/components/schemas/TipoPeriodo' } }
         - { name: activo, in: query, schema: { type: boolean } }
+        - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
         '200': { $ref: '#/components/responses/OK' }
     post:
@@ -1925,6 +1928,48 @@ components:
         fechaAsignacion: { type: string, format: date-time }
         fechaBaja: { type: string, format: date-time, nullable: true }
         activo: { type: boolean }
+    Schedule:
+      type: object
+      required: [id, cursadaId, dia, horaInicio, horaFin, activo]
+      properties:
+        id: { type: integer }
+        cursadaId: { type: integer }
+        dia: { $ref: '#/components/schemas/DiaSemana' }
+        horaInicio: { type: string, format: date-time, description: La interfaz edita HH:mm y lo convierte de forma estable al contrato ISO. }
+        horaFin: { type: string, format: date-time }
+        aula: { type: string, nullable: true }
+        activo: { type: boolean }
+    CourseOffering:
+      type: object
+      required: [id, materia, anioLectivo, periodo, horarios, activo]
+      properties:
+        id: { type: integer }
+        materia: { $ref: '#/components/schemas/Subject' }
+        anioLectivo: { type: integer }
+        periodo: { type: string, enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE] }
+        docente: { allOf: [{ $ref: '#/components/schemas/PublicUser' }], nullable: true }
+        horarios:
+          type: array
+          items: { $ref: '#/components/schemas/Schedule' }
+        activo: { type: boolean }
+    EnrollmentPeriod:
+      type: object
+      required: [id, tipo, cicloLectivo, fechaInicio, fechaFin, materias, mesas, activo]
+      properties:
+        id: { type: integer }
+        tipo: { $ref: '#/components/schemas/TipoPeriodo' }
+        cicloLectivo: { type: integer }
+        fechaInicio: { type: string, format: date-time }
+        fechaFin: { type: string, format: date-time }
+        materias:
+          type: array
+          items: { $ref: '#/components/schemas/Subject' }
+        mesas:
+          type: array
+          description: Mesas de períodos EXAMEN heredados, informativas en la consola de esta etapa.
+          items: { type: object, additionalProperties: true }
+        descripcion: { type: string, nullable: true }
+        activo: { type: boolean }
     CarreraCreateRequest:
       type: object
       required: [nombre, duracionAnios]
@@ -2203,18 +2248,40 @@ components:
         observaciones: Consigna de trabajo práctico
     PeriodoRequest:
       type: object
-      required: [tipo, fechaInicio, fechaFin]
+      required: [tipo, cicloLectivo, fechaInicio, fechaFin]
       properties:
         tipo: { $ref: '#/components/schemas/TipoPeriodo' }
+        cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
         fechaInicio: { type: string, format: date-time }
         fechaFin: { type: string, format: date-time }
+        materiasIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        mesasIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
         descripcion: { type: string, maxLength: 255, nullable: true }
     PeriodoUpdateRequest:
       type: object
       properties:
         tipo: { $ref: '#/components/schemas/TipoPeriodo' }
+        cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
         fechaInicio: { type: string, format: date-time }
         fechaFin: { type: string, format: date-time }
+        materiasIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        mesasIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
         descripcion: { type: string, maxLength: 255, nullable: true }
         activo: { type: boolean }
 
