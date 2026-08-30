@@ -36,7 +36,9 @@ export const adminApi = {
   getUser(id: number): Promise<AdminUserDetail> { return apiClient.get(`/users/${id}`) },
   createUser(role: 'ALUMNO' | 'PROFESOR' | 'ADMINISTRATIVO', payload: Record<string, unknown>): Promise<AdminUserDetail> {
     const endpoint = role === 'ALUMNO' ? '/alumnos' : role === 'PROFESOR' ? '/profesores' : '/administrativos'
-    return apiClient.post(endpoint, { ...payload, rol: role })
+    const alumno = payload.alumno && typeof payload.alumno === 'object' ? payload.alumno as Record<string, unknown> : undefined
+    const { alumno: _alumno, ...common } = payload
+    return apiClient.post(endpoint, { ...common, ...(role === 'ALUMNO' && alumno ? alumno : {}), rol: role })
   },
   updateUser(id: number, payload: Record<string, unknown>): Promise<AdminUserDetail> { return apiClient.put(`/users/${id}`, payload) },
   setUserActive(id: number, active: boolean): Promise<AdminUserDetail> { return apiClient.put(`/users/${id}/activate`, { active }) },

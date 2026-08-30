@@ -22,8 +22,8 @@ describe('adminApi', () => {
 
   it('uses the role-specific creation endpoint and never exposes a generated password', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ idUsuario: 9 })
-    await adminApi.createUser('ALUMNO', { apellidoNombre: 'Ada', password: 'Temporal!9', dni: '12345678' })
-    expect(apiClient.post).toHaveBeenCalledWith('/alumnos', expect.objectContaining({ rol: 'ALUMNO' }))
+    await adminApi.createUser('ALUMNO', { apellidoNombre: 'Ada', password: 'Temporal!9', dni: '12345678', alumno: { domicilio: 'Centro', anioEgreso: 2020 } })
+    expect(apiClient.post).toHaveBeenCalledWith('/alumnos', expect.objectContaining({ rol: 'ALUMNO', domicilio: 'Centro', anioEgreso: 2020 }))
   })
 
   it('sends an explicit role payload and supports logical role removal', async () => {
