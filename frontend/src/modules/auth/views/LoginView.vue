@@ -3,7 +3,7 @@ import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
 import { ref } from 'vue'
 import { LockKeyhole, UserRound } from 'lucide-vue-next'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AuthLayout from '@/layouts/AuthLayout.vue'
 import AppButton from '@/ui/AppButton.vue'
 import { useAuthStore } from '@/stores/authStore'
@@ -11,6 +11,7 @@ import { loginSchema } from '../schemas/authSchemas'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const formError = ref('')
 const { defineField, errors, handleSubmit, isSubmitting } = useForm({ validationSchema: toTypedSchema(loginSchema) })
 const [identifier, identifierAttrs] = defineField('identifier')
@@ -20,7 +21,8 @@ const submit = handleSubmit(async (values) => {
   formError.value = ''
   try {
     await auth.login(values)
-    await router.replace({ name: 'home' })
+    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/app/') ? route.query.redirect : '/app/inicio'
+    await router.replace(redirect)
   } catch {
     formError.value = 'No pudimos iniciar sesión. Revisá los datos e intentá nuevamente.'
   }

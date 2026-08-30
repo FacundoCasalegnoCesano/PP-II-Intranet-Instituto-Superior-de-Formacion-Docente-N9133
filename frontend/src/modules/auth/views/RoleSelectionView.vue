@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { BriefcaseBusiness, GraduationCap, ShieldCheck } from 'lucide-vue-next'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { Role } from '@/core/auth/contracts'
 import AuthLayout from '@/layouts/AuthLayout.vue'
 import AppButton from '@/ui/AppButton.vue'
@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const feedback = useFeedback()
 const loadingRole = ref<Role>()
 const error = ref('')
@@ -25,7 +26,8 @@ async function select(role: Role): Promise<void> {
   try {
     await auth.selectRole(role)
     feedback.success(`Rol ${roleDetails[role].label} seleccionado.`)
-    await router.replace({ name: 'home' })
+    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/app/') ? route.query.redirect : '/app/inicio'
+    await router.replace(redirect)
   } catch {
     error.value = 'No pudimos seleccionar el rol. Intentá nuevamente.'
   } finally { loadingRole.value = undefined }
