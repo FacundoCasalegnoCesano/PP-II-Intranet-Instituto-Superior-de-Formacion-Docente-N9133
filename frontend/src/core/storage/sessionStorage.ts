@@ -26,7 +26,7 @@ function isAuthSession(value: unknown): value is AuthSession {
     && !!session.user
     && typeof session.user.idUsuario === 'number'
     && typeof session.user.apellidoNombre === 'string'
-    && typeof session.user.dni === 'number'
+    && (typeof session.user.dni === 'number' || typeof session.user.dni === 'string')
     && typeof session.user.email === 'string'
     && typeof session.user.fechaNacimiento === 'string'
     && typeof session.user.telefono === 'string'

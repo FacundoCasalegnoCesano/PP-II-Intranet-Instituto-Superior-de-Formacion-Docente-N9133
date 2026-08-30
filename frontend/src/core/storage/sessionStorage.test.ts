@@ -31,6 +31,15 @@ describe('SessionStorage', () => {
     expect(window.sessionStorage.getItem('isfd.auth.session.v1')).toContain('"version":1')
   })
 
+  it('restores sessions whose DNI is normalized as a string', () => {
+    const storage = new SessionStorage()
+    const normalizedSession = { ...session, user: { ...session.user, dni: '12345678' } }
+
+    storage.save(normalizedSession)
+
+    expect(storage.read()).toEqual(normalizedSession)
+  })
+
   it('treats corrupt data as an empty session and removes it', () => {
     window.sessionStorage.setItem('isfd.auth.session.v1', '{not-json')
 

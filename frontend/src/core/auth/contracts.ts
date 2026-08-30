@@ -5,7 +5,8 @@ export type Role = (typeof ROLES)[number]
 export interface PublicUser {
   idUsuario: number
   apellidoNombre: string
-  dni: number
+  /** DNI can arrive as a number from legacy responses or as a normalized string. */
+  dni: string | number
   email: string
   fechaNacimiento: string
   telefono: string
