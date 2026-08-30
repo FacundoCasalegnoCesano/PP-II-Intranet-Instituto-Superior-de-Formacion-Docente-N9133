@@ -48,7 +48,7 @@ export class ApiClient {
   private sessionInvalidationHandler: (() => void) | undefined
 
   constructor({
-    baseUrl = import.meta.env.VITE_API_URL ?? '/api',
+    baseUrl = import.meta.env.VITE_API_BASE_URL ?? import.meta.env.VITE_API_URL ?? '/api',
     fetcher = fetch,
     storage = sessionStorage,
   }: ApiClientOptions = {}) {
