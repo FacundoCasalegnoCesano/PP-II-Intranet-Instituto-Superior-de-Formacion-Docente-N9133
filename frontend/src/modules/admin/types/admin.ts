@@ -21,7 +21,7 @@ export interface Career {
   nombre: string
   duracionAnios: number
   activo: boolean
-  plan?: Subject[]
+  materias?: Subject[]
 }
 
 export interface Subject {
