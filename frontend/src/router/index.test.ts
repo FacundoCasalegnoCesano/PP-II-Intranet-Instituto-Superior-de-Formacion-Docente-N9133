@@ -100,4 +100,18 @@ describe('navigation guards', () => {
     await router.isReady()
     expect(router.currentRoute.value.name).toBe('schedules')
   })
+
+  it('keeps the three student academic routes exclusive to the ALUMNO role', async () => {
+    sessionStorage.save({ ...session('ALUMNO'), roles: ['ALUMNO'], role: 'ALUMNO' })
+    const studentRouter = createAppRouter()
+    for (const route of ['/app/alumno/trayectoria', '/app/alumno/materias', '/app/alumno/examenes']) {
+      await studentRouter.push(route)
+      expect(studentRouter.currentRoute.value.fullPath).toBe(route)
+    }
+
+    sessionStorage.save({ ...session('PROFESOR', ['PROFESOR']), user: { ...user, rol: 'PROFESOR' } })
+    const teacherRouter = createAppRouter()
+    await teacherRouter.push('/app/alumno/materias')
+    expect(teacherRouter.currentRoute.value.name).toBe('home')
+  })
 })

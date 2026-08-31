@@ -18,6 +18,11 @@ const baseNavItems = [
   { name: 'schedules', label: 'Horarios', icon: CalendarDays },
   { name: 'profile', label: 'Mi perfil', icon: UserRound },
 ] as const
+const studentNavItems = [
+  { name: 'academic-record', label: 'Trayectoria', icon: BookOpen },
+  { name: 'subject-enrollments', label: 'Mis materias', icon: BookOpen },
+  { name: 'student-exams', label: 'Exámenes', icon: BookOpen },
+] as const
 const adminNavItems = [
   { name: 'admin-users', label: 'Usuarios', icon: ShieldCheck },
   { name: 'admin-careers', label: 'Carreras', icon: BookOpen },
@@ -25,7 +30,11 @@ const adminNavItems = [
   { name: 'admin-courses', label: 'Cursadas', icon: BookOpen },
   { name: 'admin-periods', label: 'Períodos', icon: BookOpen },
 ] as const
-const navItems = computed(() => auth.activeRole === 'ADMINISTRATIVO' ? [...baseNavItems, ...adminNavItems] : baseNavItems)
+const navItems = computed(() => {
+  if (auth.activeRole === 'ADMINISTRATIVO') return [...baseNavItems, ...adminNavItems]
+  if (auth.activeRole === 'ALUMNO') return [...baseNavItems, ...studentNavItems]
+  return baseNavItems
+})
 const roleLabel = computed(() => ({ ALUMNO: 'Alumno/a', PROFESOR: 'Profesor/a', ADMINISTRATIVO: 'Administrativo/a' }[auth.activeRole ?? ''] ?? 'Sin rol'))
 const canChangeRole = computed(() => auth.roles.length > 1)
 
@@ -60,9 +69,6 @@ async function logout(): Promise<void> {
         <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="route.name === item.name ? 'bg-white/20 font-semibold' : ''">
           <component :is="item.icon" class="size-5" aria-hidden="true" />{{ item.label }}
         </RouterLink>
-        <button disabled type="button" class="mt-5 flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-white/55" title="Próximamente">
-          <BookOpen class="size-5" aria-hidden="true" />Módulos académicos <span class="ml-auto text-xs">Próximamente</span>
-        </button>
       </nav>
     </aside>
 

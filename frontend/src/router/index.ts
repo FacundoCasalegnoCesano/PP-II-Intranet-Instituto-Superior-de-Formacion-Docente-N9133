@@ -15,6 +15,9 @@ import AdminSubjectsView from '@/modules/admin/views/AdminSubjectsView.vue'
 import AdminCoursesView from '@/modules/admin/views/AdminCoursesView.vue'
 import AdminPeriodsView from '@/modules/admin/views/AdminPeriodsView.vue'
 import SchedulesView from '@/modules/schedules/views/SchedulesView.vue'
+import AcademicRecordView from '@/modules/academicRecord/views/AcademicRecordView.vue'
+import SubjectEnrollmentsView from '@/modules/subjectEnrollments/views/SubjectEnrollmentsView.vue'
+import ExamsView from '@/modules/exams/views/ExamsView.vue'
 
 export type RouteMeta = {
   guest?: boolean
@@ -76,6 +79,9 @@ const AdminSubjectsPage = defineComponent({ name: 'AdminSubjectsPage', render: (
 const AdminCoursesPage = defineComponent({ name: 'AdminCoursesPage', render: () => h(AppShell, null, { default: () => h(AdminCoursesView) }) })
 const AdminPeriodsPage = defineComponent({ name: 'AdminPeriodsPage', render: () => h(AppShell, null, { default: () => h(AdminPeriodsView) }) })
 const SchedulesPage = defineComponent({ name: 'SchedulesPage', render: () => h(AppShell, null, { default: () => h(SchedulesView) }) })
+const AcademicRecordPage = defineComponent({ name: 'AcademicRecordPage', render: () => h(AppShell, null, { default: () => h(AcademicRecordView) }) })
+const SubjectEnrollmentsPage = defineComponent({ name: 'SubjectEnrollmentsPage', render: () => h(AppShell, null, { default: () => h(SubjectEnrollmentsView) }) })
+const ExamsPage = defineComponent({ name: 'ExamsPage', render: () => h(AppShell, null, { default: () => h(ExamsView) }) })
 
 function routeMeta(route: RouteLocationNormalized): RouteMeta {
   return route.meta as RouteMeta
@@ -113,6 +119,9 @@ export function createAppRouter() {
         component: SchedulesPage,
         meta: { requiresSession: true, allowedRoles: ['ALUMNO', 'PROFESOR', 'ADMINISTRATIVO'] },
       },
+      { path: '/app/alumno/trayectoria', name: 'academic-record', component: AcademicRecordPage, meta: { requiresSession: true, allowedRoles: ['ALUMNO'] } },
+      { path: '/app/alumno/materias', name: 'subject-enrollments', component: SubjectEnrollmentsPage, meta: { requiresSession: true, allowedRoles: ['ALUMNO'] } },
+      { path: '/app/alumno/examenes', name: 'student-exams', component: ExamsPage, meta: { requiresSession: true, allowedRoles: ['ALUMNO'] } },
       { path: '/app/administracion', redirect: '/app/administracion/usuarios', meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios', name: 'admin-users', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios/nuevo', name: 'admin-user-create', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },

@@ -50,4 +50,13 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
     expect(screen.getAllByRole('link', { name: 'Horarios' })).toHaveLength(2)
   })
+
+  it('shows student academic navigation instead of the obsolete upcoming placeholder', () => {
+    authState.activeRole = 'ALUMNO'
+    render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+    expect(screen.getByRole('link', { name: 'Trayectoria' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Mis materias' })).toBeVisible()
+    expect(screen.getByRole('link', { name: /Ex.menes/ })).toBeVisible()
+    expect(screen.queryByText(/M.dulos acad.micos/)).not.toBeInTheDocument()
+  })
 })
