@@ -2258,6 +2258,7 @@ components:
         carrera: { $ref: '#/components/schemas/Career' }
         curso: { type: object, nullable: true, properties: { id: { type: integer }, anio: { type: integer } } }
         cursadas: { type: array, description: Cursadas activas sin horarios estructurados, items: { type: object, properties: { id: { type: integer }, anioLectivo: { type: integer } } } }
+        modalidad: { $ref: '#/components/schemas/Modalidad', nullable: true, description: Modalidad propia de la materia disponible. }
         yaInscripto: { type: boolean }
         yaAprobada: { type: boolean }
         cumpleCorrelativas: { type: boolean }
@@ -2275,7 +2276,12 @@ components:
       required: [success, data]
       properties:
         success: { type: boolean, example: true }
-        data: { $ref: '#/components/schemas/MateriaDisponibleAlumno' }
+        data:
+          type: object
+          required: [puedeInscribirse, materia]
+          properties:
+            puedeInscribirse: { type: boolean }
+            materia: { $ref: '#/components/schemas/MateriaDisponibleAlumno' }
     InscripcionMateriaAlumno:
       type: object
       properties:

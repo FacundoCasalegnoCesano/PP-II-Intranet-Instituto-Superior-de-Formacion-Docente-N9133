@@ -109,9 +109,13 @@ describe('navigation guards', () => {
       expect(studentRouter.currentRoute.value.fullPath).toBe(route)
     }
 
-    sessionStorage.save({ ...session('PROFESOR', ['PROFESOR']), user: { ...user, rol: 'PROFESOR' } })
-    const teacherRouter = createAppRouter()
-    await teacherRouter.push('/app/alumno/materias')
-    expect(teacherRouter.currentRoute.value.name).toBe('home')
+    for (const role of ['PROFESOR', 'ADMINISTRATIVO'] as const) {
+      sessionStorage.save({ ...session(role, [role]), user: { ...user, rol: role } })
+      const unauthorizedRouter = createAppRouter()
+      for (const route of ['/app/alumno/trayectoria', '/app/alumno/materias', '/app/alumno/examenes']) {
+        await unauthorizedRouter.push(route)
+        expect(unauthorizedRouter.currentRoute.value.name).toBe('home')
+      }
+    }
   })
 })

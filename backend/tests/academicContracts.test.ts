@@ -66,6 +66,12 @@ test('OpenAPI enlaza contratos académicos, conserva horarios publicados y enume
   const materiaRequest = document.components.schemas.InscripcionMateriaRequest;
   assert.ok(materiaRequest.properties.modalidadElegida);
   assert.equal(materiaRequest.properties.modalidad, undefined);
+  const materiaDisponible = document.components.schemas.MateriaDisponibleAlumno;
+  assert.equal(materiaDisponible.properties.modalidad.$ref, '#/components/schemas/Modalidad');
+  assert.equal(materiaDisponible.properties.modalidadElegida, undefined);
+  const verificacion = document.components.schemas.VerificacionInscripcionMateriaResponse;
+  assert.equal(verificacion.properties.data.properties.puedeInscribirse.type, 'boolean');
+  assert.equal(verificacion.properties.data.properties.materia.$ref, '#/components/schemas/MateriaDisponibleAlumno');
   assert.equal(document.components.schemas.TribunalRequest.properties.mesaId.type, 'integer');
   assert.deepEqual(document.components.schemas.TrayectoriaMateria.properties.estado.enum, [
     'PENDIENTE', 'EN_CURSO', 'LIBRE', 'REGULAR', 'HABILITADO_PROMOCION', 'PROMOCIONADO', 'APROBADA', 'HOMOLOGADA'
