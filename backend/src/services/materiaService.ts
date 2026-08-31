@@ -19,7 +19,6 @@ type MateriaDisponibleEvaluada = MateriaDisponibleBase & {
   yaAprobada: boolean;
   cumpleCorrelativas: boolean;
   correlativasPendientes: MateriaRequeridaDisponible[];
-  horarios: unknown[];
   carreras: MateriaDisponibleBase['carrera'][];
   habilitada?: boolean;
 };
@@ -379,7 +378,6 @@ class MateriaService {
         yaAprobada: hechos.materiasAprobadasIds.includes(materia.id),
         cumpleCorrelativas: resultadoCorrelatividades.cumple,
         correlativasPendientes,
-        horarios: materia.cursadas.flatMap(cursada => cursada.horarios ?? []),
         carreras: [materia.carrera]
       };
 

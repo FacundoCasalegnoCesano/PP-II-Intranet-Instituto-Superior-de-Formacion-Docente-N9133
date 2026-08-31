@@ -373,15 +373,7 @@ class MateriaRepository {
         carrera: true,
         curso: true,
         cursadas: {
-          where: { activo: true },
-          include: {
-            horarios: {
-              where: { activo: true },
-              include: {
-                cursada: true
-              }
-            }
-          }
+          where: { activo: true }
         },
         correlatividadesOrigen: {
           where: { tipoRequisito: 'OBLIGATORIA' },

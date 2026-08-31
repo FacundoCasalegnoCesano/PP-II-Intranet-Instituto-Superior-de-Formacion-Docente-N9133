@@ -199,8 +199,8 @@ class InscripcionMateriaController {
         return;
       }
 
-      const { modalidad } = req.body;
-      if (!modalidad) {
+      const { modalidadElegida } = req.body;
+      if (!modalidadElegida) {
         res.status(400).json({
           success: false,
           message: 'Modalidad es requerida'
@@ -209,7 +209,7 @@ class InscripcionMateriaController {
       }
 
       const currentUser = req.user!;
-      const result = await inscripcionMateriaService.cambiarModalidad(id, modalidad, currentUser);
+      const result = await inscripcionMateriaService.cambiarModalidad(id, modalidadElegida, currentUser);
       
       res.json({
         success: true,
