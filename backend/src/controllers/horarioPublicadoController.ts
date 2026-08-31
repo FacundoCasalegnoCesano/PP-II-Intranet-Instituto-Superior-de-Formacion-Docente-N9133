@@ -27,6 +27,8 @@ class HorarioPublicadoController {
     try {
       const archivo = await horarioPublicadoService.obtenerArchivo(idParametrico(req), req.user!);
       res.type('application/pdf');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('Content-Disposition', `attachment; filename="horario-${archivo.documento.cicloLectivo}.pdf"`);
       res.sendFile(archivo.ruta);
     } catch (error) { next(error); }
   }

@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { test } from 'node:test';
 import { HorarioPublicadoService, validarArchivoHorario } from '../src/services/horarioPublicadoService.js';
 import { ROLES } from '../src/constants/roles.js';
+import { publicarHorarioSchema } from '../src/validations/horarioPublicadoValidation.js';
 
 const administrador = { id: 7, rol: ROLES.ADMINISTRATIVO };
 const alumno = { id: 8, rol: ROLES.ALUMNO };
@@ -80,6 +81,7 @@ test('un reintento idéntico restaura el documento sin escribir otra versión', 
   const resultado = await service.publicarArchivo({ cicloLectivo: 2026 }, pdf(), administrador);
 
   assert.equal(resultado.reutilizado, true);
+  assert.equal(resultado.documento.vigente, true);
   assert.equal(calls.writes.length, 0);
   assert.deepEqual(calls.publica, [previo]);
 });
@@ -107,6 +109,12 @@ test('rechaza archivos vacíos, con MIME, firma o extensión inseguros', () => {
   assert.throws(() => validarArchivoHorario({ ...pdf(), originalname: 'horario.pdf.exe' }), /extensión simple/);
   assert.throws(() => validarArchivoHorario({ ...pdf(), buffer: Buffer.from('texto') }), /firma PDF/);
   assert.throws(() => validarArchivoHorario({ ...pdf(), size: 10 * 1024 * 1024 + 1 }), /límite de 10 MB/);
+});
+
+test('limita el título de publicación a 160 caracteres', () => {
+  const validacion = publicarHorarioSchema.validate({ cicloLectivo: 2026, titulo: 'x'.repeat(161) });
+  assert.ok(validacion.error);
+  assert.match(validacion.error.message, /160/);
 });
 
 test('limpia el archivo nuevo si la transacción falla sin reemplazar la publicación anterior', async () => {
@@ -148,5 +156,6 @@ test('solo un administrativo puede restaurar una versión histórica', async () 
   await assert.rejects(service.restaurar(31, alumno), (error: any) => error.statusCode === 403);
   const restaurado = await service.restaurar(31, administrador);
   assert.equal(restaurado.id, 31);
+  assert.equal(restaurado.vigente, true);
   assert.deepEqual(calls.publica, [previo]);
 });

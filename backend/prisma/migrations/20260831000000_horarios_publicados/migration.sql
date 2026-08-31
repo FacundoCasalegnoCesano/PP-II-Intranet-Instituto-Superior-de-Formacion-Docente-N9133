@@ -2,7 +2,7 @@
 CREATE TABLE `documentos_horarios` (
   `id` INTEGER NOT NULL AUTO_INCREMENT,
   `ciclo_lectivo` INTEGER NOT NULL,
-  `titulo` VARCHAR(255) NOT NULL,
+  `titulo` VARCHAR(160) NOT NULL,
   `nombre_original` VARCHAR(255) NOT NULL,
   `clave_interna` CHAR(36) NOT NULL,
   `tamanio` INTEGER NOT NULL,

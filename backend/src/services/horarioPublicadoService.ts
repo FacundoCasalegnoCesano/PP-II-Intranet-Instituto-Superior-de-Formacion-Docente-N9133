@@ -64,6 +64,10 @@ function aDocumentoPublico(documento: any) {
   };
 }
 
+function comoVigente(documento: any) {
+  return { ...documento, publicacionVigente: { cicloLectivo: documento.cicloLectivo } };
+}
+
 export class HorarioPublicadoService {
   constructor(
     private readonly repository: RepositorioHorarioPublicado = horarioPublicadoRepository,
@@ -145,7 +149,7 @@ export class HorarioPublicadoService {
     if (existente) {
       await this.asegurarArchivoDisponible(existente.claveInterna);
       await this.repository.publicarExistente(existente);
-      return { documento: aDocumentoPublico(existente), reutilizado: true };
+      return { documento: aDocumentoPublico(comoVigente(existente)), reutilizado: true };
     }
 
     const claveInterna = crypto.randomUUID();
@@ -166,7 +170,7 @@ export class HorarioPublicadoService {
       await this.almacenamiento.writeFile(ruta, archivo.buffer, { flag: 'wx' });
       const creado = await this.repository.crearYPublicar(documento);
       return {
-        documento: aDocumentoPublico({ ...creado, publicacionVigente: { cicloLectivo: datos.cicloLectivo } }),
+        documento: aDocumentoPublico(comoVigente(creado)),
         reutilizado: false
       };
     } catch (error) {
@@ -178,7 +182,7 @@ export class HorarioPublicadoService {
         if (existenteEnCarrera) {
           await this.asegurarArchivoDisponible(existenteEnCarrera.claveInterna);
           await this.repository.publicarExistente(existenteEnCarrera);
-          return { documento: aDocumentoPublico(existenteEnCarrera), reutilizado: true };
+          return { documento: aDocumentoPublico(comoVigente(existenteEnCarrera)), reutilizado: true };
         }
       }
       throw error;
@@ -193,7 +197,7 @@ export class HorarioPublicadoService {
     }
     await this.asegurarArchivoDisponible(documento.claveInterna);
     await this.repository.publicarExistente(documento);
-    return aDocumentoPublico(documento);
+    return aDocumentoPublico(comoVigente(documento));
   }
 }
 

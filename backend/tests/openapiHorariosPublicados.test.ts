@@ -18,4 +18,10 @@ test('OpenAPI documenta los seis contratos de horarios publicados', () => {
   assert.match(openapi, /multipart\/form-data/);
   assert.match(openapi, /application\/pdf/);
   assert.match(openapi, /ADMINISTRATIVO/);
+  const inicioPublicacion = openapi.indexOf('  /horarios-publicados:\n');
+  const finPublicacion = openapi.indexOf('  /horarios-publicados/historial:', inicioPublicacion);
+  const publicar = openapi.slice(inicioPublicacion, finPublicacion);
+  assert.match(publicar, /titulo: \{ type: string, maxLength: 160 \}/i);
+  assert.match(publicar, /'200':\s*\n\s+description: Se reutilizó y restauró como vigente un PDF idéntico/);
+  assert.match(publicar, /'201':\s*\n\s+description: PDF nuevo publicado inmediatamente/);
 });

@@ -1583,9 +1583,18 @@ paths:
               properties:
                 archivo: { type: string, format: binary, description: PDF simple de hasta 10 MB }
                 cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
-                titulo: { type: string, maxLength: 255 }
+                titulo: { type: string, maxLength: 160 }
       responses:
-        '201': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Se reutilizó y restauró como vigente un PDF idéntico del mismo ciclo lectivo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+        '201':
+          description: PDF nuevo publicado inmediatamente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
 

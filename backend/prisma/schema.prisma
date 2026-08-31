@@ -455,7 +455,7 @@ model Horario {
 model DocumentoHorario {
   id             Int      @id @default(autoincrement())
   cicloLectivo   Int      @map("ciclo_lectivo")
-  titulo         String   @db.VarChar(255)
+  titulo         String   @db.VarChar(160)
   nombreOriginal String   @map("nombre_original") @db.VarChar(255)
   claveInterna   String   @unique @map("clave_interna") @db.Char(36)
   tamanio        Int

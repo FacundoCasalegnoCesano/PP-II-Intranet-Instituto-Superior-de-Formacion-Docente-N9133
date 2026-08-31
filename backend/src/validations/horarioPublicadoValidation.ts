@@ -14,9 +14,9 @@ export const cicloLectivoSchema = Joi.object({
 });
 
 export const publicarHorarioSchema = cicloLectivoSchema.keys({
-  titulo: Joi.string().trim().min(1).max(255).optional().messages({
+  titulo: Joi.string().trim().min(1).max(160).optional().messages({
     'string.empty': 'El título no puede estar vacío',
-    'string.max': 'El título no puede superar los 255 caracteres'
+    'string.max': 'El título no puede superar los 160 caracteres'
   })
 });
 
