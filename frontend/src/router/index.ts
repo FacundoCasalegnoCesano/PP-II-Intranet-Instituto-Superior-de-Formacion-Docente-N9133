@@ -14,6 +14,7 @@ import AdminCareersView from '@/modules/admin/views/AdminCareersView.vue'
 import AdminSubjectsView from '@/modules/admin/views/AdminSubjectsView.vue'
 import AdminCoursesView from '@/modules/admin/views/AdminCoursesView.vue'
 import AdminPeriodsView from '@/modules/admin/views/AdminPeriodsView.vue'
+import SchedulesView from '@/modules/schedules/views/SchedulesView.vue'
 
 export type RouteMeta = {
   guest?: boolean
@@ -74,6 +75,7 @@ const AdminCareersPage = defineComponent({ name: 'AdminCareersPage', render: () 
 const AdminSubjectsPage = defineComponent({ name: 'AdminSubjectsPage', render: () => h(AppShell, null, { default: () => h(AdminSubjectsView) }) })
 const AdminCoursesPage = defineComponent({ name: 'AdminCoursesPage', render: () => h(AppShell, null, { default: () => h(AdminCoursesView) }) })
 const AdminPeriodsPage = defineComponent({ name: 'AdminPeriodsPage', render: () => h(AppShell, null, { default: () => h(AdminPeriodsView) }) })
+const SchedulesPage = defineComponent({ name: 'SchedulesPage', render: () => h(AppShell, null, { default: () => h(SchedulesView) }) })
 
 function routeMeta(route: RouteLocationNormalized): RouteMeta {
   return route.meta as RouteMeta
@@ -104,6 +106,12 @@ export function createAppRouter() {
         name: 'home',
         component: AppHomePage,
         meta: { requiresSession: true },
+      },
+      {
+        path: '/app/horarios',
+        name: 'schedules',
+        component: SchedulesPage,
+        meta: { requiresSession: true, allowedRoles: ['ALUMNO', 'PROFESOR', 'ADMINISTRATIVO'] },
       },
       { path: '/app/administracion', redirect: '/app/administracion/usuarios', meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios', name: 'admin-users', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },

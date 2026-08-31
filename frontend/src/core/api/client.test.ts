@@ -194,4 +194,31 @@ describe('ApiClient', () => {
     expect(storage.read()).toBeNull()
     expect(onSessionInvalidated).toHaveBeenCalledTimes(1)
   })
+
+  it('sends FormData unchanged without forcing a JSON content type', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ success: true, data: { id: 31 } }, 201))
+    const { api } = client(fetcher)
+    const form = new FormData()
+    form.append('cicloLectivo', '2026')
+    form.append('archivo', new Blob(['%PDF-1.7'], { type: 'application/pdf' }), 'horario.pdf')
+
+    await api.post('/horarios-publicados', form)
+
+    const request = fetcher.mock.calls[0]?.[1]
+    expect(request?.body).toBe(form)
+    expect(new Headers(request?.headers).get('Content-Type')).toBeNull()
+  })
+
+  it('refreshes an authenticated Blob request and parses a JSON error response', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ success: false, message: 'Token expirado' }, 401))
+      .mockResolvedValueOnce(jsonResponse({ success: true, data: { accessToken: 'fresh-access', refreshToken: 'fresh-refresh' } }))
+      .mockResolvedValueOnce(new Response('%PDF-1.7', { status: 200, headers: { 'Content-Type': 'application/pdf' } }))
+      .mockResolvedValueOnce(jsonResponse({ success: false, message: 'Archivo inexistente', code: 'NOT_FOUND' }, 404))
+    const { api } = client(fetcher)
+
+    await expect(api.getBlob('/horarios-publicados/31/archivo')).resolves.toMatchObject({ type: 'application/pdf', size: 8 })
+    await expect(api.getBlob('/horarios-publicados/99/archivo')).rejects.toMatchObject({ status: 404, code: 'NOT_FOUND' })
+    expect(new Headers(fetcher.mock.calls[2]?.[1]?.headers).get('Authorization')).toBe('Bearer fresh-access')
+  })
 })

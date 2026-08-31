@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { BookOpen, ChevronDown, Home, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
+import { BookOpen, CalendarDays, ChevronDown, Home, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AppButton from '@/ui/AppButton.vue'
@@ -15,6 +15,7 @@ const confirmLogoutOpen = ref(false)
 const loggingOut = ref(false)
 const baseNavItems = [
   { name: 'home', label: 'Inicio', icon: Home },
+  { name: 'schedules', label: 'Horarios', icon: CalendarDays },
   { name: 'profile', label: 'Mi perfil', icon: UserRound },
 ] as const
 const adminNavItems = [

@@ -61,6 +61,10 @@ export class ApiClient {
     return this.request<T>(path, { ...options, method: 'GET' })
   }
 
+  getBlob(path: string, options: Omit<ApiRequestOptions, 'method' | 'body'> = {}): Promise<Blob> {
+    return this.requestBlobOnce(path, { ...options, method: 'GET' }, false)
+  }
+
   post<T>(path: string, body?: unknown, options: Omit<ApiRequestOptions, 'method' | 'body'> = {}): Promise<T> {
     return this.request<T>(path, { ...options, method: 'POST', body })
   }
@@ -108,6 +112,32 @@ export class ApiClient {
     }
   }
 
+  private async requestBlobOnce(path: string, options: ApiRequestOptions, retried: boolean): Promise<Blob> {
+    const useAuth = options.auth ?? !isPublicAuthPath(path)
+    const response = await this.send(path, options, useAuth)
+
+    if (response.status === 401 && useAuth && !retried) {
+      try {
+        await this.refreshSession()
+      } catch (error) {
+        throw normalizeApiError(error)
+      }
+      return this.requestBlobOnce(path, options, true)
+    }
+
+    if (!response.ok) {
+      try {
+        await this.unwrap(response)
+      } catch (error) {
+        const normalized = normalizeApiError(error)
+        if (normalized.status === 401 && useAuth) this.invalidateSession()
+        throw normalized
+      }
+    }
+
+    return response.blob()
+  }
+
   private async send(path: string, options: ApiRequestOptions, useAuth: boolean): Promise<Response> {
     const headers = new Headers(options.headers)
     const { auth: _auth, body, headers: _headers, preservePagination: _preservePagination, ...requestOptions } = options
@@ -118,7 +148,10 @@ export class ApiClient {
     }
 
     let requestBody: BodyInit | undefined
-    if (body !== undefined) {
+    if (body instanceof FormData) {
+      headers.delete('Content-Type')
+      requestBody = body
+    } else if (body !== undefined) {
       headers.set('Content-Type', headers.get('Content-Type') ?? 'application/json')
       requestBody = JSON.stringify(body)
     }

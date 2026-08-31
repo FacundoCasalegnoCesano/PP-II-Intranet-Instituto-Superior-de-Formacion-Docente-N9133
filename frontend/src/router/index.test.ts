@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import type { AuthSession } from '@/core/auth/contracts'
+import type { AuthSession, Role } from '@/core/auth/contracts'
 import { sessionStorage } from '@/core/storage/sessionStorage'
 import { createAppRouter } from './index'
 
@@ -15,13 +15,13 @@ const user = {
   rol: 'ALUMNO',
 }
 
-function session(role?: 'ALUMNO'): AuthSession {
+function session(role?: Role, roles: Role[] = ['ALUMNO']): AuthSession {
   return {
     accessToken: 'access-token',
     refreshToken: 'refresh-token',
     sessionId: 17,
     user,
-    roles: ['ALUMNO'],
+    roles,
     role,
   }
 }
@@ -91,5 +91,13 @@ describe('navigation guards', () => {
     await adminRouter.isReady()
     expect(adminRouter.currentRoute.value.name).toBe('admin-users')
     expect(adminRouter.getRoutes().filter((route) => String(route.name).startsWith('admin-')).length).toBeGreaterThanOrEqual(20)
+  })
+
+  it.each(['ALUMNO', 'PROFESOR', 'ADMINISTRATIVO'] as const)('allows %s to open published schedules', async (role) => {
+    sessionStorage.save({ ...session(role, [role]), user: { ...user, rol: role } })
+    const router = createAppRouter()
+    await router.push('/app/horarios')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('schedules')
   })
 })
