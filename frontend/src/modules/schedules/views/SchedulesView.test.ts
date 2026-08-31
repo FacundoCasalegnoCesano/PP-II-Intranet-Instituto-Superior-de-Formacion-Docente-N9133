@@ -176,4 +176,45 @@ describe('SchedulesView', () => {
     await waitFor(() => expect(mocks.download).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByTitle('Vista previa del horario publicado')).toHaveAttribute('data', 'blob:recovered'))
   })
+
+  it('loads a newly selected year after retrying the current-schedule load for the same year', async () => {
+    mocks.listYears.mockResolvedValue([2026, 2025])
+    mocks.getCurrent.mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(schedule(2026))
+      .mockResolvedValueOnce(schedule(2025))
+    mocks.download.mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }))
+    mocks.createObjectURL.mockReturnValueOnce('blob:2026').mockReturnValueOnce('blob:2025')
+    vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
+    const user = userEvent.setup()
+    render(SchedulesView)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos cargar el horario para el ciclo lectivo seleccionado.')
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }))
+    await screen.findByRole('heading', { name: 'Horario oficial 2026' })
+    await user.selectOptions(screen.getByLabelText('Ciclo lectivo'), '2025')
+
+    await waitFor(() => expect(mocks.getCurrent).toHaveBeenCalledTimes(3))
+    expect(await screen.findByRole('heading', { name: 'Horario oficial 2025' })).toBeVisible()
+    await waitFor(() => expect(screen.getByTitle('Vista previa del horario publicado')).toHaveAttribute('data', 'blob:2025'))
+  })
+
+  it('keeps a pending administrative history request valid while a PDF retry completes', async () => {
+    mocks.activeRole = 'ADMINISTRATIVO'
+    const versions = deferred<Array<Record<string, unknown>>>()
+    mocks.listYears.mockResolvedValue([2026])
+    mocks.getCurrent.mockResolvedValue(schedule(2026))
+    mocks.download.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(new Blob(['recovered'], { type: 'application/pdf' }))
+    mocks.listHistory.mockImplementationOnce(() => versions.promise)
+    mocks.createObjectURL.mockReturnValue('blob:recovered')
+    vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
+    const user = userEvent.setup()
+    render(SchedulesView)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos descargar el PDF publicado.')
+    await user.click(screen.getByRole('button', { name: 'Reintentar PDF' }))
+    await waitFor(() => expect(mocks.download).toHaveBeenCalledTimes(2))
+    versions.resolve([{ ...schedule(2026, 30), vigente: false, publicadoPor: { id: 9, nombre: 'Secretaría Académica' } }])
+
+    expect(await screen.findByText('Publicado por: Secretaría Académica')).toBeVisible()
+  })
 })

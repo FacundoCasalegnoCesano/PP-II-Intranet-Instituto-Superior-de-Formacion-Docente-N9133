@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Download, ExternalLink, FileText, History, Upload } from 'lucide-vue-next'
 import { schedulesApi } from '../api/schedulesApi'
 import type { PublishedSchedule } from '../types/schedules'
@@ -24,7 +24,7 @@ const pendingAction = ref<{ kind: 'publish' } | { kind: 'restore'; document: Pub
 const saving = ref(false)
 const actionError = ref('')
 let requestGeneration = 0
-let skipNextYearWatch = false
+let documentGeneration = 0
 
 const isAdmin = computed(() => auth.activeRole === 'ADMINISTRATIVO')
 const safeFileName = computed(() => {
@@ -45,6 +45,7 @@ function revokeBlobUrl(): void {
 
 function nextRequestGeneration(): number {
   requestGeneration += 1
+  documentGeneration += 1
   return requestGeneration
 }
 
@@ -54,21 +55,22 @@ function isCurrentRequest(generation: number): boolean {
 
 async function loadDocument(schedule: PublishedSchedule, generation: number): Promise<void> {
   if (!isCurrentRequest(generation)) return
+  const generationDocument = ++documentGeneration
   loadingDocument.value = true
   try {
     const file = await schedulesApi.download(schedule.id)
-    if (!isCurrentRequest(generation)) return
+    if (!isCurrentRequest(generation) || generationDocument !== documentGeneration) return
     const nextBlobUrl = URL.createObjectURL(file)
-    if (!isCurrentRequest(generation)) {
+    if (!isCurrentRequest(generation) || generationDocument !== documentGeneration) {
       URL.revokeObjectURL(nextBlobUrl)
       return
     }
     revokeBlobUrl()
     blobUrl.value = nextBlobUrl
   } catch {
-    if (isCurrentRequest(generation)) documentError.value = 'No pudimos descargar el PDF publicado.'
+    if (isCurrentRequest(generation) && generationDocument === documentGeneration) documentError.value = 'No pudimos descargar el PDF publicado.'
   } finally {
-    if (isCurrentRequest(generation)) loadingDocument.value = false
+    if (isCurrentRequest(generation) && generationDocument === documentGeneration) loadingDocument.value = false
   }
 }
 
@@ -98,11 +100,13 @@ async function loadSchedule(): Promise<void> {
     if (!isCurrentRequest(generation)) return
     current.value = schedule
     uploadCycle.value = schedule.cicloLectivo
-    await Promise.all([loadDocument(schedule, generation), loadHistory(cicloLectivo, generation)])
+    void loadDocument(schedule, generation)
+    void loadHistory(cicloLectivo, generation)
   } catch {
-    if (isCurrentRequest(generation)) error.value = 'No pudimos cargar el horario para el ciclo lectivo seleccionado.'
-  } finally {
-    if (isCurrentRequest(generation)) loadingDocument.value = false
+    if (isCurrentRequest(generation)) {
+      error.value = 'No pudimos cargar el horario para el ciclo lectivo seleccionado.'
+      loadingDocument.value = false
+    }
   }
 }
 
@@ -114,7 +118,6 @@ async function load(): Promise<void> {
   revokeBlobUrl()
   try {
     years.value = await schedulesApi.listYears()
-    skipNextYearWatch = true
     selectedYear.value = years.value[0] ?? null
     uploadCycle.value = selectedYear.value ?? new Date().getFullYear()
     if (selectedYear.value !== null) await loadSchedule()
@@ -128,7 +131,7 @@ async function load(): Promise<void> {
 function retryDocument(): void {
   if (!current.value) return
   documentError.value = ''
-  void loadDocument(current.value, nextRequestGeneration())
+  void loadDocument(current.value, requestGeneration)
 }
 
 function preparePublish(): void {
@@ -163,10 +166,10 @@ async function confirmAction(): Promise<void> {
     }
     current.value = published
     documentError.value = ''
-    skipNextYearWatch = true
     selectedYear.value = published.cicloLectivo
     if (!years.value.includes(published.cicloLectivo)) years.value = [published.cicloLectivo, ...years.value].sort((a, b) => b - a)
-    await Promise.all([loadDocument(published, generation), loadHistory(published.cicloLectivo, generation)])
+    void loadDocument(published, generation)
+    void loadHistory(published.cicloLectivo, generation)
     pendingAction.value = null
   } catch {
     actionError.value = action.kind === 'publish' ? 'No se pudo publicar el horario.' : 'No se pudo restaurar esta versión.'
@@ -175,13 +178,6 @@ async function confirmAction(): Promise<void> {
   }
 }
 
-watch(selectedYear, (year, previous) => {
-  if (skipNextYearWatch) {
-    skipNextYearWatch = false
-    return
-  }
-  if (year !== null && previous !== null && year !== undefined && year !== previous) void loadSchedule()
-})
 onMounted(() => { void load() })
 onBeforeUnmount(() => {
   nextRequestGeneration()
@@ -198,7 +194,7 @@ onBeforeUnmount(() => {
         <p class="mt-2 max-w-2xl text-[var(--color-graphite)]">Consultá el horario oficial vigente de cada ciclo lectivo.</p>
       </div>
       <label v-if="years.length" class="grid gap-1 text-sm font-semibold text-[var(--color-text)]">Ciclo lectivo
-        <select v-model.number="selectedYear" class="min-h-11 rounded-md border border-[var(--color-border)] bg-white px-3 font-normal">
+        <select v-model.number="selectedYear" class="min-h-11 rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="loadSchedule">
           <option v-for="year in years" :key="year" :value="year">{{ year }}</option>
         </select>
       </label>
