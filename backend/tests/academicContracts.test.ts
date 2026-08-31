@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
 
 import materiaRepository from '../src/repositories/materiaRepository.js';
 import inscripcionMateriaController from '../src/controllers/inscripcionMateriaController.js';
@@ -27,9 +27,7 @@ afterEach(() => {
 });
 
 function parseOpenApi(): any {
-  const path = fileURLToPath(new URL('../openapi.yaml', import.meta.url));
-  const source = 'import json, sys, yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1], encoding="utf-8")), default=str))';
-  return JSON.parse(execFileSync('python', ['-c', source, path], { encoding: 'utf8' }));
+  return parse(readFileSync(new URL('../openapi.yaml', import.meta.url), 'utf8'));
 }
 
 function schemaRef(document: any, path: string, method: string, status = '200'): string | undefined {
