@@ -238,7 +238,7 @@ paths:
       tags: [Usuarios]
       summary: Actualizar usuario (admin o el mismo usuario)
       x-roles: [ADMINISTRATIVO, ALUMNO, PROFESOR]
-      description: Los usuarios no administrativos solo pueden editar su propio perfil mediante la allowlist `apellidoNombre`, `dni`, `email`, `fechaNacimiento`, `telefono`, `cuil`, `contactoEmergencia` y `foto`. Los campos `rol`, `activo`, `password`, `passwordHash` y `backupCodes` se rechazan; la contraseña se cambia mediante `/auth/change-password`. Los administradores pueden usar los campos administrativos de `UserUpdateRequest`.
+      description: "Los usuarios no administrativos solo pueden editar su propio perfil mediante la allowlist `apellidoNombre`, `dni`, `email`, `fechaNacimiento`, `telefono`, `cuil`, `contactoEmergencia` y `foto`. Los campos `rol`, `activo`, `password`, `passwordHash` y `backupCodes` se rechazan; la contraseña se cambia mediante `/auth/change-password`. Los administradores pueden usar los campos administrativos de `UserUpdateRequest`."
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
@@ -258,7 +258,7 @@ paths:
     delete:
       tags: [Usuarios]
       summary: Aplicar baja lógica a un usuario (solo admin)
-      description: Conserva la cuenta y el historial académico, marca `activo=false` y revoca sus sesiones.
+      description: "Conserva la cuenta y el historial académico, marca `activo=false` y revoca sus sesiones."
       x-roles: [ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -731,13 +731,15 @@ paths:
   /inscripciones-carreras/alumno/{alumnoId}:
     get:
       tags: [Inscripciones a Carreras]
-      description: El parámetro `alumnoId` es `Usuario.idUsuario` (ID de cuenta), no `Alumno.idAlumno`. Un ALUMNO solo puede consultar su propio ID; ADMINISTRATIVO puede consultar cualquier cuenta.
+      description: "El parámetro `alumnoId` es `Usuario.idUsuario` (ID de cuenta), no `Alumno.idAlumno`. Un ALUMNO solo puede consultar su propio ID; ADMINISTRATIVO puede consultar cualquier cuenta."
       summary: Carreras de un alumno
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripciones de carrera
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionesCarreraResponse' } } }
 
   /inscripciones-carreras/carrera/{carreraId}/inscriptos:
     get:
@@ -753,19 +755,21 @@ paths:
   /inscripciones-materias/disponibles:
     get:
       tags: [Inscripciones a Materias]
-      description: Para ALUMNO la identidad se deriva del JWT; ADMINISTRATIVO debe enviar `alumnoId` como `Usuario.idUsuario`. No incluye horarios estructurados: la disponibilidad académica no sustituye el horario PDF publicado.
+      description: "Para ALUMNO la identidad se deriva del JWT; ADMINISTRATIVO debe enviar `alumnoId` como `Usuario.idUsuario`. No incluye horarios estructurados: la disponibilidad académica no sustituye el horario PDF publicado."
       summary: "Materias disponibles para inscribirse (alumno usa su ID; admin usa ?alumnoId=)"
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: query, schema: { type: integer }, description: Requerido si eres ADMINISTRATIVO }
         - { name: cicloLectivo, in: query, schema: { type: integer }, description: Por defecto el año actual }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Materias y condiciones calculadas por el backend
+          content: { application/json: { schema: { $ref: '#/components/schemas/MateriasDisponiblesResponse' } } }
 
   /inscripciones-materias/verificar/{materiaId}:
     get:
       tags: [Inscripciones a Materias]
-      description: Para ALUMNO se usa el JWT; ADMINISTRATIVO indica `alumnoId` como `Usuario.idUsuario`. Es una vista previa; el alta vuelve a verificar período y correlatividades.
+      description: "Para ALUMNO se usa el JWT; ADMINISTRATIVO indica `alumnoId` como `Usuario.idUsuario`. Es una vista previa; el alta vuelve a verificar período y correlatividades."
       summary: Verificar si el alumno puede inscribirse a una materia
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
@@ -773,12 +777,14 @@ paths:
         - { name: alumnoId, in: query, schema: { type: integer }, description: Requerido si eres ADMINISTRATIVO }
         - { name: cicloLectivo, in: query, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Resultado de la verificación académica
+          content: { application/json: { schema: { $ref: '#/components/schemas/VerificacionInscripcionMateriaResponse' } } }
 
   /inscripciones-materias:
     post:
       tags: [Inscripciones a Materias]
-      description: ALUMNO omite `alumnoId`: el backend deriva `Usuario.idUsuario` del JWT y revalida período y correlatividades. ADMINISTRATIVO puede indicar `alumnoId` (ID de cuenta).
+      description: "ALUMNO omite `alumnoId`: el backend deriva `Usuario.idUsuario` del JWT y revalida período y correlatividades. ADMINISTRATIVO puede indicar `alumnoId` (ID de cuenta)."
       summary: Inscribir alumno a materia (alumno = él mismo, admin indica alumnoId)
       x-roles: [ALUMNO, ADMINISTRATIVO]
       requestBody:
@@ -787,29 +793,35 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/InscripcionMateriaRequest' }
       responses:
-        '201': { $ref: '#/components/responses/Created' }
+        '201':
+          description: Inscripción a materia creada o reactivada
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionMateriaMutationResponse' } } }
 
   /inscripciones-materias/{id}:
     delete:
       tags: [Inscripciones a Materias]
-      description: ALUMNO puede dar de baja únicamente una inscripción propia; ADMINISTRATIVO puede actuar sobre cualquier inscripción. No recibe `alumnoId` en el cuerpo.
+      description: "ALUMNO puede dar de baja únicamente una inscripción propia; ADMINISTRATIVO puede actuar sobre cualquier inscripción. No recibe `alumnoId` en el cuerpo."
       summary: Dar de baja inscripción a materia
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripción a materia dada de baja
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionMateriaMutationResponse' } } }
 
   /inscripciones-materias/alumno/{alumnoId}:
     get:
       tags: [Inscripciones a Materias]
-      description: `alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`; ALUMNO solo accede a su propio ID.
+      description: "`alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`; ALUMNO solo accede a su propio ID."
       summary: Materias de un alumno
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripciones activas paginadas
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionesMateriaResponse' } } }
 
   /inscripciones-materias/materia/{materiaId}/inscriptos:
     get:
@@ -824,14 +836,16 @@ paths:
   /inscripciones-materias/historial/{alumnoId}/{materiaId}:
     get:
       tags: [Inscripciones a Materias]
-      description: `alumnoId` es `Usuario.idUsuario`; ALUMNO solo puede consultar su propio historial.
+      description: "`alumnoId` es `Usuario.idUsuario`; ALUMNO solo puede consultar su propio historial."
       summary: Historial de un alumno en una materia
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
         - { name: materiaId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Historial de inscripciones para la materia
+          content: { application/json: { schema: { $ref: '#/components/schemas/HistorialInscripcionMateriaResponse' } } }
 
   /inscripciones-materias/{id}/modalidad:
     put:
@@ -954,7 +968,7 @@ paths:
   /examenes/{examenId}/inscribir:
     post:
       tags: [Exámenes]
-      description: ALUMNO omite `alumnoId`: el backend deriva la identidad del JWT y vuelve a validar período, fecha de corte, condición y correlatividades. ADMINISTRATIVO puede indicar `alumnoId` como `Usuario.idUsuario`.
+      description: "ALUMNO omite `alumnoId`: el backend deriva la identidad del JWT y vuelve a validar período, fecha de corte, condición y correlatividades. ADMINISTRATIVO puede indicar `alumnoId` como `Usuario.idUsuario`."
       summary: Inscribir alumno a un examen (alumno usa su propio ID)
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
@@ -965,12 +979,14 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/InscripcionExamenRequest' }
       responses:
-        '201': { $ref: '#/components/responses/Created' }
+        '201':
+          description: Inscripción a mesa creada o reactivada
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionExamenMutationResponse' } } }
 
   /examenes/{examenId}/desinscribir:
     post:
       tags: [Exámenes]
-      description: ALUMNO omite `alumnoId` y solo puede darse de baja a sí mismo; ADMINISTRATIVO puede indicar `alumnoId` como `Usuario.idUsuario`.
+      description: "ALUMNO omite `alumnoId` y solo puede darse de baja a sí mismo; ADMINISTRATIVO puede indicar `alumnoId` como `Usuario.idUsuario`."
       summary: Desinscribir alumno de un examen
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
@@ -981,7 +997,9 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/DesinscripcionExamenRequest' }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripción a mesa dada de baja
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionExamenMutationResponse' } } }
 
   /examenes/{examenId}/inscriptos:
     get:
@@ -996,13 +1014,15 @@ paths:
   /examenes/alumno/{alumnoId}/inscripciones:
     get:
       tags: [Exámenes]
-      description: `alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`; ALUMNO solo puede consultar su propio ID.
+      description: "`alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`; ALUMNO solo puede consultar su propio ID."
       summary: Inscripciones a exámenes de un alumno
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripciones activas a mesas
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionesExamenResponse' } } }
 
   /examenes/{examenId}/calificacion:
     post:
@@ -1497,12 +1517,15 @@ paths:
       summary: Estado academico de un alumno
       x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      responses:
+        '200':
+          description: Estado académico propio o consultado por administración
+          content: { application/json: { schema: { $ref: '#/components/schemas/EstadoAcademicoAlumnoResponse' } } }
   /estado-academico/alumno/{alumnoId}/trayectoria:
     get:
       tags: [Estado Academico]
       summary: Trayectoria académica integral por carrera
-      description: `alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`. Devuelve una entrada por materia del plan, incluyendo materias pendientes, cursadas históricas, regularidad, promoción, finales y homologaciones.
+      description: "`alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`. Devuelve una entrada por materia del plan, incluyendo materias pendientes, cursadas históricas, regularidad, promoción, finales y homologaciones."
       x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
@@ -1572,14 +1595,14 @@ paths:
     get:
       tags: [Horarios Publicados]
       summary: Consultar el horario publicado vigente
-      description: Sin `cicloLectivo`, busca el año actual y luego el último ciclo publicado.
+      description: "Sin `cicloLectivo`, busca el año actual y luego el último ciclo publicado."
       x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
       parameters:
         - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
       responses:
         '200':
-          description: Materias y condiciones calculadas por el backend
-          content: { application/json: { schema: { $ref: '#/components/schemas/MateriasDisponiblesResponse' } } }
+          description: Metadatos del horario PDF vigente
+          content: { application/json: { schema: { $ref: '#/components/schemas/HorarioPublicadoResponse' } } }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /horarios-publicados/{id}/archivo:
@@ -1638,8 +1661,8 @@ paths:
         - { name: cicloLectivo, in: query, required: true, schema: { type: integer, minimum: 2000, maximum: 2100 } }
       responses:
         '200':
-          description: Materias y condiciones calculadas por el backend
-          content: { application/json: { schema: { $ref: '#/components/schemas/MateriasDisponiblesResponse' } } }
+          description: Historial de metadatos de versiones del PDF
+          content: { application/json: { schema: { $ref: '#/components/schemas/HistorialHorarioPublicadoResponse' } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -1652,8 +1675,8 @@ paths:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
       responses:
         '200':
-          description: Resultado de la verificación académica
-          content: { application/json: { schema: { $ref: '#/components/schemas/VerificacionInscripcionMateriaResponse' } } }
+          description: Versión histórica restaurada como vigente
+          content: { application/json: { schema: { $ref: '#/components/schemas/HorarioPublicadoMutationResponse' } } }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -1730,7 +1753,7 @@ components:
     # -------- Envoltorios de respuesta --------
     SuccessResponse:
       type: object
-      description: Envelope exitoso. `data` es opcional porque algunas operaciones solo responden `success` y `message`.
+      description: "Envelope exitoso. `data` es opcional porque algunas operaciones solo responden `success` y `message`."
       properties:
         success: { type: boolean, example: true }
         message: { type: string, nullable: true, example: Operación exitosa }
@@ -1739,7 +1762,7 @@ components:
     MessageResponse:
       type: object
       required: [success, message]
-      description: Envelope exitoso sin `data`.
+      description: "Envelope exitoso sin `data`."
       properties:
         success: { type: boolean, enum: [true] }
         message: { type: string }
@@ -2265,6 +2288,13 @@ components:
         fechaInscripcion: { type: string, format: date-time }
         fechaBaja: { type: string, format: date-time, nullable: true }
         materia: { $ref: '#/components/schemas/Subject' }
+    InscripcionMateriaMutationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data: { $ref: '#/components/schemas/InscripcionMateriaAlumno' }
     InscripcionesMateriaResponse:
       type: object
       required: [success, data, pagination]
@@ -2311,6 +2341,13 @@ components:
         fechaInscripcion: { type: string, format: date-time }
         fechaBaja: { type: string, format: date-time, nullable: true }
         mesa: { type: object, properties: { id: { type: integer }, fecha: { type: string, format: date-time }, materia: { $ref: '#/components/schemas/Subject' } } }
+    InscripcionExamenMutationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data: { $ref: '#/components/schemas/InscripcionExamenAlumno' }
     InscripcionesExamenResponse:
       type: object
       required: [success, data]
@@ -2321,7 +2358,7 @@ components:
       type: object
       properties:
         materia: { $ref: '#/components/schemas/Subject' }
-        estado: { type: string, enum: [PENDIENTE, CURSANDO, REGULAR, PROMOCIONADO, APROBADA, HOMOLOGADA] }
+        estado: { type: string, enum: [PENDIENTE, EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO, APROBADA, HOMOLOGADA] }
         plan: { type: object, properties: { cursoId: { type: integer, nullable: true }, anio: { type: integer, nullable: true }, posicion: { type: integer } } }
         inscripcion: { type: object, nullable: true, additionalProperties: true }
         cursadas: { type: array, items: { $ref: '#/components/schemas/InscripcionMateriaAlumno' } }
@@ -2345,6 +2382,57 @@ components:
             alumnoUsuarioId: { type: integer, description: Usuario.idUsuario }
             carrera: { $ref: '#/components/schemas/Career' }
             materias: { type: array, items: { $ref: '#/components/schemas/TrayectoriaMateria' } }
+    EstadoAcademicoAlumnoResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          required: [alumnoUsuarioId, materias]
+          properties:
+            alumnoUsuarioId: { type: integer, description: Usuario.idUsuario }
+            materias:
+              type: array
+              items:
+                type: object
+                required: [materia, cicloLectivo, modalidadElegida, estado]
+                properties:
+                  materia: { type: object, required: [id, nombre], properties: { id: { type: integer }, nombre: { type: string } } }
+                  cicloLectivo: { type: integer }
+                  modalidadElegida: { $ref: '#/components/schemas/Modalidad' }
+                  estado: { type: string, enum: [EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO] }
+    HorarioPublicado:
+      type: object
+      required: [id, cicloLectivo, titulo, nombreOriginal, tamanio, fechaPublicacion, vigente]
+      properties:
+        id: { type: integer }
+        cicloLectivo: { type: integer }
+        titulo: { type: string }
+        nombreOriginal: { type: string }
+        tamanio: { type: integer }
+        fechaPublicacion: { type: string, format: date-time }
+        vigente: { type: boolean }
+        publicadoPor: { type: object, nullable: true, properties: { id: { type: integer }, nombre: { type: string } } }
+    HorarioPublicadoResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/HorarioPublicado' }
+    HistorialHorarioPublicadoResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/HorarioPublicado' } }
+    HorarioPublicadoMutationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data: { $ref: '#/components/schemas/HorarioPublicado' }
 
     # -------- Exámenes --------
     TipoExamen:

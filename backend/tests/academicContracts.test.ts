@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { afterEach, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import materiaRepository from '../src/repositories/materiaRepository.js';
 import inscripcionMateriaController from '../src/controllers/inscripcionMateriaController.js';
@@ -22,6 +24,54 @@ function replaceMethod(target: Record<string, unknown>, key: string, replacement
 
 afterEach(() => {
   while (restorations.length > 0) restorations.pop()?.();
+});
+
+function parseOpenApi(): any {
+  const path = fileURLToPath(new URL('../openapi.yaml', import.meta.url));
+  const source = 'import json, sys, yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1], encoding="utf-8")), default=str))';
+  return JSON.parse(execFileSync('python', ['-c', source, path], { encoding: 'utf8' }));
+}
+
+function schemaRef(document: any, path: string, method: string, status = '200'): string | undefined {
+  return document.paths[path][method].responses[status]?.content?.['application/json']?.schema?.$ref;
+}
+
+test('OpenAPI enlaza contratos académicos, conserva horarios publicados y enumera estados reales', () => {
+  const document = parseOpenApi();
+
+  assert.equal(schemaRef(document, '/inscripciones-materias/disponibles', 'get'), '#/components/schemas/MateriasDisponiblesResponse');
+  assert.equal(schemaRef(document, '/inscripciones-materias/verificar/{materiaId}', 'get'), '#/components/schemas/VerificacionInscripcionMateriaResponse');
+  assert.equal(schemaRef(document, '/inscripciones-materias/alumno/{alumnoId}', 'get'), '#/components/schemas/InscripcionesMateriaResponse');
+  assert.equal(schemaRef(document, '/inscripciones-materias/historial/{alumnoId}/{materiaId}', 'get'), '#/components/schemas/HistorialInscripcionMateriaResponse');
+  assert.equal(schemaRef(document, '/inscripciones-carreras/alumno/{alumnoId}', 'get'), '#/components/schemas/InscripcionesCarreraResponse');
+  assert.equal(schemaRef(document, '/examenes/alumno/{alumnoId}/inscripciones', 'get'), '#/components/schemas/InscripcionesExamenResponse');
+  assert.equal(schemaRef(document, '/estado-academico/alumno/{alumnoId}/trayectoria', 'get'), '#/components/schemas/TrayectoriaAcademicaResponse');
+  assert.equal(schemaRef(document, '/estado-academico/alumno/{alumnoId}', 'get'), '#/components/schemas/EstadoAcademicoAlumnoResponse');
+  assert.equal(schemaRef(document, '/inscripciones-materias', 'post', '201'), '#/components/schemas/InscripcionMateriaMutationResponse');
+  assert.equal(schemaRef(document, '/inscripciones-materias/{id}', 'delete'), '#/components/schemas/InscripcionMateriaMutationResponse');
+  assert.equal(schemaRef(document, '/examenes/{examenId}/inscribir', 'post', '201'), '#/components/schemas/InscripcionExamenMutationResponse');
+  assert.equal(schemaRef(document, '/examenes/{examenId}/desinscribir', 'post'), '#/components/schemas/InscripcionExamenMutationResponse');
+
+  assert.equal(schemaRef(document, '/horarios-publicados/actual', 'get'), '#/components/schemas/HorarioPublicadoResponse');
+  assert.equal(schemaRef(document, '/horarios-publicados/historial', 'get'), '#/components/schemas/HistorialHorarioPublicadoResponse');
+  assert.equal(schemaRef(document, '/horarios-publicados/{id}/publicar', 'post'), '#/components/schemas/HorarioPublicadoMutationResponse');
+
+  for (const path of [
+    '/inscripciones-carreras/alumno/{alumnoId}',
+    '/inscripciones-materias/alumno/{alumnoId}',
+    '/inscripciones-materias/historial/{alumnoId}/{materiaId}',
+    '/examenes/alumno/{alumnoId}/inscripciones',
+    '/estado-academico/alumno/{alumnoId}/trayectoria'
+  ]) {
+    assert.match(document.paths[path].get.description, /Usuario\.idUsuario/);
+  }
+  const materiaRequest = document.components.schemas.InscripcionMateriaRequest;
+  assert.ok(materiaRequest.properties.modalidadElegida);
+  assert.equal(materiaRequest.properties.modalidad, undefined);
+  assert.equal(document.components.schemas.TribunalRequest.properties.mesaId.type, 'integer');
+  assert.deepEqual(document.components.schemas.TrayectoriaMateria.properties.estado.enum, [
+    'PENDIENTE', 'EN_CURSO', 'LIBRE', 'REGULAR', 'HABILITADO_PROMOCION', 'PROMOCIONADO', 'APROBADA', 'HOMOLOGADA'
+  ]);
 });
 
 test('la consulta de disponibilidad de materias no carga horarios estructurados', async () => {
