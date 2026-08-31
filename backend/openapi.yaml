@@ -1029,6 +1029,10 @@ paths:
         '201': { $ref: '#/components/responses/Created' }
 
   /horarios/{id}:
+    description: >
+      API legado compatible para integraciones existentes. El frontend actual no consume
+      estos horarios estructurados; administra y consulta los horarios oficiales mediante
+      el PDF publicado en /horarios-publicados.
     get:
       tags: [Horarios]
       summary: Obtener horario por ID (admin o profesor)
@@ -1060,6 +1064,10 @@ paths:
         '200': { $ref: '#/components/responses/OK' }
 
   /horarios/cursada/{cursadaId}:
+    description: >
+      API legado compatible para integraciones existentes. El frontend actual no consume
+      estos horarios estructurados; administra y consulta los horarios oficiales mediante
+      el PDF publicado en /horarios-publicados.
     get:
       tags: [Horarios]
       summary: Horarios de una cursada (admin o profesor)
@@ -1070,6 +1078,10 @@ paths:
         '200': { $ref: '#/components/responses/OK' }
 
   /horarios/materia/{materiaId}:
+    description: >
+      API legado compatible para integraciones existentes. El frontend actual no consume
+      estos horarios estructurados; administra y consulta los horarios oficiales mediante
+      el PDF publicado en /horarios-publicados.
     get:
       tags: [Horarios]
       summary: Horarios de una materia (admin o profesor)
