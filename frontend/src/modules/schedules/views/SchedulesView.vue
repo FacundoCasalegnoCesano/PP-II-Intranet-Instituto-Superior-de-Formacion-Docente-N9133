@@ -15,6 +15,7 @@ const history = ref<PublishedSchedule[]>([])
 const loading = ref(true)
 const loadingDocument = ref(false)
 const error = ref('')
+const documentError = ref('')
 const blobUrl = ref<string | null>(null)
 const selectedFile = ref<File | null>(null)
 const uploadCycle = ref(new Date().getFullYear())
@@ -22,6 +23,8 @@ const uploadTitle = ref('')
 const pendingAction = ref<{ kind: 'publish' } | { kind: 'restore'; document: PublishedSchedule } | null>(null)
 const saving = ref(false)
 const actionError = ref('')
+let requestGeneration = 0
+let skipNextYearWatch = false
 
 const isAdmin = computed(() => auth.activeRole === 'ADMINISTRATIVO')
 const safeFileName = computed(() => {
@@ -40,44 +43,66 @@ function revokeBlobUrl(): void {
   blobUrl.value = null
 }
 
-async function loadDocument(schedule: PublishedSchedule): Promise<void> {
+function nextRequestGeneration(): number {
+  requestGeneration += 1
+  return requestGeneration
+}
+
+function isCurrentRequest(generation: number): boolean {
+  return generation === requestGeneration
+}
+
+async function loadDocument(schedule: PublishedSchedule, generation: number): Promise<void> {
+  if (!isCurrentRequest(generation)) return
   loadingDocument.value = true
   try {
     const file = await schedulesApi.download(schedule.id)
+    if (!isCurrentRequest(generation)) return
+    const nextBlobUrl = URL.createObjectURL(file)
+    if (!isCurrentRequest(generation)) {
+      URL.revokeObjectURL(nextBlobUrl)
+      return
+    }
     revokeBlobUrl()
-    blobUrl.value = URL.createObjectURL(file)
+    blobUrl.value = nextBlobUrl
   } catch {
-    actionError.value = 'No pudimos descargar el PDF publicado.'
+    if (isCurrentRequest(generation)) documentError.value = 'No pudimos descargar el PDF publicado.'
   } finally {
-    loadingDocument.value = false
+    if (isCurrentRequest(generation)) loadingDocument.value = false
   }
 }
 
-async function loadHistory(): Promise<void> {
-  if (!isAdmin.value || selectedYear.value === null) return
+async function loadHistory(cicloLectivo: number, generation: number): Promise<void> {
+  if (!isAdmin.value || !isCurrentRequest(generation)) return
   try {
-    history.value = await schedulesApi.listHistory(selectedYear.value)
+    const versions = await schedulesApi.listHistory(cicloLectivo)
+    if (isCurrentRequest(generation)) history.value = versions
   } catch {
-    history.value = []
+    if (isCurrentRequest(generation)) history.value = []
   }
 }
 
 async function loadSchedule(): Promise<void> {
   if (selectedYear.value === null) return
+  const generation = nextRequestGeneration()
+  const cicloLectivo = selectedYear.value
   current.value = null
   history.value = []
+  error.value = ''
+  documentError.value = ''
   actionError.value = ''
   revokeBlobUrl()
   loadingDocument.value = true
   try {
-    const schedule = await schedulesApi.getCurrent(selectedYear.value)
+    const schedule = await schedulesApi.getCurrent(cicloLectivo)
+    if (!isCurrentRequest(generation)) return
     current.value = schedule
     uploadCycle.value = schedule.cicloLectivo
-    await Promise.all([loadDocument(schedule), loadHistory()])
+    await Promise.all([loadDocument(schedule, generation), loadHistory(cicloLectivo, generation)])
   } catch {
-    error.value = 'No pudimos cargar el horario para el ciclo lectivo seleccionado.'
+    if (isCurrentRequest(generation)) error.value = 'No pudimos cargar el horario para el ciclo lectivo seleccionado.'
   } finally {
-    loadingDocument.value = false
+    if (isCurrentRequest(generation)) loadingDocument.value = false
   }
 }
 
@@ -89,6 +114,7 @@ async function load(): Promise<void> {
   revokeBlobUrl()
   try {
     years.value = await schedulesApi.listYears()
+    skipNextYearWatch = true
     selectedYear.value = years.value[0] ?? null
     uploadCycle.value = selectedYear.value ?? new Date().getFullYear()
     if (selectedYear.value !== null) await loadSchedule()
@@ -97,6 +123,12 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false
   }
+}
+
+function retryDocument(): void {
+  if (!current.value) return
+  documentError.value = ''
+  void loadDocument(current.value, nextRequestGeneration())
 }
 
 function preparePublish(): void {
@@ -119,6 +151,7 @@ async function confirmAction(): Promise<void> {
   saving.value = true
   actionError.value = ''
   try {
+    const generation = nextRequestGeneration()
     let published: PublishedSchedule
     if (action.kind === 'publish') {
       const result = await schedulesApi.publish({ archivo: selectedFile.value!, cicloLectivo: uploadCycle.value, titulo: uploadTitle.value })
@@ -129,9 +162,11 @@ async function confirmAction(): Promise<void> {
       published = await schedulesApi.restore(action.document.id)
     }
     current.value = published
+    documentError.value = ''
+    skipNextYearWatch = true
     selectedYear.value = published.cicloLectivo
     if (!years.value.includes(published.cicloLectivo)) years.value = [published.cicloLectivo, ...years.value].sort((a, b) => b - a)
-    await Promise.all([loadDocument(published), loadHistory()])
+    await Promise.all([loadDocument(published, generation), loadHistory(published.cicloLectivo, generation)])
     pendingAction.value = null
   } catch {
     actionError.value = action.kind === 'publish' ? 'No se pudo publicar el horario.' : 'No se pudo restaurar esta versión.'
@@ -141,10 +176,17 @@ async function confirmAction(): Promise<void> {
 }
 
 watch(selectedYear, (year, previous) => {
+  if (skipNextYearWatch) {
+    skipNextYearWatch = false
+    return
+  }
   if (year !== null && previous !== null && year !== undefined && year !== previous) void loadSchedule()
 })
 onMounted(() => { void load() })
-onBeforeUnmount(revokeBlobUrl)
+onBeforeUnmount(() => {
+  nextRequestGeneration()
+  revokeBlobUrl()
+})
 </script>
 
 <template>
@@ -180,6 +222,10 @@ onBeforeUnmount(revokeBlobUrl)
           <a :href="blobUrl ?? undefined" target="_blank" rel="noopener" :aria-disabled="!blobUrl" class="inline-flex min-h-11 items-center gap-2 rounded-md bg-[var(--color-brand)] px-4 py-2.5 font-semibold text-white" :class="!blobUrl && 'pointer-events-none opacity-55'"><ExternalLink class="size-4" />Abrir PDF</a>
           <a :href="blobUrl ?? undefined" :download="safeFileName" :aria-disabled="!blobUrl" class="inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--color-brand)] px-4 py-2.5 font-semibold text-[var(--color-brand)]" :class="!blobUrl && 'pointer-events-none opacity-55'"><Download class="size-4" />Descargar PDF</a>
         </div>
+        <section v-if="documentError" class="mt-4 rounded-md border border-[#a31118]/30 bg-[#fff7f6] p-4" role="alert">
+          <p>{{ documentError }}</p>
+          <AppButton class="mt-3" variant="secondary" @click="retryDocument">Reintentar PDF</AppButton>
+        </section>
         <div class="mt-5 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[#f6f7f4]">
           <object v-if="blobUrl" :data="blobUrl" type="application/pdf" title="Vista previa del horario publicado" class="h-[34rem] w-full">
             <p class="p-4">Tu navegador no pudo mostrar el PDF. Usá Abrir PDF o Descargar PDF.</p>
@@ -199,7 +245,7 @@ onBeforeUnmount(revokeBlobUrl)
           <p v-if="actionError" class="mt-4 text-sm text-[#a31118]" role="alert">{{ actionError }}</p>
           <AppButton class="mt-5" type="submit">Publicar horario</AppButton>
         </form>
-        <section class="rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" aria-labelledby="history-title"><div class="flex items-center gap-2"><History class="size-5 text-[var(--color-brand)]" /><h2 id="history-title" class="text-xl font-semibold">Historial</h2></div><p v-if="!history.length" class="mt-4 text-sm text-[var(--color-graphite)]">No hay versiones anteriores para mostrar.</p><ul v-else class="mt-4 grid gap-3"><li v-for="version in history" :key="version.id" class="rounded-md border border-[var(--color-border)] p-3"><p class="font-semibold">{{ version.titulo }}</p><p class="text-sm text-[var(--color-graphite)]">{{ new Date(version.fechaPublicacion).toLocaleDateString('es-AR') }} · {{ Math.max(1, Math.round(version.tamanio / 1024)) }} KB</p><AppButton v-if="!version.vigente" class="mt-3" variant="secondary" @click="prepareRestore(version)">Volver a publicar</AppButton><span v-else class="mt-3 inline-block text-sm font-semibold text-[var(--color-brand)]">Vigente</span></li></ul></section>
+        <section class="rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" aria-labelledby="history-title"><div class="flex items-center gap-2"><History class="size-5 text-[var(--color-brand)]" /><h2 id="history-title" class="text-xl font-semibold">Historial</h2></div><p v-if="!history.length" class="mt-4 text-sm text-[var(--color-graphite)]">No hay versiones anteriores para mostrar.</p><ul v-else class="mt-4 grid gap-3"><li v-for="version in history" :key="version.id" class="rounded-md border border-[var(--color-border)] p-3"><p class="font-semibold">{{ version.titulo }}</p><p class="text-sm text-[var(--color-graphite)]">{{ new Date(version.fechaPublicacion).toLocaleDateString('es-AR') }} · {{ Math.max(1, Math.round(version.tamanio / 1024)) }} KB</p><p class="mt-1 text-sm text-[var(--color-graphite)]">Publicado por: {{ version.publicadoPor?.nombre ?? 'Sin dato de publicación' }}</p><AppButton v-if="!version.vigente" class="mt-3" variant="secondary" @click="prepareRestore(version)">Volver a publicar</AppButton><span v-else class="mt-3 inline-block text-sm font-semibold text-[var(--color-brand)]">Vigente</span></li></ul></section>
       </section>
     </template>
     <ConfirmDialog :open="Boolean(pendingAction)" :title="actionTitle" :description="actionDescription" :confirm-label="pendingAction?.kind === 'restore' ? 'Volver a publicar' : 'Publicar horario'" :loading="saving" @cancel="pendingAction = null" @confirm="confirmAction" />
