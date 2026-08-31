@@ -30,6 +30,7 @@ tags:
   - name: Inscripciones a Materias
   - name: Exámenes
   - name: Horarios
+  - name: Horarios Publicados
   - name: Libro de Temas
   - name: Períodos de Inscripción
   - name: Asistencias
@@ -1525,6 +1526,93 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [accion], properties: { accion: { type: string, enum: [APROBAR, RECHAZAR] } } } } } }
       responses: { '200': { $ref: '#/components/responses/OK' } }
 
+  # ========================= HORARIOS PUBLICADOS =========================
+  /horarios-publicados/anios:
+    get:
+      tags: [Horarios Publicados]
+      summary: Listar ciclos lectivos con un horario PDF vigente
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
+      responses:
+        '200':
+          description: Ciclos lectivos publicados en orden descendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /horarios-publicados/actual:
+    get:
+      tags: [Horarios Publicados]
+      summary: Consultar el horario publicado vigente
+      description: Sin `cicloLectivo`, busca el año actual y luego el último ciclo publicado.
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
+      parameters:
+        - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /horarios-publicados/{id}/archivo:
+    get:
+      tags: [Horarios Publicados]
+      summary: Descargar el PDF de un horario
+      description: La versión vigente puede ser descargada por cualquier rol; una histórica solo por ADMINISTRATIVO.
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Archivo PDF binario
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /horarios-publicados:
+    post:
+      tags: [Horarios Publicados]
+      summary: Publicar inmediatamente un PDF de horarios
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo, cicloLectivo]
+              properties:
+                archivo: { type: string, format: binary, description: PDF simple de hasta 10 MB }
+                cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
+                titulo: { type: string, maxLength: 255 }
+      responses:
+        '201': { $ref: '#/components/responses/OK' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /horarios-publicados/historial:
+    get:
+      tags: [Horarios Publicados]
+      summary: Consultar el historial de versiones de un ciclo
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: cicloLectivo, in: query, required: true, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /horarios-publicados/{id}/publicar:
+    post:
+      tags: [Horarios Publicados]
+      summary: Restaurar una versión histórica como vigente
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 components:
   parameters:
     Page:
@@ -1555,6 +1643,11 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     Forbidden:
       description: Sin permisos para el rol
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Recurso no encontrado
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }

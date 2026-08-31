@@ -17,6 +17,7 @@ import asistenciaRoutes from './asistenciaRoutes.js';
 import calificacionRoutes from './calificacionRoutes.js';
 import estadoAcademicoRoutes from './estadoAcademicoRoutes.js';
 import homologacionRoutes from './homologacionRoutes.js';
+import horariosPublicadosRoutes from './horariosPublicadosRoutes.js';
 
 const router = Router();
 
@@ -42,6 +43,7 @@ router.use('/examenes', examenRoutes);
 
 // Rutas de horarios
 router.use('/horarios', horarioRoutes);
+router.use('/horarios-publicados', horariosPublicadosRoutes);
 
 // Rutas de períodos de inscripción
 router.use('/periodos-inscripcion', periodoInscripcionRoutes);
@@ -88,6 +90,7 @@ router.get('/', (req, res) => {
       inscripcionesMaterias: '/api/inscripciones-materias',
       examenes: '/api/examenes',
       horarios: '/api/horarios',
+      horariosPublicados: '/api/horarios-publicados',
       cursadas: '/api/cursadas',
       libroDeTemas: '/api/libro-de-temas',
       periodosInscripcion: '/api/periodos-inscripcion',

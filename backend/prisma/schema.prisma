@@ -183,6 +183,7 @@ model Usuario {
   cursadasDocente      Cursada[]         @relation("DocenteCursada")
   profesorMaterias     ProfesorMateria[]
   mesasTribunal        MesaTribunal[]
+  documentosHorariosPublicados DocumentoHorario[] @relation("DocumentoHorarioPublicador")
 
   @@map("Usuario")
 }
@@ -447,6 +448,39 @@ model Horario {
   cursada Cursada @relation(fields: [cursadaId], references: [id])
 
   @@map("horarios")
+}
+
+/// PDF institucional publicado para un ciclo lectivo. La clave interna nunca se expone
+/// al cliente: únicamente se utiliza para resolver el archivo privado en disco.
+model DocumentoHorario {
+  id             Int      @id @default(autoincrement())
+  cicloLectivo   Int      @map("ciclo_lectivo")
+  titulo         String   @db.VarChar(255)
+  nombreOriginal String   @map("nombre_original") @db.VarChar(255)
+  claveInterna   String   @unique @map("clave_interna") @db.Char(36)
+  tamanio        Int
+  sha256         String   @db.Char(64)
+  publicadorId   Int      @map("publicador_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  publicador          Usuario             @relation("DocumentoHorarioPublicador", fields: [publicadorId], references: [idUsuario])
+  publicacionVigente  PublicacionHorario?
+
+  @@unique([cicloLectivo, sha256])
+  @@index([cicloLectivo, createdAt])
+  @@map("documentos_horarios")
+}
+
+/// Puntero al documento actualmente visible para cada ciclo lectivo. Las versiones
+/// previas permanecen en DocumentoHorario y pueden restaurarse por administración.
+model PublicacionHorario {
+  cicloLectivo Int      @id @map("ciclo_lectivo")
+  documentoId  Int      @unique @map("documento_id")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  documento DocumentoHorario @relation(fields: [documentoId], references: [id])
+
+  @@map("publicaciones_horarios")
 }
 
 model Asistencia {

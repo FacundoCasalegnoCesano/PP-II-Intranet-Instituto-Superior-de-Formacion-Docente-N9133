@@ -32,6 +32,7 @@ export interface Config {
   smtpUser: string;
   smtpPass: string;
   emailFrom: string;
+  horariosStorageDir: string;
   
   // URLs
   frontendUrl: string;
@@ -64,6 +65,8 @@ const config: Config = {
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   emailFrom: process.env.EMAIL_FROM || 'Instituto <noreply@instituto.edu.ar>',
+  // No se sirve como estático: queda fuera de cualquier webroot público.
+  horariosStorageDir: path.resolve(process.env.HORARIOS_STORAGE_DIR || path.join(__dirname, '../../storage/horarios-publicados')),
   
   // URLs
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
