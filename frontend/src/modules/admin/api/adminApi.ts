@@ -7,7 +7,6 @@ import type {
   CourseOffering,
   EnrollmentPeriod,
   Prerequisite,
-  Schedule,
   Subject,
   TeachingAssignment,
 } from '../types/admin'
@@ -72,11 +71,6 @@ export const adminApi = {
   createCourse(payload: Record<string, unknown>): Promise<CourseOffering> { return apiClient.post('/cursadas', payload) },
   updateCourse(id: number, payload: Record<string, unknown>): Promise<CourseOffering> { return apiClient.put(`/cursadas/${id}`, payload) },
   deactivateCourse(id: number): Promise<void> { return apiClient.delete(`/cursadas/${id}`) },
-  getSchedules(courseId: number): Promise<Schedule[]> { return apiClient.get(`/horarios/cursada/${courseId}`) },
-  createSchedule(payload: Record<string, unknown>): Promise<Schedule> { return apiClient.post('/horarios', payload) },
-  updateSchedule(id: number, payload: Record<string, unknown>): Promise<Schedule> { return apiClient.put(`/horarios/${id}`, payload) },
-  deleteSchedule(id: number): Promise<void> { return apiClient.delete(`/horarios/${id}`) },
-
   listPeriods(filters: PeriodListFilters = {}): Promise<PaginatedResult<EnrollmentPeriod>> { return apiClient.getPaginated(`/periodos-inscripcion${query(filters)}`) },
   getPeriod(id: number): Promise<EnrollmentPeriod> { return apiClient.get(`/periodos-inscripcion/${id}`) },
   createPeriod(payload: Record<string, unknown>): Promise<EnrollmentPeriod> { return apiClient.post('/periodos-inscripcion', payload) },

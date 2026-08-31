@@ -1012,6 +1012,10 @@ paths:
 
   # ========================= HORARIOS =========================
   /horarios:
+    description: >
+      API legado compatible para integraciones existentes. El frontend actual no consume
+      estos horarios estructurados; administra y consulta los horarios oficiales mediante
+      el PDF publicado en /horarios-publicados.
     post:
       tags: [Horarios]
       summary: Crear horario (solo admin)

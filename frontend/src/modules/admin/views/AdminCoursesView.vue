@@ -7,7 +7,7 @@ import AdminState from '../components/AdminState.vue'
 import AdminTable from '../components/AdminTable.vue'
 import { adminApi } from '../api/adminApi'
 import { courseSchema } from '../schemas/adminSchemas'
-import type { CourseOffering, Schedule, Subject } from '../types/admin'
+import type { CourseOffering, Subject } from '../types/admin'
 import { useFeedback } from '@/ui/feedback'
 
 const route = useRoute()
@@ -17,15 +17,12 @@ const courses = ref<CourseOffering[]>([])
 const subjects = ref<Subject[]>([])
 const teachers = ref<Array<{ idUsuario: number; apellidoNombre: string }>>([])
 const selected = ref<CourseOffering | null>(null)
-const schedules = ref<Schedule[]>([])
 const loading = ref(false)
 const error = ref('')
 const saving = ref(false)
 const pagination = ref({ page: 1, limit: 20, total: 0, totalPages: 0 })
 const yearFilter = ref(String(route.query.anioLectivo ?? ''))
 const form = reactive<Record<string, any>>({ materiaId: 0, anioLectivo: new Date().getFullYear(), periodo: 'ANUAL', docenteId: null })
-const scheduleForm = reactive({ dia: 'LUNES', horaInicio: '08:00', horaFin: '10:00', aula: '' })
-const editingScheduleId = ref<number | null>(null)
 const fieldError = ref('')
 
 const mode = computed(() => String(route.name))
@@ -58,18 +55,12 @@ async function loadDetail(): Promise<void> {
   error.value = ''
   try {
     selected.value = await adminApi.getCourse(id.value)
-    schedules.value = selected.value.horarios ?? await adminApi.getSchedules(id.value)
   } catch {
     error.value = 'No pudimos cargar la cursada.'
   } finally {
     loading.value = false
   }
 }
-
-function toIso(time: string): string { return `1970-01-01T${time}:00.000Z` }
-function fromIso(value: string): string { const date = new Date(value); return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}` }
-function resetSchedule(): void { editingScheduleId.value = null; Object.assign(scheduleForm, { dia: 'LUNES', horaInicio: '08:00', horaFin: '10:00', aula: '' }) }
-function editSchedule(schedule: Schedule): void { editingScheduleId.value = schedule.id; Object.assign(scheduleForm, { dia: schedule.dia, horaInicio: fromIso(schedule.horaInicio), horaFin: fromIso(schedule.horaFin), aula: schedule.aula ?? '' }) }
 
 function reset(): void {
   Object.assign(form, { materiaId: 0, anioLectivo: new Date().getFullYear(), periodo: 'ANUAL', docenteId: null })
@@ -90,26 +81,6 @@ async function save(): Promise<void> {
   } catch { feedback.error('No se pudo guardar la cursada.') } finally { saving.value = false }
 }
 
-async function saveSchedule(): Promise<void> {
-  if (!selected.value) return
-  const startMinutes = Number(scheduleForm.horaInicio.slice(0, 2)) * 60 + Number(scheduleForm.horaInicio.slice(3, 5))
-  const endMinutes = Number(scheduleForm.horaFin.slice(0, 2)) * 60 + Number(scheduleForm.horaFin.slice(3, 5))
-  if (endMinutes <= startMinutes) { feedback.error('La hora de finalización debe ser posterior al inicio.'); return }
-  const payload = { cursadaId: selected.value.id, dia: scheduleForm.dia, horaInicio: toIso(scheduleForm.horaInicio), horaFin: toIso(scheduleForm.horaFin), aula: scheduleForm.aula || null }
-  try {
-    if (editingScheduleId.value) await adminApi.updateSchedule(editingScheduleId.value, payload)
-    else await adminApi.createSchedule(payload)
-    feedback.success(editingScheduleId.value ? 'Horario actualizado.' : 'Horario agregado.')
-    resetSchedule()
-    await loadDetail()
-  } catch { feedback.error('No se pudo guardar el horario.') }
-}
-
-async function deleteSchedule(schedule: Schedule): Promise<void> {
-  if (!window.confirm('¿Quitar este horario?')) return
-  try { await adminApi.deleteSchedule(schedule.id); feedback.success('Horario quitado.'); await loadDetail() } catch { feedback.error('No se pudo quitar el horario.') }
-}
-
 async function deactivate(): Promise<void> {
   if (!selected.value || !window.confirm('¿Desactivar esta cursada?')) return
   try { await adminApi.deactivateCourse(selected.value.id); feedback.success('Cursada desactivada.'); await router.replace({ name: 'admin-courses' }) } catch { feedback.error('No se pudo desactivar la cursada.') }
@@ -123,7 +94,7 @@ watch(() => route.fullPath, () => { if (isList.value) void loadList(); else if (
   <main aria-labelledby="admin-courses-title" class="mx-auto max-w-6xl">
     <div class="flex flex-wrap items-end justify-between gap-4"><div><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Administración</p><h1 id="admin-courses-title" class="mt-2 text-3xl font-semibold">Cursadas</h1></div><RouterLink v-if="isList" :to="{ name: 'admin-course-create' }" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-4 py-2.5 font-semibold text-white">Nueva cursada</RouterLink></div>
     <template v-if="isList"><form class="mt-6 flex max-w-md items-end gap-3 rounded-xl border border-[var(--color-border)] bg-white p-4" @submit.prevent="router.replace({ query: { anioLectivo: yearFilter || undefined, page: undefined } }).then(loadList)"><label class="flex-1 text-sm font-semibold">Año lectivo<input v-model="yearFilter" inputmode="numeric" class="admin-input" /></label><button class="min-h-11 rounded-lg bg-[var(--color-brand)] px-4 font-semibold text-white">Aplicar</button></form><div class="mt-5"><AdminState :loading="loading" :error="error" :empty="!loading && !error && !courses.length" empty-text="No hay cursadas para mostrar." @retry="loadList"><AdminTable :columns="[{ key: 'subject', label: 'Materia' }, { key: 'year', label: 'Año' }, { key: 'teacher', label: 'Docente' }, { key: 'status', label: 'Estado' }]"><template #rows><tr v-for="course in courses" :key="course.id" class="border-t border-[var(--color-border)]"><td class="px-4 py-3"><RouterLink :to="{ name: 'admin-course-detail', params: { id: course.id } }" class="font-semibold text-[var(--color-brand)]">{{ course.materia?.nombre ?? '—' }}</RouterLink></td><td class="px-4 py-3">{{ course.anioLectivo }}</td><td class="px-4 py-3">{{ course.docente?.apellidoNombre ?? 'Sin asignar' }}</td><td class="px-4 py-3">{{ course.activo ? 'Activa' : 'Inactiva' }}</td><td class="px-4 py-3 text-right"><RouterLink :to="{ name: 'admin-course-edit', params: { id: course.id } }" class="font-semibold text-[var(--color-brand)]">Editar</RouterLink></td></tr></template><template #cards><article v-for="course in courses" :key="course.id" class="rounded-lg border border-[var(--color-border)] p-4"><RouterLink :to="{ name: 'admin-course-detail', params: { id: course.id } }" class="font-semibold text-[var(--color-brand)]">{{ course.materia?.nombre ?? '—' }}</RouterLink><p class="text-sm text-[var(--color-graphite)]">{{ course.anioLectivo }} · {{ course.docente?.apellidoNombre ?? 'Sin asignar' }}</p></article></template></AdminTable><AdminPagination :pagination="pagination" @change="(page) => router.replace({ query: { ...route.query, page: String(page) } }).then(loadList)" /></AdminState></div></template>
-    <template v-else-if="isDetail"><AdminState :loading="loading" :error="error" @retry="loadDetail"><section v-if="selected" class="mt-7 grid gap-5 lg:grid-cols-[1fr_22rem]"><div class="rounded-xl border border-[var(--color-border)] bg-white p-6"><div class="flex items-start justify-between gap-4"><div><h2 class="text-2xl font-semibold">{{ selected.materia?.nombre }}</h2><p class="text-[var(--color-graphite)]">{{ selected.anioLectivo }} · {{ selected.periodo }} · {{ selected.docente?.apellidoNombre ?? 'Sin docente' }}</p></div><div class="flex gap-2"><RouterLink :to="{ name: 'admin-course-edit', params: { id: selected.id } }" class="min-h-10 rounded-lg bg-[var(--color-brand)] px-4 py-2 font-semibold text-white">Editar</RouterLink><button type="button" class="min-h-10 rounded-lg border border-[var(--color-border)] px-4 py-2" @click="deactivate">Desactivar</button></div></div><h3 class="mt-8 text-xl font-semibold">Horarios</h3><ul class="mt-3 space-y-2"><li v-for="schedule in schedules" :key="schedule.id" class="flex items-center justify-between rounded-lg bg-[#f6f7f4] p-3"><span>{{ schedule.dia }} · {{ fromIso(schedule.horaInicio) }}–{{ fromIso(schedule.horaFin) }}<small v-if="schedule.aula" class="ml-2 text-[var(--color-graphite)]">Aula {{ schedule.aula }}</small></span><span class="flex gap-3"><button type="button" class="text-sm text-[var(--color-brand)]" @click="editSchedule(schedule)">Editar</button><button type="button" class="text-sm text-[var(--color-brand)]" @click="deleteSchedule(schedule)">Quitar</button></span></li><li v-if="!schedules.length" class="text-sm text-[var(--color-graphite)]">No hay horarios cargados.</li></ul></div><form class="h-fit rounded-xl border border-[var(--color-border)] bg-white p-5" @submit.prevent="saveSchedule"><h3 class="font-semibold">{{ editingScheduleId ? 'Editar horario' : 'Agregar horario' }}</h3><label class="mt-4 block text-sm font-semibold">Día<select v-model="scheduleForm.dia" class="admin-input"><option>LUNES</option><option>MARTES</option><option>MIERCOLES</option><option>JUEVES</option><option>VIERNES</option><option>SABADO</option></select></label><div class="mt-3 grid grid-cols-2 gap-3"><label class="text-sm font-semibold">Desde<input v-model="scheduleForm.horaInicio" type="time" class="admin-input" /></label><label class="text-sm font-semibold">Hasta<input v-model="scheduleForm.horaFin" type="time" class="admin-input" /></label></div><label class="mt-3 block text-sm font-semibold">Aula<input v-model="scheduleForm.aula" class="admin-input" /></label><div class="mt-4 flex gap-2"><button type="submit" class="min-h-10 rounded-lg bg-[var(--color-brand)] px-4 font-semibold text-white">{{ editingScheduleId ? 'Guardar cambios' : 'Agregar' }}</button><button v-if="editingScheduleId" type="button" class="min-h-10 rounded-lg border border-[var(--color-border)] px-4" @click="resetSchedule">Cancelar</button></div></form></section></AdminState></template>
+    <template v-else-if="isDetail"><AdminState :loading="loading" :error="error" @retry="loadDetail"><section v-if="selected" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6"><div class="flex items-start justify-between gap-4"><div><h2 class="text-2xl font-semibold">{{ selected.materia?.nombre }}</h2><p class="text-[var(--color-graphite)]">{{ selected.anioLectivo }} · {{ selected.periodo }} · {{ selected.docente?.apellidoNombre ?? 'Sin docente' }}</p></div><div class="flex gap-2"><RouterLink :to="{ name: 'admin-course-edit', params: { id: selected.id } }" class="min-h-10 rounded-lg bg-[var(--color-brand)] px-4 py-2 font-semibold text-white">Editar</RouterLink><button type="button" class="min-h-10 rounded-lg border border-[var(--color-border)] px-4 py-2" @click="deactivate">Desactivar</button></div></div><div class="mt-8 rounded-lg bg-[#f6f7f4] p-4"><h3 class="text-xl font-semibold">Horarios oficiales</h3><p class="mt-1 text-sm text-[var(--color-graphite)]">Consultá o publicá el PDF oficial de horarios desde la sección centralizada.</p><RouterLink :to="{ name: 'schedules' }" class="mt-3 inline-flex min-h-10 items-center rounded-lg border border-[var(--color-brand)] px-4 py-2 font-semibold text-[var(--color-brand)]">Horarios oficiales</RouterLink></div></section></AdminState></template>
     <template v-else><section class="mt-7 max-w-3xl rounded-xl border border-[var(--color-border)] bg-white p-6"><h2 class="text-2xl font-semibold">{{ mode === 'admin-course-create' ? 'Nueva cursada' : 'Editar cursada' }}</h2><form class="mt-5 grid gap-4 sm:grid-cols-2" @submit.prevent="save"><label class="font-semibold sm:col-span-2">Materia<select v-model.number="form.materiaId" class="admin-input"><option :value="0">Seleccionar</option><option v-for="subject in subjects" :key="subject.id" :value="subject.id">{{ subject.nombre }} · {{ subject.carrera?.nombre }}</option></select></label><label class="font-semibold">Año lectivo<input v-model.number="form.anioLectivo" type="number" min="2000" max="2100" class="admin-input" /></label><label class="font-semibold">Período<select v-model="form.periodo" class="admin-input"><option>ANUAL</option><option>PRIMER_CUATRIMESTRE</option><option>SEGUNDO_CUATRIMESTRE</option></select></label><label class="font-semibold sm:col-span-2">Docente<select v-model="form.docenteId" class="admin-input"><option :value="null">Sin asignar</option><option v-for="teacher in teachers" :key="teacher.idUsuario" :value="teacher.idUsuario">{{ teacher.apellidoNombre }}</option></select></label><p v-if="fieldError" class="field-error sm:col-span-2" role="alert">{{ fieldError }}</p><div class="flex gap-3 sm:col-span-2"><button type="submit" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-5 font-semibold text-white" :disabled="saving">{{ saving ? 'Guardando…' : 'Guardar cursada' }}</button><RouterLink :to="{ name: 'admin-courses' }" class="min-h-11 rounded-lg border border-[var(--color-border)] px-5 py-2.5">Cancelar</RouterLink></div></form></section></template>
   </main>
 </template>
