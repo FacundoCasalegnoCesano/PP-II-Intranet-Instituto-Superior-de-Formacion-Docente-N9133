@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import type { AddressInfo } from 'node:net';
@@ -10,6 +12,7 @@ import config from '../src/config/env.js';
 import { prisma } from '../src/config/prisma.js';
 import userRepository from '../src/repositories/userRepository.js';
 import horarioPublicadoRepository from '../src/repositories/horarioPublicadoRepository.js';
+import horarioPublicadoService from '../src/services/horarioPublicadoService.js';
 import { ROLES } from '../src/constants/roles.js';
 import { generateAccessToken } from '../src/utils/jwt.js';
 
@@ -83,18 +86,23 @@ test('la frontera HTTP exige rol administrativo y transforma un multipart invál
 });
 
 test('la descarga HTTP entrega vigente, bloquea histórico y aplica cabeceras privadas seguras', async () => {
-  const clave = '22222222-2222-4222-8222-222222222222';
-  const ruta = path.join(config.horariosStorageDir, `${clave}.pdf`);
-  const documento = (vigente: boolean) => ({
-    id: 41, cicloLectivo: 2026, titulo: 'Título que no debe ir al header', nombreOriginal: '../inseguro.pdf',
-    claveInterna: clave, tamanio: 8, sha256: 'b'.repeat(64), publicadorId: 99, createdAt: new Date(),
-    publicacionVigente: vigente ? { cicloLectivo: 2026 } : null, publicador: null
-  });
-  await mkdir(config.horariosStorageDir, { recursive: true });
-  await writeFile(ruta, '%PDF-1.7');
-  const restore = prepararAutenticacion();
-  const restoreDocumento = replaceMethod(horarioPublicadoRepository as any, 'buscarPorId', async () => documento(true));
+  const directorioTemporal = await mkdtemp(path.join(tmpdir(), 'horarios-publicados-rutas-'));
+  const clave = randomUUID();
+  const ruta = path.join(directorioTemporal, `${clave}.pdf`);
+  const storageDirOriginal = (horarioPublicadoService as any).storageDir;
+  let restore = () => {};
+  let restoreDocumento = () => {};
   try {
+    (horarioPublicadoService as any).storageDir = directorioTemporal;
+    assert.notEqual(path.resolve(directorioTemporal), path.resolve(config.horariosStorageDir), 'la prueba no debe escribir en el almacenamiento configurado');
+    const documento = (vigente: boolean) => ({
+      id: 41, cicloLectivo: 2026, titulo: 'Título que no debe ir al header', nombreOriginal: '../inseguro.pdf',
+      claveInterna: clave, tamanio: 8, sha256: 'b'.repeat(64), publicadorId: 99, createdAt: new Date(),
+      publicacionVigente: vigente ? { cicloLectivo: 2026 } : null, publicador: null
+    });
+    await writeFile(ruta, '%PDF-1.7');
+    restore = prepararAutenticacion();
+    restoreDocumento = replaceMethod(horarioPublicadoRepository as any, 'buscarPorId', async () => documento(true));
     await withServer(async (baseUrl) => {
       const vigente = await fetch(`${baseUrl}/api/horarios-publicados/41/archivo`, {
         headers: { Authorization: `Bearer ${token(ROLES.ALUMNO)}` }
@@ -102,7 +110,7 @@ test('la descarga HTTP entrega vigente, bloquea histórico y aplica cabeceras pr
       assert.equal(vigente.status, 200);
       assert.equal(vigente.headers.get('cache-control'), 'private, no-store');
       assert.equal(vigente.headers.get('content-disposition'), 'attachment; filename="horario-2026.pdf"');
-      assert.doesNotMatch(vigente.headers.get('content-disposition') ?? '', /22222222|inseguro|Título/);
+      assert.doesNotMatch(vigente.headers.get('content-disposition') ?? '', new RegExp(`${clave}|inseguro|Título`));
 
       (horarioPublicadoRepository as any).buscarPorId = async () => documento(false);
       const historico = await fetch(`${baseUrl}/api/horarios-publicados/41/archivo`, {
@@ -114,6 +122,7 @@ test('la descarga HTTP entrega vigente, bloquea histórico y aplica cabeceras pr
   } finally {
     restoreDocumento();
     restore();
-    await rm(ruta, { force: true });
+    (horarioPublicadoService as any).storageDir = storageDirOriginal;
+    await rm(directorioTemporal, { recursive: true, force: true });
   }
 });
