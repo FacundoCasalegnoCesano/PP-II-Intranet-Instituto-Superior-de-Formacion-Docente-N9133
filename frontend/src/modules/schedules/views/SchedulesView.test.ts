@@ -92,6 +92,19 @@ describe('SchedulesView', () => {
     await waitFor(() => expect(mocks.listYears).toHaveBeenCalledTimes(3))
   })
 
+  it('lets an administrator publish the first PDF when no schedule exists yet', async () => {
+    mocks.activeRole = 'ADMINISTRATIVO'
+    mocks.listYears.mockResolvedValue([])
+    vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
+
+    render(SchedulesView)
+
+    expect(await screen.findByText('Todavía no hay horarios publicados.')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Publicar horario' })).toBeVisible()
+    expect(screen.getByLabelText('Archivo PDF')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Publicar horario' })).toBeVisible()
+  })
+
   it('keeps management controls and restore confirmation exclusive to administrative staff', async () => {
     mocks.activeRole = 'ALUMNO'
     mockPublishedSchedule()

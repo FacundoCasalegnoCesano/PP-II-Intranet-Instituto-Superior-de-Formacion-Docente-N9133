@@ -201,15 +201,22 @@ onBeforeUnmount(() => {
     </div>
 
     <section v-if="loading" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6" aria-live="polite">Cargando horarios publicados…</section>
-    <section v-else-if="error" class="mt-7 rounded-xl border border-[#a31118]/30 bg-[#fff7f6] p-6" role="alert">
+    <section v-else-if="error && !isAdmin" class="mt-7 rounded-xl border border-[#a31118]/30 bg-[#fff7f6] p-6" role="alert">
       <p>{{ error }}</p><AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton>
     </section>
-    <section v-else-if="!years.length" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">
+    <section v-else-if="!years.length && !isAdmin" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">
       Todavía no hay horarios publicados.
       <AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton>
     </section>
     <template v-else>
-      <section v-if="current" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6">
+      <section v-if="error" class="mt-7 rounded-xl border border-[#a31118]/30 bg-[#fff7f6] p-6" role="alert">
+        <p>{{ error }}</p><AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton>
+      </section>
+      <section v-else-if="!years.length" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">
+        Todavía no hay horarios publicados.
+        <AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton>
+      </section>
+      <section v-else-if="current" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div><h2 class="text-2xl font-semibold">{{ current.titulo }}</h2><p class="mt-1 text-sm text-[var(--color-graphite)]">Ciclo {{ current.cicloLectivo }} · Publicado el {{ new Date(current.fechaPublicacion).toLocaleDateString('es-AR') }}{{ current.publicadoPor ? ` por ${current.publicadoPor.nombre}` : '' }}</p></div>
           <p class="rounded-full bg-[#f6f7f4] px-3 py-1 text-sm font-semibold">{{ Math.max(1, Math.round(current.tamanio / 1024)) }} KB</p>
@@ -230,7 +237,7 @@ onBeforeUnmount(() => {
         </div>
         <p class="mt-3 text-sm text-[var(--color-graphite)] md:hidden">En dispositivos móviles, abrí o descargá el PDF para una lectura más cómoda.</p>
       </section>
-      <section v-else class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">No hay un horario vigente para este ciclo lectivo.</section>
+      <section v-else-if="years.length" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">No hay un horario vigente para este ciclo lectivo.</section>
 
       <section v-if="isAdmin" class="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,.8fr)]">
         <form class="rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" @submit.prevent="preparePublish">
