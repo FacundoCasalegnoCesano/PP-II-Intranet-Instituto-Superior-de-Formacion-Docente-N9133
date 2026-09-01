@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Download, ExternalLink, FileText, History, Upload } from 'lucide-vue-next'
 import { schedulesApi } from '../api/schedulesApi'
 import type { PublishedSchedule } from '../types/schedules'
+import { normalizeApiError } from '@/core/api/errors'
 import { useAuthStore } from '@/stores/authStore'
 import AppButton from '@/ui/AppButton.vue'
 import ConfirmDialog from '@/ui/ConfirmDialog.vue'
@@ -148,6 +149,13 @@ function prepareRestore(document: PublishedSchedule): void {
   pendingAction.value = { kind: 'restore', document }
 }
 
+function actionFailure(error: unknown, fallback: string): string {
+  const normalized = normalizeApiError(error)
+  return normalized.status >= 400 && normalized.status < 500 && normalized.message
+    ? normalized.message
+    : fallback
+}
+
 async function confirmAction(): Promise<void> {
   const action = pendingAction.value
   if (!action) return
@@ -171,8 +179,10 @@ async function confirmAction(): Promise<void> {
     void loadDocument(published, generation)
     void loadHistory(published.cicloLectivo, generation)
     pendingAction.value = null
-  } catch {
-    actionError.value = action.kind === 'publish' ? 'No se pudo publicar el horario.' : 'No se pudo restaurar esta versión.'
+  } catch (error) {
+    actionError.value = action.kind === 'publish'
+      ? actionFailure(error, 'No se pudo publicar el horario.')
+      : actionFailure(error, 'No se pudo restaurar esta versión.')
   } finally {
     saving.value = false
   }

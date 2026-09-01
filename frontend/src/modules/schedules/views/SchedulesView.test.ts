@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import SchedulesView from './SchedulesView.vue'
+import { ApiError } from '@/core/api/errors'
 
 const mocks = vi.hoisted(() => ({
   activeRole: 'ALUMNO' as 'ALUMNO' | 'ADMINISTRATIVO',
@@ -122,6 +123,25 @@ describe('SchedulesView', () => {
     expect(screen.getByRole('heading', { name: 'Publicar horario' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Volver a publicar' }))
     expect(screen.getByRole('alertdialog', { name: 'Volver a publicar versión' })).toBeVisible()
+  })
+
+  it('shows the server validation reason when a PDF publication is rejected', async () => {
+    mocks.activeRole = 'ADMINISTRATIVO'
+    mockPublishedSchedule()
+    mocks.publish.mockRejectedValueOnce(new ApiError('El archivo debe tener una extensión simple .pdf', 400))
+    vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
+    const user = userEvent.setup()
+    render(SchedulesView)
+
+    await screen.findByRole('heading', { name: 'Horario oficial 2026' })
+    const input = screen.getByLabelText('Archivo PDF') as HTMLInputElement
+    await user.upload(input, new File(['%PDF-1.7'], 'horarios.pdf', { type: 'application/pdf' }))
+    expect(input.files).toHaveLength(1)
+    fireEvent.submit(input.form!)
+    const dialog = await screen.findByRole('alertdialog', { name: 'Reemplazar horario publicado' })
+    await user.click(within(dialog).getByRole('button', { name: 'Publicar horario' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('El archivo debe tener una extensión simple .pdf')
   })
 
   it('shows the publishing user for each history version and a clear fallback when it is unavailable', async () => {
