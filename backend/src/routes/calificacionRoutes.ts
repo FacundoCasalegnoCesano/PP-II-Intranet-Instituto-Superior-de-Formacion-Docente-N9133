@@ -4,6 +4,7 @@ import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
 import {
   cargaCalificacionesSchema,
+  cursadasDisponiblesQuerySchema,
   listCalificacionesQuerySchema
 } from '../validations/calificacionValidation.js';
 import { ROLES } from '../constants/roles.js';
@@ -12,6 +13,12 @@ const router = Router();
 
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
+
+router.get('/cursadas-disponibles',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(cursadasDisponiblesQuerySchema, 'query'),
+  calificacionController.getCursadasDisponibles
+);
 
 // Carga masiva de notas (admin o profesor asignado)
 router.post('/carga-masiva',

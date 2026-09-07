@@ -4,6 +4,7 @@ import userRepository from '../repositories/userRepository.js';
 import { ROLES } from '../constants/roles.js';
 import { AppError } from '../utils/AppError.js';
 import type { CursadaCreateData, CursadaUpdateData } from '../repositories/cursadaRepository.js';
+import { verificarPermisoCursada } from '../utils/docenteHelper.js';
 
 class CursadaService {
   private esAdministrativo(currentUser: any): void {
@@ -77,8 +78,11 @@ class CursadaService {
     return await cursadaRepository.delete(id);
   }
 
-  async getInscriptosByCursada(cursadaId: number) {
+  async getInscriptosByCursada(cursadaId: number, currentUser: any) {
     await this.getCursadaById(cursadaId);
+    if (currentUser.rol !== ROLES.ADMINISTRATIVO) {
+      await verificarPermisoCursada(currentUser, cursadaId);
+    }
     return await cursadaRepository.findInscriptosByCursadaId(cursadaId);
   }
 }

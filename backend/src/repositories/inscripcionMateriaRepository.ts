@@ -46,6 +46,7 @@ class InscripcionMateriaRepository {
           include: {
             carrera: true,
             correlatividadesOrigen: {
+              where: { tipoRequisito: 'OBLIGATORIA' },
               include: {
                 materiaRequerida: true
               }
@@ -76,6 +77,7 @@ class InscripcionMateriaRepository {
           include: {
             carrera: true,
             correlatividadesOrigen: {
+              where: { tipoRequisito: 'OBLIGATORIA' },
               include: {
                 materiaRequerida: true
               }

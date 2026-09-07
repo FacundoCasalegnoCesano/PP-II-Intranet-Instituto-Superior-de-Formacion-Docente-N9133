@@ -1,13 +1,8 @@
 import { prisma } from '../config/prisma.js';
 import type { TipoCalificacion } from '@prisma/client';
+import type { FilaCalificacionPreparada } from '../domain/academico/calificaciones.js';
 
-interface FilaCalificacion {
-  idAlumno: number;
-  tipoCalificacion: TipoCalificacion;
-  numero: number;
-  nota: number;
-  observacion?: string | null;
-}
+type FilaCalificacion = FilaCalificacionPreparada;
 
 class CalificacionRepository {
   async upsertLote(cursadaId: number, filas: FilaCalificacion[]) {
@@ -27,10 +22,14 @@ class CalificacionRepository {
           tipoCalificacion: fila.tipoCalificacion,
           numero: fila.numero,
           nota: fila.nota,
+          fechaEvaluacion: fila.fechaEvaluacion ?? null,
+          parcialOriginalId: fila.parcialOriginalId ?? null,
           observacion: fila.observacion ?? null
         },
         update: {
           nota: fila.nota,
+          fechaEvaluacion: fila.fechaEvaluacion ?? null,
+          parcialOriginalId: fila.parcialOriginalId ?? null,
           observacion: fila.observacion ?? null
         }
       })
@@ -79,10 +78,25 @@ class CalificacionRepository {
     return await prisma.calificacion.findMany({
       where: { cursadaId },
       select: {
+        id: true,
         alumnoId: true,
         tipoCalificacion: true,
         numero: true,
-        nota: true
+        nota: true,
+        parcialOriginalId: true
+      }
+    });
+  }
+
+  async findParcialesByIds(ids: number[]) {
+    return await prisma.calificacion.findMany({
+      where: { id: { in: ids }, tipoCalificacion: 'PARCIAL' },
+      select: {
+        id: true,
+        cursadaId: true,
+        alumnoId: true,
+        tipoCalificacion: true,
+        numero: true
       }
     });
   }
@@ -100,16 +114,19 @@ class CalificacionRepository {
     });
   }
 
-  async isAlumnoInscripto(cursadaId: number, idAlumno: number): Promise<boolean> {
-    const inscripcion = await prisma.inscripcionMateria.findFirst({
+  async findInscripcionesByCursada(cursadaId: number, alumnoIds: number[]) {
+    if (alumnoIds.length === 0) return [];
+
+    return prisma.inscripcionMateria.findMany({
       where: {
         cursadaId,
-        alumnoId: idAlumno,
+        alumnoId: { in: alumnoIds },
         estado: { not: 'BAJA' }
-      }
+      },
+      select: { alumnoId: true }
     });
-    return inscripcion !== null;
   }
+
 }
 
 export default new CalificacionRepository();

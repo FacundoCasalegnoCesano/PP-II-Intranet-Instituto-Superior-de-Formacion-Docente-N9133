@@ -2,6 +2,16 @@ import type { Request, Response, NextFunction } from 'express';
 import calificacionService from '../services/calificacionService.js';
 
 class CalificacionController {
+  async getCursadasDisponibles(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const anioLectivo = Number(req.query.anioLectivo);
+      const data = await calificacionService.getCursadasDisponibles(anioLectivo, req.user);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Carga masiva de notas por cursada (admin o profesor asignado)
   async cargarLote(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

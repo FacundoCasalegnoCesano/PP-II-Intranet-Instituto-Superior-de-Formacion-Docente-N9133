@@ -15,6 +15,15 @@ export interface CursadaUpdateData {
   activo?: boolean;
 }
 
+export interface CursadaDisponibleCalificaciones {
+  cursadaId: number;
+  anioLectivo: number;
+  materia: {
+    id: number;
+    nombre: string;
+  };
+}
+
 class CursadaRepository {
   async create(data: CursadaCreateData): Promise<any> {
     return await prisma.cursada.create({
@@ -137,6 +146,53 @@ class CursadaRepository {
       },
       orderBy: { anioLectivo: 'desc' }
     });
+  }
+
+  async findDisponiblesParaCalificaciones(filtros: {
+    anioLectivo: number;
+    profesorId?: number;
+  }): Promise<CursadaDisponibleCalificaciones[]> {
+    const cursadas = await prisma.cursada.findMany({
+      where: {
+        anioLectivo: filtros.anioLectivo,
+        activo: true,
+        ...(filtros.profesorId === undefined
+          ? {}
+          : {
+              OR: [
+                { docenteId: filtros.profesorId },
+                {
+                  materia: {
+                    profesorMaterias: {
+                      some: {
+                        profesorId: filtros.profesorId,
+                        activo: true,
+                        fechaBaja: null
+                      }
+                    }
+                  }
+                }
+              ]
+            })
+      },
+      select: {
+        id: true,
+        anioLectivo: true,
+        materia: {
+          select: {
+            id: true,
+            nombre: true
+          }
+        }
+      },
+      orderBy: [{ materia: { nombre: 'asc' } }, { id: 'asc' }]
+    });
+
+    return cursadas.map(cursada => ({
+      cursadaId: cursada.id,
+      anioLectivo: cursada.anioLectivo,
+      materia: cursada.materia
+    }));
   }
 
   async findAll(filters: { anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } & PaginationInput = {}) {

@@ -49,6 +49,31 @@ export const cargaCalificacionesSchema = Joi.object({
             'number.integer': 'El número de instancia debe ser un entero',
             'number.min': 'El número de instancia debe ser mayor a 0'
           }),
+        fechaEvaluacion: Joi.date()
+          .iso()
+          .when('tipoCalificacion', {
+            is: 'PARCIAL',
+            then: Joi.required(),
+            otherwise: Joi.optional()
+          })
+          .messages({
+            'any.required': 'La fecha de evaluacion es requerida para un PARCIAL',
+            'date.base': 'La fecha de evaluacion debe ser valida',
+            'date.format': 'La fecha de evaluacion debe tener formato ISO-8601'
+          }),
+        parcialOriginalId: Joi.number()
+          .integer()
+          .min(1)
+          .when('tipoCalificacion', {
+            is: 'RECUPERATORIO',
+            then: Joi.required(),
+            otherwise: Joi.forbidden()
+          })
+          .messages({
+            'any.required': 'El parcial original es requerido para un RECUPERATORIO',
+            'any.unknown': 'El parcial original solo corresponde a un RECUPERATORIO',
+            'number.base': 'El ID del parcial original debe ser un numero'
+          }),
         nota: Joi.number()
           .required()
           .integer()
@@ -73,4 +98,19 @@ export const cargaCalificacionesSchema = Joi.object({
 export const listCalificacionesQuerySchema = Joi.object({
   tipo: Joi.string().valid(...TIPOS_CALIFICACION),
   alumnoId: Joi.number().integer().min(1)
+});
+
+export const cursadasDisponiblesQuerySchema = Joi.object({
+  anioLectivo: Joi.number()
+    .required()
+    .integer()
+    .min(2000)
+    .max(2100)
+    .messages({
+      'any.required': 'El año lectivo es requerido',
+      'number.base': 'El año lectivo debe ser un número',
+      'number.integer': 'El año lectivo debe ser un número entero',
+      'number.min': 'El año lectivo debe ser mayor o igual a 2000',
+      'number.max': 'El año lectivo debe ser menor o igual a 2100'
+    })
 });

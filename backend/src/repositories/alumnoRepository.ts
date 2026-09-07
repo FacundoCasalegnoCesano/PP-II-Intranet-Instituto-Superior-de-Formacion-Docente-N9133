@@ -33,6 +33,15 @@ class AlumnoRepository {
     return prisma.alumno.findUnique({ where: { idCuenta: usuarioId } });
   }
 
+  async findByUsuarioIds(usuarioIds: number[]) {
+    if (usuarioIds.length === 0) return [];
+
+    return prisma.alumno.findMany({
+      where: { idCuenta: { in: usuarioIds } },
+      select: { idCuenta: true, idAlumno: true }
+    });
+  }
+
   // Solo elimina los datos específicos del alumno; la cuenta de usuario permanece
   async deleteByUsuarioId(usuarioId: number) {
     return prisma.alumno.deleteMany({ where: { idCuenta: usuarioId } });

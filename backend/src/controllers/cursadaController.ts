@@ -99,7 +99,7 @@ class CursadaController {
       const id = parseId(req, res, 'ID de cursada');
       if (id === null) return;
 
-      const inscriptos = await cursadaService.getInscriptosByCursada(id);
+      const inscriptos = await cursadaService.getInscriptosByCursada(id, req.user!);
       res.json({
         success: true,
         data: inscriptos

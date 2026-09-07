@@ -129,16 +129,10 @@ export const correlatividadSchema = Joi.object({
     }),
   tipoRequisito: Joi.string()
     .required()
-    .valid('OBLIGATORIA', 'ALTERNATIVA', 'GRUPO')
+    .valid('OBLIGATORIA')
     .messages({
-      'any.only': 'Tipo de requisito inválido. Debe ser OBLIGATORIA, ALTERNATIVA o GRUPO'
+      'any.only': 'Tipo de requisito inválido. Debe ser OBLIGATORIA'
     }),
-  grupo: Joi.string().max(100).allow('', null),
-  cantidadMinimaAprobadas: Joi.number().integer().min(1).when('tipoRequisito', {
-    is: 'GRUPO',
-    then: Joi.required(),
-    otherwise: Joi.allow(null)
-  }),
   aplicaCursado: Joi.boolean().default(true),
   aplicaRendir: Joi.boolean().default(true)
 });

@@ -2,7 +2,6 @@ import express from 'express';
 import type { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import config from './config/env.js';
 import { connectDatabase, disconnectDatabase } from './config/prisma.js';
@@ -53,18 +52,6 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-
-// Limitador de peticiones
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  skip: () => config.nodeEnv === 'test',
-  message: {
-    success: false,
-    message: 'Demasiadas peticiones desde esta IP, por favor intenta de nuevo en 15 minutos'
-  }
-});
-app.use('/api', limiter);
 
 // Middlewares de parseo
 app.use(express.json({ limit: '10mb' }));
