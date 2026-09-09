@@ -12,15 +12,15 @@ vi.mock('../api/examsApi', () => ({
 
 describe('ExamsView', () => {
   it('shows backend-calculated exam condition, tribunal and enrolls without a student id', async () => {
-    api.available.mockResolvedValue([{ id: 9, materia: { id: 5, nombre: 'PedagogÃ­a', carrera: { id: 3, nombre: 'Profesorado' } }, fecha: '2026-12-10T12:00:00.000Z', tipoExamen: 'ORAL', llamado: 2, tribunal: [{ profesorId: 1, apellidoNombre: 'Ana Profesor', rolTribunal: 'PRESIDENTE' }], condicion: 'LIBRE', inscripto: false }])
+    api.available.mockResolvedValue([{ id: 9, materia: { id: 5, nombre: 'Pedagogía', carrera: { id: 3, nombre: 'Profesorado' } }, fecha: '2026-12-10T12:00:00.000Z', tipoExamen: 'ORAL', llamado: 2, tribunal: [{ profesorId: 1, apellidoNombre: 'Ana Profesor', rolTribunal: 'PRESIDENTE' }], condicion: 'LIBRE', inscripto: false }])
     api.mine.mockResolvedValue([])
     api.enroll.mockResolvedValue({ id: 7 })
     const user = userEvent.setup()
     render(ExamsView)
 
-    expect(await screen.findByText('PedagogÃ­a')).toBeVisible()
-    expect(screen.getByText('CondiciÃ³n: LIBRE')).toBeVisible()
-    expect(screen.getByText(/Ana Profesor/)).toBeVisible()
+    expect(await screen.findByText('Pedagogía')).toBeVisible()
+    expect(screen.getByText('Condición: Libre')).toBeVisible()
+    expect(screen.getByText(/Ana Profesor \(Presidente\)/)).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Inscribirme' }))
     expect(api.enroll).toHaveBeenCalledWith(9, 'LIBRE')
   })
