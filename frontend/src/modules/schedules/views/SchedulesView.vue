@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Download, ExternalLink, FileText, History, Upload } from 'lucide-vue-next'
 import { schedulesApi } from '../api/schedulesApi'
 import type { PublishedSchedule } from '../types/schedules'
+import SchedulePdfViewer from '../components/SchedulePdfViewer.vue'
 import { normalizeApiError } from '@/core/api/errors'
 import { useAuthStore } from '@/stores/authStore'
 import AppButton from '@/ui/AppButton.vue'
@@ -18,6 +19,7 @@ const loadingDocument = ref(false)
 const error = ref('')
 const documentError = ref('')
 const blobUrl = ref<string | null>(null)
+const documentBlob = ref<Blob | null>(null)
 const selectedFile = ref<File | null>(null)
 const uploadCycle = ref(new Date().getFullYear())
 const uploadTitle = ref('')
@@ -39,9 +41,10 @@ const actionDescription = computed(() => pendingAction.value?.kind === 'restore'
   ? 'Esta versión quedará vigente para el ciclo lectivo seleccionado.'
   : 'El nuevo PDF reemplazará la publicación vigente para ese ciclo lectivo.')
 
-function revokeBlobUrl(): void {
+function clearDocumentResources(): void {
   if (blobUrl.value) URL.revokeObjectURL(blobUrl.value)
   blobUrl.value = null
+  documentBlob.value = null
 }
 
 function nextRequestGeneration(): number {
@@ -66,7 +69,8 @@ async function loadDocument(schedule: PublishedSchedule, generation: number): Pr
       URL.revokeObjectURL(nextBlobUrl)
       return
     }
-    revokeBlobUrl()
+    clearDocumentResources()
+    documentBlob.value = file
     blobUrl.value = nextBlobUrl
   } catch {
     if (isCurrentRequest(generation) && generationDocument === documentGeneration) documentError.value = 'No pudimos descargar el PDF publicado.'
@@ -94,7 +98,7 @@ async function loadSchedule(): Promise<void> {
   error.value = ''
   documentError.value = ''
   actionError.value = ''
-  revokeBlobUrl()
+  clearDocumentResources()
   loadingDocument.value = true
   try {
     const schedule = await schedulesApi.getCurrent(cicloLectivo)
@@ -116,7 +120,7 @@ async function load(): Promise<void> {
   error.value = ''
   current.value = null
   history.value = []
-  revokeBlobUrl()
+  clearDocumentResources()
   try {
     years.value = await schedulesApi.listYears()
     selectedYear.value = years.value[0] ?? null
@@ -191,7 +195,7 @@ async function confirmAction(): Promise<void> {
 onMounted(() => { void load() })
 onBeforeUnmount(() => {
   nextRequestGeneration()
-  revokeBlobUrl()
+  clearDocumentResources()
 })
 </script>
 
@@ -240,9 +244,7 @@ onBeforeUnmount(() => {
           <AppButton class="mt-3" variant="secondary" @click="retryDocument">Reintentar PDF</AppButton>
         </section>
         <div class="mt-5 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[#f6f7f4]">
-          <object v-if="blobUrl" :data="blobUrl" type="application/pdf" title="Vista previa del horario publicado" class="h-[34rem] w-full">
-            <p class="p-4">Tu navegador no pudo mostrar el PDF. Usá Abrir PDF o Descargar PDF.</p>
-          </object>
+          <SchedulePdfViewer v-if="documentBlob" :file="documentBlob" />
           <p v-else class="p-5" aria-live="polite">{{ loadingDocument ? 'Preparando la vista previa del PDF…' : 'La vista previa no está disponible.' }}</p>
         </div>
         <p class="mt-3 text-sm text-[var(--color-graphite)] md:hidden">En dispositivos móviles, abrí o descargá el PDF para una lectura más cómoda.</p>

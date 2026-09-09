@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   restore: vi.fn(),
   createObjectURL: vi.fn(),
   revokeObjectURL: vi.fn(),
+  viewerFiles: [] as Blob[],
 }))
 
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => ({ activeRole: mocks.activeRole }) }))
@@ -28,6 +29,24 @@ vi.mock('../api/schedulesApi', () => ({
   },
 }))
 
+vi.mock('../components/SchedulePdfViewer.vue', async () => {
+  const { defineComponent, h, watch } = await import('vue')
+
+  return {
+    default: defineComponent({
+      name: 'SchedulePdfViewerStub',
+      props: { file: { type: Blob, required: true } },
+      setup(props) {
+        watch(() => props.file, (file) => {
+          mocks.viewerFiles.push(file)
+        }, { immediate: true })
+
+        return () => h('div', { 'data-testid': 'schedule-pdf-viewer' })
+      },
+    }),
+  }
+})
+
 function schedule(cicloLectivo = 2026, id = cicloLectivo): Record<string, unknown> {
   return {
     id,
@@ -41,14 +60,23 @@ function schedule(cicloLectivo = 2026, id = cicloLectivo): Record<string, unknow
   }
 }
 
-function mockPublishedSchedule() {
+function mockPublishedSchedule(): Blob {
+  const file = new Blob(['%PDF-1.7'], { type: 'application/pdf' })
   mocks.listYears.mockResolvedValue([2026, 2025])
   mocks.getCurrent.mockImplementation((year?: number) => Promise.resolve(schedule(year ?? 2026)))
-  mocks.download.mockResolvedValue(new Blob(['%PDF-1.7'], { type: 'application/pdf' }))
+  mocks.download.mockResolvedValue(file)
   mocks.listHistory.mockResolvedValue([{ ...schedule(2026, 30), vigente: false }, schedule()])
   mocks.publish.mockResolvedValue({ documento: schedule(), reutilizado: false })
   mocks.restore.mockResolvedValue(schedule())
   mocks.createObjectURL.mockReturnValueOnce('blob:first').mockReturnValueOnce('blob:second').mockReturnValue('blob:next')
+  return file
+}
+
+function getExternalPdfLinks(): [HTMLAnchorElement, HTMLAnchorElement] {
+  return [
+    screen.getByRole('link', { name: 'Abrir PDF' }) as HTMLAnchorElement,
+    screen.getByRole('link', { name: 'Descargar PDF' }) as HTMLAnchorElement,
+  ]
 }
 
 function deferred<T>() {
@@ -61,17 +89,22 @@ afterEach(() => {
   vi.clearAllMocks()
   vi.unstubAllGlobals()
   mocks.activeRole = 'ALUMNO'
+  mocks.viewerFiles.length = 0
 })
 
 describe('SchedulesView', () => {
   it('loads a chosen published year and revokes each replaced or unmounted PDF URL', async () => {
-    mockPublishedSchedule()
+    const downloadedFile = mockPublishedSchedule()
     vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
     const user = userEvent.setup()
     const view = render(SchedulesView)
 
     await screen.findByRole('heading', { name: 'Horario oficial 2026' })
-    expect(screen.getByTitle('Vista previa del horario publicado')).toHaveAttribute('data', 'blob:first')
+    await waitFor(() => expect(mocks.viewerFiles).toEqual([downloadedFile]))
+    expect(screen.getByTestId('schedule-pdf-viewer')).toBeVisible()
+    const [openPdf, downloadPdf] = getExternalPdfLinks()
+    expect(openPdf).toHaveAttribute('href', 'blob:first')
+    expect(downloadPdf).toHaveAttribute('href', 'blob:first')
     await user.selectOptions(screen.getByLabelText('Ciclo lectivo'), '2025')
     await screen.findByRole('heading', { name: 'Horario oficial 2025' })
 
@@ -168,7 +201,10 @@ describe('SchedulesView', () => {
     mocks.getCurrent.mockResolvedValueOnce(schedule(2026))
       .mockImplementationOnce(() => olderSchedule.promise)
       .mockImplementationOnce(() => latestSchedule.promise)
-    mocks.download.mockResolvedValueOnce(new Blob(['initial'], { type: 'application/pdf' }))
+    const initialFile = new Blob(['initial'], { type: 'application/pdf' })
+    const newestFile = new Blob(['latest'], { type: 'application/pdf' })
+    const staleFile = new Blob(['stale'], { type: 'application/pdf' })
+    mocks.download.mockResolvedValueOnce(initialFile)
       .mockImplementationOnce(() => olderPdf.promise)
       .mockImplementationOnce(() => latestPdf.promise)
     mocks.createObjectURL.mockReset()
@@ -186,18 +222,22 @@ describe('SchedulesView', () => {
     await waitFor(() => expect(mocks.getCurrent).toHaveBeenCalledTimes(3))
     latestSchedule.resolve(schedule(2026, 206))
     await waitFor(() => expect(mocks.download).toHaveBeenCalledTimes(3))
-    latestPdf.resolve(new Blob(['latest'], { type: 'application/pdf' }))
-    await waitFor(() => expect(screen.getByTitle('Vista previa del horario publicado')).toHaveAttribute('data', 'blob:latest'))
+    latestPdf.resolve(newestFile)
+    await waitFor(() => expect(mocks.viewerFiles).toEqual([initialFile, newestFile]))
+    const [openPdf, downloadPdf] = getExternalPdfLinks()
+    expect(openPdf).toHaveAttribute('href', 'blob:latest')
+    expect(downloadPdf).toHaveAttribute('href', 'blob:latest')
 
-    olderPdf.resolve(new Blob(['stale'], { type: 'application/pdf' }))
-    await waitFor(() => expect(screen.getByTitle('Vista previa del horario publicado')).toHaveAttribute('data', 'blob:latest'))
+    olderPdf.resolve(staleFile)
+    await waitFor(() => expect(mocks.viewerFiles).toEqual([initialFile, newestFile]))
     expect(mocks.revokeObjectURL).toHaveBeenCalledWith('blob:initial')
     expect(mocks.createObjectURL).toHaveBeenCalledTimes(2)
   })
 
   it('shows a retryable PDF error to non-administrative users and retries the download', async () => {
     mockPublishedSchedule()
-    mocks.download.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(new Blob(['recovered'], { type: 'application/pdf' }))
+    const recoveredFile = new Blob(['recovered'], { type: 'application/pdf' })
+    mocks.download.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(recoveredFile)
     mocks.createObjectURL.mockReset()
     mocks.createObjectURL.mockReturnValue('blob:recovered')
     vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
@@ -207,7 +247,10 @@ describe('SchedulesView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos descargar el PDF publicado.')
     await user.click(screen.getByRole('button', { name: 'Reintentar PDF' }))
     await waitFor(() => expect(mocks.download).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(screen.getByTitle('Vista previa del horario publicado')).toHaveAttribute('data', 'blob:recovered'))
+    await waitFor(() => expect(mocks.viewerFiles).toEqual([recoveredFile]))
+    const [openPdf, downloadPdf] = getExternalPdfLinks()
+    expect(openPdf).toHaveAttribute('href', 'blob:recovered')
+    expect(downloadPdf).toHaveAttribute('href', 'blob:recovered')
   })
 
   it('loads a newly selected year after retrying the current-schedule load for the same year', async () => {
@@ -215,7 +258,9 @@ describe('SchedulesView', () => {
     mocks.getCurrent.mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(schedule(2026))
       .mockResolvedValueOnce(schedule(2025))
-    mocks.download.mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }))
+    const firstFile = new Blob(['pdf'], { type: 'application/pdf' })
+    const secondFile = new Blob(['pdf-2025'], { type: 'application/pdf' })
+    mocks.download.mockResolvedValueOnce(firstFile).mockResolvedValueOnce(secondFile)
     mocks.createObjectURL.mockReturnValueOnce('blob:2026').mockReturnValueOnce('blob:2025')
     vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
     const user = userEvent.setup()
@@ -228,7 +273,7 @@ describe('SchedulesView', () => {
 
     await waitFor(() => expect(mocks.getCurrent).toHaveBeenCalledTimes(3))
     expect(await screen.findByRole('heading', { name: 'Horario oficial 2025' })).toBeVisible()
-    await waitFor(() => expect(screen.getByTitle('Vista previa del horario publicado')).toHaveAttribute('data', 'blob:2025'))
+    await waitFor(() => expect(mocks.viewerFiles).toEqual([firstFile, secondFile]))
   })
 
   it('keeps a pending administrative history request valid while a PDF retry completes', async () => {
