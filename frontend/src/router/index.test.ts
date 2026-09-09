@@ -1,8 +1,15 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Component, VNode } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import type { AuthSession, Role } from '@/core/auth/contracts'
 import { sessionStorage } from '@/core/storage/sessionStorage'
+import AppShell from '@/layouts/AppShell.vue'
+import CareerCatalogView from '@/modules/careerCatalog/views/CareerCatalogView.vue'
 import { createAppRouter } from './index'
+
+vi.mock('@/modules/schedules/views/SchedulesView.vue', () => ({
+  default: { name: 'SchedulesView' },
+}))
 
 const user = {
   idUsuario: 4,
@@ -78,6 +85,21 @@ describe('navigation guards', () => {
     expect(profile).toHaveProperty('render', expect.any(Function))
   })
 
+  it('registers the student careers catalog in a render-function shell', () => {
+    const router = createAppRouter()
+    const careers = router.getRoutes().find((route) => route.name === 'student-careers')
+    const page = careers?.components?.default as Component & { render?: () => VNode }
+    const shell = page.render?.() as VNode & { children?: { default?: () => VNode } }
+
+    expect(careers).toMatchObject({
+      path: '/app/alumno/carreras',
+      name: 'student-careers',
+      meta: { requiresSession: true, allowedRoles: ['ALUMNO'] },
+    })
+    expect(shell?.type).toBe(AppShell)
+    expect(shell?.children?.default?.()?.type).toBe(CareerCatalogView)
+  })
+
   it('guards the administrative console by the selected role and exposes its module routes', async () => {
     sessionStorage.save({ ...session('ALUMNO'), roles: ['ALUMNO'], role: 'ALUMNO' })
     const studentRouter = createAppRouter()
@@ -116,6 +138,56 @@ describe('navigation guards', () => {
         await unauthorizedRouter.push(route)
         expect(unauthorizedRouter.currentRoute.value.name).toBe('home')
       }
+    }
+  })
+
+  it('allows ALUMNO and redirects other roles away from the careers catalog', async () => {
+    sessionStorage.save({ ...session('ALUMNO'), roles: ['ALUMNO'], role: 'ALUMNO' })
+    const studentRouter = createAppRouter()
+    await studentRouter.push('/app/alumno/carreras')
+    await studentRouter.isReady()
+    expect(studentRouter.currentRoute.value.name).toBe('student-careers')
+
+    for (const role of ['PROFESOR', 'ADMINISTRATIVO'] as const) {
+      sessionStorage.save({ ...session(role, [role]), user: { ...user, rol: role } })
+      const unauthorizedRouter = createAppRouter()
+      await unauthorizedRouter.push('/app/alumno/carreras')
+      await unauthorizedRouter.isReady()
+      expect(unauthorizedRouter.currentRoute.value.name).toBe('home')
+    }
+  })
+
+  it('registers the teacher course routes with professor-only access', () => {
+    const router = createAppRouter()
+    const routes = router.getRoutes()
+
+    expect(routes.filter((route) => String(route.name).startsWith('teacher-course')).map((route) => route.name)).toEqual(expect.arrayContaining([
+      'teacher-course-summary',
+      'teacher-course-grades',
+      'teacher-course-classes',
+      'teacher-course-students',
+      'teacher-courses',
+    ]))
+    expect(routes.filter((route) => String(route.name).startsWith('teacher-course'))).toHaveLength(5)
+    expect(routes.find((route) => route.name === 'teacher-courses')?.path).toBe('/app/profesor/cursadas')
+    expect(routes.find((route) => route.name === 'teacher-course-students')?.path).toBe('/app/profesor/cursadas/:id/alumnos')
+    expect(routes.find((route) => route.name === 'teacher-course-classes')?.path).toBe('/app/profesor/cursadas/:id/clases')
+    expect(routes.find((route) => route.name === 'teacher-course-grades')?.path).toBe('/app/profesor/cursadas/:id/calificaciones')
+    expect(routes.find((route) => route.name === 'teacher-course-summary')?.path).toBe('/app/profesor/cursadas/:id/resumen')
+    expect(routes.filter((route) => String(route.name).startsWith('teacher-course')).every((route) => (
+      route.meta.allowedRoles?.length === 1 && route.meta.allowedRoles[0] === 'PROFESOR'
+    ))).toBe(true)
+  })
+
+  it('redirects non-professors away from every teacher course route', async () => {
+    for (const role of ['ALUMNO', 'ADMINISTRATIVO'] as const) {
+      sessionStorage.save({ ...session(role, [role]), user: { ...user, rol: role } })
+      const router = createAppRouter()
+
+      await router.push({ name: 'teacher-course-students', params: { id: 12 } })
+      await router.isReady()
+
+      expect(router.currentRoute.value.name).toBe('home')
     }
   })
 })

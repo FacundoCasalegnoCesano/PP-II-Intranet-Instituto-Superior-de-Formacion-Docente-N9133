@@ -18,6 +18,8 @@ import SchedulesView from '@/modules/schedules/views/SchedulesView.vue'
 import AcademicRecordView from '@/modules/academicRecord/views/AcademicRecordView.vue'
 import SubjectEnrollmentsView from '@/modules/subjectEnrollments/views/SubjectEnrollmentsView.vue'
 import ExamsView from '@/modules/exams/views/ExamsView.vue'
+import CareerCatalogView from '@/modules/careerCatalog/views/CareerCatalogView.vue'
+import TeacherCoursesView from '@/modules/teacherCourses/views/TeacherCoursesView.vue'
 
 export type RouteMeta = {
   guest?: boolean
@@ -82,6 +84,8 @@ const SchedulesPage = defineComponent({ name: 'SchedulesPage', render: () => h(A
 const AcademicRecordPage = defineComponent({ name: 'AcademicRecordPage', render: () => h(AppShell, null, { default: () => h(AcademicRecordView) }) })
 const SubjectEnrollmentsPage = defineComponent({ name: 'SubjectEnrollmentsPage', render: () => h(AppShell, null, { default: () => h(SubjectEnrollmentsView) }) })
 const ExamsPage = defineComponent({ name: 'ExamsPage', render: () => h(AppShell, null, { default: () => h(ExamsView) }) })
+const CareerCatalogPage = defineComponent({ name: 'CareerCatalogPage', render: () => h(AppShell, null, { default: () => h(CareerCatalogView) }) })
+const TeacherCoursesPage = defineComponent({ name: 'TeacherCoursesPage', render: () => h(AppShell, null, { default: () => h(TeacherCoursesView) }) })
 
 function routeMeta(route: RouteLocationNormalized): RouteMeta {
   return route.meta as RouteMeta
@@ -122,6 +126,12 @@ export function createAppRouter() {
       { path: '/app/alumno/trayectoria', name: 'academic-record', component: AcademicRecordPage, meta: { requiresSession: true, allowedRoles: ['ALUMNO'] } },
       { path: '/app/alumno/materias', name: 'subject-enrollments', component: SubjectEnrollmentsPage, meta: { requiresSession: true, allowedRoles: ['ALUMNO'] } },
       { path: '/app/alumno/examenes', name: 'student-exams', component: ExamsPage, meta: { requiresSession: true, allowedRoles: ['ALUMNO'] } },
+      { path: '/app/alumno/carreras', name: 'student-careers', component: CareerCatalogPage, meta: { requiresSession: true, allowedRoles: ['ALUMNO'] } },
+      { path: '/app/profesor/cursadas', name: 'teacher-courses', component: TeacherCoursesPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
+      { path: '/app/profesor/cursadas/:id/alumnos', name: 'teacher-course-students', component: TeacherCoursesPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
+      { path: '/app/profesor/cursadas/:id/clases', name: 'teacher-course-classes', component: TeacherCoursesPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
+      { path: '/app/profesor/cursadas/:id/calificaciones', name: 'teacher-course-grades', component: TeacherCoursesPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
+      { path: '/app/profesor/cursadas/:id/resumen', name: 'teacher-course-summary', component: TeacherCoursesPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
       { path: '/app/administracion', redirect: '/app/administracion/usuarios', meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios', name: 'admin-users', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios/nuevo', name: 'admin-user-create', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },

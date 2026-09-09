@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { BookOpen, ClipboardList, GraduationCap } from 'lucide-vue-next'
+import type { Component } from 'vue'
+import type { RouteLocationRaw } from 'vue-router'
+import { BookOpen, CalendarDays, ClipboardList, FileText, GraduationCap, UserRound, Users } from 'lucide-vue-next'
+import type { Role } from '@/core/auth/contracts'
 import { useAuthStore } from '@/stores/authStore'
+import ModuleAccessCard from '../components/ModuleAccessCard.vue'
 import StudentProgressCard from '../components/StudentProgressCard.vue'
 import { fetchStudentCareers, fetchStudentTrajectory, progressFromTrajectory } from '../api/homeApi'
 import type { StudentCareer, StudentTrajectory } from '../types/home'
@@ -16,7 +20,49 @@ const error = ref('')
 const isStudent = computed(() => auth.activeRole === 'ALUMNO')
 const progress = computed(() => trajectory.value ? progressFromTrajectory(trajectory.value) : null)
 const selectedCareer = computed(() => careers.value.find(({ carreraId }) => carreraId === selectedCareerId.value)?.carrera)
-const launcherTitle = computed(() => auth.activeRole === 'PROFESOR' ? 'Herramientas docentes' : 'Gestión institucional')
+const launcherTitles: Record<Role, string> = {
+  ALUMNO: 'Accesos académicos',
+  ADMINISTRATIVO: 'Gestión institucional',
+  PROFESOR: 'Herramientas docentes',
+}
+const launcherTitle = computed(() => auth.activeRole ? launcherTitles[auth.activeRole] : '')
+
+interface ModuleAccess {
+  label: string
+  description: string
+  icon: Component
+  to?: RouteLocationRaw
+  status?: string
+}
+
+const modulesByRole: Record<Role, ModuleAccess[]> = {
+  ALUMNO: [
+    { label: 'Trayectoria', description: 'Consultá tus materias y tu progreso académico.', icon: GraduationCap, to: { name: 'academic-record' } },
+    { label: 'Mis materias', description: 'Gestioná tus inscripciones a cursadas.', icon: BookOpen, to: { name: 'subject-enrollments' } },
+    { label: 'Exámenes', description: 'Consultá mesas y tus inscripciones a examen.', icon: ClipboardList, to: { name: 'student-exams' } },
+    { label: 'Carreras y planes', description: 'Explorá la oferta y los planes de estudio.', icon: GraduationCap, to: { name: 'student-careers' } },
+    { label: 'Horarios', description: 'Consultá el horario institucional publicado.', icon: CalendarDays, to: { name: 'schedules' } },
+    { label: 'Mi perfil', description: 'Revisá y actualizá tus datos personales.', icon: UserRound, to: { name: 'profile' } },
+  ],
+  ADMINISTRATIVO: [
+    { label: 'Usuarios', description: 'Administrá cuentas, roles y estados de acceso.', icon: Users, to: { name: 'admin-users' } },
+    { label: 'Carreras', description: 'Gestioná carreras y planes de estudio.', icon: GraduationCap, to: { name: 'admin-careers' } },
+    { label: 'Materias', description: 'Gestioná materias, correlatividades y docentes.', icon: BookOpen, to: { name: 'admin-subjects' } },
+    { label: 'Cursadas', description: 'Gestioná la oferta de cursadas.', icon: ClipboardList, to: { name: 'admin-courses' } },
+    { label: 'Períodos', description: 'Gestioná períodos de inscripción.', icon: FileText, to: { name: 'admin-periods' } },
+    { label: 'Horarios', description: 'Consultá el horario institucional publicado.', icon: CalendarDays, to: { name: 'schedules' } },
+    { label: 'Mi perfil', description: 'Revisá y actualizá tus datos personales.', icon: UserRound, to: { name: 'profile' } },
+  ],
+  PROFESOR: [
+    { label: 'Horarios', description: 'Consultá el horario institucional publicado.', icon: CalendarDays, to: { name: 'schedules' } },
+    { label: 'Mi perfil', description: 'Revisá y actualizá tus datos personales.', icon: UserRound, to: { name: 'profile' } },
+    { label: 'Cursadas', description: 'Consultá y gestioná tus cursadas docentes.', icon: BookOpen, to: { name: 'teacher-courses' } },
+    { label: 'Calificaciones', description: 'Cargá y consultá las calificaciones de tus cursadas.', icon: ClipboardList, to: { name: 'teacher-courses', query: { seccion: 'calificaciones' } } },
+    { label: 'Trayectorias', description: 'Consultá los resúmenes académicos de tus cursadas.', icon: GraduationCap, to: { name: 'teacher-courses', query: { seccion: 'resumen' } } },
+  ],
+}
+
+const moduleAccess = computed(() => auth.activeRole ? modulesByRole[auth.activeRole] : [])
 
 async function loadTrajectory(): Promise<void> {
   if (!auth.user || !selectedCareerId.value) return
@@ -75,15 +121,11 @@ onMounted(() => { if (isStudent.value) void loadStudentHome() })
       </template>
     </section>
 
-    <section v-else class="mt-8" aria-labelledby="launchers-title">
+    <section class="mt-8" aria-labelledby="launchers-title">
       <h2 id="launchers-title" class="text-xl font-semibold text-[var(--color-text)]">{{ launcherTitle }}</h2>
-      <p class="mt-1 text-[var(--color-graphite)]">Estos accesos estarán disponibles a medida que se habiliten los módulos institucionales.</p>
-      <div class="mt-5 grid gap-4 sm:grid-cols-3">
-        <div v-for="launcher in [{ label: 'Cursadas', icon: BookOpen }, { label: 'Calificaciones', icon: ClipboardList }, { label: 'Trayectorias', icon: GraduationCap }]" :key="launcher.label" class="rounded-lg border border-[var(--color-border)] bg-white p-5">
-          <component :is="launcher.icon" class="size-6 text-[var(--color-brand)]" aria-hidden="true" />
-          <h3 class="mt-4 font-semibold text-[var(--color-text)]">{{ launcher.label }}</h3>
-          <span class="mt-2 inline-block rounded-full bg-[#f4e7e7] px-2.5 py-1 text-xs font-semibold text-[var(--color-brand)]">Próximamente</span>
-        </div>
+      <p class="mt-1 text-[var(--color-graphite)]">Accedé a los módulos disponibles para tu rol.</p>
+      <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ModuleAccessCard v-for="module in moduleAccess" :key="module.label" v-bind="module" />
       </div>
     </section>
   </main>

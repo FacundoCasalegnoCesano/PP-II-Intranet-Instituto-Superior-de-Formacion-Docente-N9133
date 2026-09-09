@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { BookOpen, CalendarDays, ChevronDown, Home, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
+import { BookOpen, CalendarDays, ChevronDown, Home, LibraryBig, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AppButton from '@/ui/AppButton.vue'
@@ -19,6 +19,7 @@ const baseNavItems = [
   { name: 'profile', label: 'Mi perfil', icon: UserRound },
 ] as const
 const studentNavItems = [
+  { name: 'student-careers', label: 'Carreras y planes', icon: LibraryBig },
   { name: 'academic-record', label: 'Trayectoria', icon: BookOpen },
   { name: 'subject-enrollments', label: 'Mis materias', icon: BookOpen },
   { name: 'student-exams', label: 'Exámenes', icon: BookOpen },
@@ -30,13 +31,21 @@ const adminNavItems = [
   { name: 'admin-courses', label: 'Cursadas', icon: BookOpen },
   { name: 'admin-periods', label: 'Períodos', icon: BookOpen },
 ] as const
+const teacherNavItems = [
+  { name: 'teacher-courses', label: 'Mis cursadas', icon: BookOpen },
+] as const
 const navItems = computed(() => {
   if (auth.activeRole === 'ADMINISTRATIVO') return [...baseNavItems, ...adminNavItems]
   if (auth.activeRole === 'ALUMNO') return [...baseNavItems, ...studentNavItems]
+  if (auth.activeRole === 'PROFESOR') return [...baseNavItems, ...teacherNavItems]
   return baseNavItems
 })
 const roleLabel = computed(() => ({ ALUMNO: 'Alumno/a', PROFESOR: 'Profesor/a', ADMINISTRATIVO: 'Administrativo/a' }[auth.activeRole ?? ''] ?? 'Sin rol'))
 const canChangeRole = computed(() => auth.roles.length > 1)
+function isNavItemActive(name: string): boolean {
+  if (name === 'teacher-courses') return typeof route.name === 'string' && route.name.startsWith('teacher-course')
+  return route.name === name
+}
 
 function closeDrawer(): void { drawerOpen.value = false }
 async function goToRoleSelection(): Promise<void> {
@@ -66,7 +75,7 @@ async function logout(): Promise<void> {
     <aside class="hidden min-h-screen bg-[var(--color-sidebar)] px-4 py-6 text-white lg:block">
       <div class="flex items-center gap-3 px-3"><BookOpen class="size-7" aria-hidden="true" /><span class="text-lg font-semibold">ISFD N.º 9133</span></div>
       <nav class="mt-10" aria-label="Navegación lateral">
-        <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="route.name === item.name ? 'bg-white/20 font-semibold' : ''">
+        <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined">
           <component :is="item.icon" class="size-5" aria-hidden="true" />{{ item.label }}
         </RouterLink>
       </nav>
@@ -96,7 +105,7 @@ async function logout(): Promise<void> {
       <aside class="relative h-full w-72 bg-[var(--color-sidebar)] p-5 text-white shadow-xl">
         <div class="flex items-center justify-between"><span class="font-semibold">ISFD N.º 9133</span><button type="button" aria-label="Cerrar navegación" class="rounded p-2" @click="closeDrawer"><X class="size-5" /></button></div>
         <nav class="mt-8" aria-label="Navegación principal">
-          <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-2 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 hover:bg-white/15" @click="closeDrawer"><component :is="item.icon" class="size-5" />{{ item.label }}</RouterLink>
+          <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-2 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined" @click="closeDrawer"><component :is="item.icon" class="size-5" />{{ item.label }}</RouterLink>
         </nav>
       </aside>
     </div>
