@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { esFechaCalendario } from './claseValidation.js';
 
 // PROMOCION no se acepta como tipo de carga: la promoción es un estado
 // derivado (notaPromocion + asistencia), no una instancia de evaluación.
@@ -9,6 +10,18 @@ const TIPOS_CALIFICACION = [
   'EXAMEN_FINAL',
   'TRABAJO_PRACTICO'
 ];
+const FECHA_CALENDARIO = /^\d{4}-\d{2}-\d{2}$/;
+
+const fechaEvaluacionSchema = Joi.string()
+  .custom((value: string, helpers) => {
+    if (!FECHA_CALENDARIO.test(value)) return helpers.error('date.format');
+    if (!esFechaCalendario(value)) return helpers.error('date.invalid');
+    return value;
+  })
+  .messages({
+    'date.format': 'La fecha de evaluacion debe tener formato YYYY-MM-DD',
+    'date.invalid': 'La fecha de evaluacion debe ser un día calendario válido'
+  });
 
 export const cargaCalificacionesSchema = Joi.object({
   cursadaId: Joi.number()
@@ -49,8 +62,7 @@ export const cargaCalificacionesSchema = Joi.object({
             'number.integer': 'El número de instancia debe ser un entero',
             'number.min': 'El número de instancia debe ser mayor a 0'
           }),
-        fechaEvaluacion: Joi.date()
-          .iso()
+        fechaEvaluacion: fechaEvaluacionSchema
           .when('tipoCalificacion', {
             is: 'PARCIAL',
             then: Joi.required(),
@@ -59,7 +71,7 @@ export const cargaCalificacionesSchema = Joi.object({
           .messages({
             'any.required': 'La fecha de evaluacion es requerida para un PARCIAL',
             'date.base': 'La fecha de evaluacion debe ser valida',
-            'date.format': 'La fecha de evaluacion debe tener formato ISO-8601'
+            'date.format': 'La fecha de evaluacion debe tener formato YYYY-MM-DD'
           }),
         parcialOriginalId: Joi.number()
           .integer()
@@ -97,6 +109,7 @@ export const cargaCalificacionesSchema = Joi.object({
 
 export const listCalificacionesQuerySchema = Joi.object({
   tipo: Joi.string().valid(...TIPOS_CALIFICACION),
+  numero: Joi.number().integer().min(1).max(99),
   alumnoId: Joi.number().integer().min(1)
 });
 

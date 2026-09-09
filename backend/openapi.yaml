@@ -1188,6 +1188,62 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/OK' }
 
+  /cursadas/{cursadaId}/clases:
+    get:
+      tags: [Cursadas]
+      summary: Listar clases de una cursada
+      description: La fecha es calendario YYYY-MM-DD. ADMINISTRATIVO y PROFESOR acceden solo a cursadas autorizadas; el profesor puede consultar también históricas.
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Historial de clases
+          content: { application/json: { schema: { $ref: '#/components/schemas/ClasesResumenResponse' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /cursadas/{cursadaId}/clases/{fecha}:
+    get:
+      tags: [Cursadas]
+      summary: Obtener una clase de una cursada
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: fecha, in: path, required: true, schema: { type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
+      responses:
+        '200':
+          description: Tema y asistencia completa de la clase
+          content: { application/json: { schema: { $ref: '#/components/schemas/ClaseDetalleResponse' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Cursadas]
+      summary: Crear o corregir una clase completa
+      description: La operación es idempotente y actualiza tema y asistencia en una única transacción. El profesor solo puede modificar cursadas actuales.
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: fecha, in: path, required: true, schema: { type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ClaseWritePayload' } } }
+      responses:
+        '200':
+          description: Clase guardada
+          content: { application/json: { schema: { $ref: '#/components/schemas/ClaseGuardadaResponse' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Cursadas]
+      summary: Eliminar una clase completa
+      description: Eliminación reservada a ADMINISTRATIVO.
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: fecha, in: path, required: true, schema: { type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   # ========================= LIBRO DE TEMAS =========================
   /libro-de-temas:
     get:
@@ -1477,10 +1533,17 @@ paths:
     get:
       tags: [Calificaciones]
       summary: Listar calificaciones de una cursada
-      description: Para PARCIAL y RECUPERATORIO, fechaEvaluacion se devuelve como DD/MM/YYYY, sin componente horaria.
+      description: alumnoId es Usuario.idUsuario. numero filtra la instancia exacta. Las fechas de evaluación se devuelven como calendario YYYY-MM-DD, sin componente horaria.
       x-roles: [ADMINISTRATIVO, PROFESOR]
-      parameters: [{ name: cursadaId, in: path, required: true, schema: { type: integer } }, { name: tipo, in: query, schema: { type: string } }, { name: numero, in: query, schema: { type: integer } }]
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: tipo, in: query, schema: { type: string, enum: [PARCIAL, RECUPERATORIO, EXAMEN_FINAL, TRABAJO_PRACTICO] } }
+        - { name: numero, in: query, schema: { type: integer, minimum: 1, maximum: 99 } }
+        - { name: alumnoId, in: query, description: ID público Usuario.idUsuario, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Calificaciones con identidad pública del alumno
+          content: { application/json: { schema: { $ref: '#/components/schemas/CalificacionesCursadaResponse' } } }
   /calificaciones/resumen/{cursadaId}:
     get:
       tags: [Calificaciones]
@@ -1492,7 +1555,7 @@ paths:
     get:
       tags: [Calificaciones]
       summary: Historial de calificaciones del alumno
-      description: Para PARCIAL y RECUPERATORIO, fechaEvaluacion se devuelve como DD/MM/YYYY, sin componente horaria.
+      description: alumnoId es Usuario.idUsuario. Las fechas de evaluación se devuelven como calendario YYYY-MM-DD, sin componente horaria.
       x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
@@ -1500,7 +1563,7 @@ paths:
     get:
       tags: [Calificaciones]
       summary: Calificaciones del usuario autenticado
-      description: Para PARCIAL y RECUPERATORIO, fechaEvaluacion se devuelve como DD/MM/YYYY, sin componente horaria.
+      description: Las fechas de evaluación se devuelven como calendario YYYY-MM-DD, sin componente horaria.
       x-roles: [ALUMNO]
       responses: { '200': { $ref: '#/components/responses/OK' } }
 
@@ -1511,6 +1574,18 @@ paths:
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters: [{ name: materiaId, in: path, required: true, schema: { type: integer } }, { name: cicloLectivo, in: query, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
+  /estado-academico/cursada/{cursadaId}:
+    get:
+      tags: [Estado Academico]
+      summary: Resumen académico calculado por cursada
+      description: Consulta alumnos de cursadas actuales o históricas autorizadas. Estados, promedios, asistencia, parciales efectivos, TPs y requisitos pendientes son calculados por el backend.
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }]
+      responses:
+        '200':
+          description: Resumen académico por alumno con identidad pública
+          content: { application/json: { schema: { $ref: '#/components/schemas/EstadoAcademicoCursadaResponse' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /estado-academico/alumno/{alumnoId}:
     get:
       tags: [Estado Academico]
@@ -2065,6 +2140,10 @@ components:
             id: { type: integer }
             anio: { type: integer }
             descripcion: { type: string }
+        correlatividades:
+          type: array
+          description: Requisitos obligatorios para rendir; no bloquean cursar.
+          items: { $ref: '#/components/schemas/Prerequisite' }
         activo: { type: boolean }
     Prerequisite:
       type: object
@@ -2188,6 +2267,11 @@ components:
         cursoAnio: { type: integer, minimum: 1, description: Año dentro de la duración de la carrera. Entrada preferida. }
         cursoId: { type: integer, nullable: true }
         espacioCurricularId: { type: integer, nullable: true }
+        correlativasIds:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+          description: IDs de materias correlativas obligatorias; se reemplaza de forma atómica.
     MateriaUpdateRequest:
       type: object
       properties:
@@ -2210,15 +2294,17 @@ components:
         cursoId: { type: integer, nullable: true }
         espacioCurricularId: { type: integer, nullable: true }
         activo: { type: boolean }
+        correlativasIds:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+          description: Omitido conserva; [] elimina; con IDs reemplaza el conjunto completo.
     CorrelatividadRequest:
       type: object
-      required: [materiaRequeridaId, tipoRequisito]
+      required: [materiaRequeridaId]
       additionalProperties: false
       properties:
         materiaRequeridaId: { type: integer, minimum: 1 }
-        tipoRequisito: { type: string, enum: [OBLIGATORIA] }
-        aplicaCursado: { type: boolean, default: true }
-        aplicaRendir: { type: boolean, default: true }
 
     # -------- Inscripciones --------
     InscripcionCarreraRequest:
@@ -2388,6 +2474,47 @@ components:
             alumnoUsuarioId: { type: integer, description: Usuario.idUsuario }
             carrera: { $ref: '#/components/schemas/Career' }
             materias: { type: array, items: { $ref: '#/components/schemas/TrayectoriaMateria' } }
+    EstadoAcademicoCursadaAlumno:
+      type: object
+      required: [alumno, asistencia, parcialesEfectivos, tps, promedio, notaMinima, estado, requisitosPendientes]
+      properties:
+        alumno:
+          type: object
+          required: [alumnoId, apellidoNombre, dni]
+          properties:
+            alumnoId: { type: integer, description: Usuario.idUsuario público }
+            apellidoNombre: { type: string }
+            dni: { type: integer }
+        asistencia: { type: object, additionalProperties: true }
+        parcialesEfectivos: { type: array, items: { type: object, additionalProperties: true } }
+        tps: { type: object, additionalProperties: true }
+        promedio: { type: number, nullable: true }
+        notaMinima: { type: number }
+        estado: { type: string, enum: [EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO] }
+        requisitosPendientes:
+          type: array
+          items: { type: string, enum: [ASISTENCIA, PARCIALES, TRABAJOS_PRACTICOS, REGULARIDAD, INSTANCIA_INTEGRADORA] }
+    EstadoAcademicoCursadaResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          required: [cursadaId, materia, anioLectivo, periodo, alumnos]
+          properties:
+            cursadaId: { type: integer }
+            materia:
+              type: object
+              required: [id, nombre]
+              properties:
+                id: { type: integer }
+                nombre: { type: string }
+            anioLectivo: { type: integer }
+            periodo: { $ref: '#/components/schemas/PeriodoMateria' }
+            alumnos:
+              type: array
+              items: { $ref: '#/components/schemas/EstadoAcademicoCursadaAlumno' }
     EstadoAcademicoAlumnoResponse:
       type: object
       required: [success, data]
@@ -2659,6 +2786,76 @@ components:
               justificado: { type: boolean, default: false }
               observacion: { type: string, nullable: true }
 
+    ClaseAsistenciaInput:
+      type: object
+      required: [alumnoId, presente]
+      properties:
+        alumnoId: { type: integer, minimum: 1, description: Usuario.idUsuario público }
+        presente: { type: boolean }
+        justificado: { type: boolean, default: false, description: Solo aplica si presente=false }
+        observacion: { type: string, nullable: true }
+    ClaseWritePayload:
+      type: object
+      required: [temaDesarrollado, asistencias]
+      properties:
+        temaDesarrollado: { type: string, minLength: 1, maxLength: 5000 }
+        asistencias:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ClaseAsistenciaInput' }
+    ClaseResumen:
+      type: object
+      required: [fecha, temaDesarrollado, presentes, ausentes, ausentesJustificados]
+      properties:
+        fecha: { type: string, format: date }
+        temaDesarrollado: { type: string }
+        presentes: { type: integer, minimum: 0 }
+        ausentes: { type: integer, minimum: 0 }
+        ausentesJustificados: { type: integer, minimum: 0 }
+    ClaseDetalle:
+      allOf:
+        - $ref: '#/components/schemas/ClaseResumen'
+        - type: object
+          required: [asistencias]
+          properties:
+            asistencias:
+              type: array
+              items:
+                allOf:
+                  - $ref: '#/components/schemas/ClaseAsistenciaInput'
+                  - type: object
+                    required: [nombre, dni]
+                    properties:
+                      nombre: { type: string }
+                      dni: { type: integer }
+    ClasesResumenResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/ClaseResumen' } }
+    ClaseDetalleResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/ClaseDetalle' }
+    ClaseGuardada:
+      type: object
+      required: [fecha, temaDesarrollado, registros]
+      properties:
+        fecha: { type: string, format: date }
+        temaDesarrollado: { type: string }
+        registros: { type: integer, minimum: 0 }
+    ClaseGuardadaResponse:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/ClaseGuardada' }
+
     CursadaDisponibleCalificaciones:
       type: object
       required: [cursadaId, anioLectivo, materia]
@@ -2710,6 +2907,32 @@ components:
                   nota: { type: integer, minimum: 0, maximum: 10 }
                   fechaEvaluacion: { type: string, format: date }
                   observacion: { type: string, nullable: true }
+
+    CalificacionCursada:
+      type: object
+      required: [id, cursadaId, tipoCalificacion, numero, nota, alumno]
+      properties:
+        id: { type: integer }
+        cursadaId: { type: integer }
+        tipoCalificacion: { type: string, enum: [PARCIAL, RECUPERATORIO, EXAMEN_FINAL, TRABAJO_PRACTICO] }
+        numero: { type: integer, minimum: 1 }
+        nota: { type: number, minimum: 0, maximum: 10 }
+        fechaEvaluacion: { type: string, format: date, nullable: true }
+        parcialOriginalId: { type: integer, nullable: true, description: Identificador técnico del parcial vinculado; no es una identidad de alumno. }
+        observacion: { type: string, nullable: true }
+        alumno:
+          type: object
+          required: [alumnoId, apellidoNombre, dni]
+          properties:
+            alumnoId: { type: integer, description: Usuario.idUsuario público }
+            apellidoNombre: { type: string }
+            dni: { type: integer }
+    CalificacionesCursadaResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/CalificacionCursada' } }
 
     HomologacionRequest:
       type: object

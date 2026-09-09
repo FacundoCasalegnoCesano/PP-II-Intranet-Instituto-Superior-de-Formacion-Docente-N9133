@@ -2,7 +2,15 @@ import libroDeTemaRepository from '../repositories/libroDeTemaRepository.js';
 import materiaRepository from '../repositories/materiaRepository.js';
 import { ROLES } from '../constants/roles.js';
 import { AppError } from '../utils/AppError.js';
-import { verificarPermisoMateria } from '../utils/docenteHelper.js';
+import {
+  verificarPermisoMateria,
+  verificarPermisoMutacionCursada
+} from '../utils/docenteHelper.js';
+import cursadaRepository from '../repositories/cursadaRepository.js';
+import {
+  anioInstitucionalActual,
+  fechaPerteneceAlAnioLectivo
+} from '../utils/cicloLectivo.js';
 import type {
   LibroDeTemaCreateData,
   LibroDeTemaUpdateData
@@ -11,6 +19,31 @@ import type {
 class LibroDeTemaService {
   private async verificarPermisoProfesor(currentUser: any, materiaId: number): Promise<void> {
     await verificarPermisoMateria(currentUser, materiaId);
+  }
+
+  private async verificarMutacionProfesor(
+    currentUser: any,
+    materiaId: number,
+    fecha: Date,
+    registroHistorico = false
+  ): Promise<void> {
+    if (currentUser.rol === ROLES.ADMINISTRATIVO) return;
+
+    const anioActual = anioInstitucionalActual();
+    const cursada = await cursadaRepository.getCursadaActivaByMateria(materiaId, anioActual);
+    if (!cursada) {
+      throw new AppError(403, 'Los profesores solo pueden modificar registros de cursadas activas del año institucional');
+    }
+
+    await verificarPermisoMutacionCursada(currentUser, cursada.id);
+    if (!fechaPerteneceAlAnioLectivo(fecha, cursada.anioLectivo)) {
+      throw new AppError(
+        registroHistorico ? 403 : 400,
+        registroHistorico
+          ? 'Los profesores no pueden modificar registros históricos'
+          : 'La fecha debe pertenecer al año lectivo de la cursada'
+      );
+    }
   }
 
   async list(filters: {
@@ -42,7 +75,7 @@ class LibroDeTemaService {
     if (!materia) {
       throw new AppError(404, 'Materia no encontrada');
     }
-    await this.verificarPermisoProfesor(currentUser, data.materiaId);
+    await this.verificarMutacionProfesor(currentUser, data.materiaId, data.fecha);
     return await libroDeTemaRepository.create(data);
   }
 
@@ -59,7 +92,10 @@ class LibroDeTemaService {
 
   async update(id: number, data: LibroDeTemaUpdateData, currentUser: any) {
     const registro = await this.getById(id, currentUser);
-    await this.verificarPermisoProfesor(currentUser, registro.materiaId);
+    await this.verificarMutacionProfesor(currentUser, registro.materiaId, registro.fecha, true);
+    if (data.fecha) {
+      await this.verificarMutacionProfesor(currentUser, registro.materiaId, data.fecha);
+    }
     return await libroDeTemaRepository.update(id, data);
   }
 

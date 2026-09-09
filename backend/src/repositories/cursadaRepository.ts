@@ -24,6 +24,13 @@ export interface CursadaDisponibleCalificaciones {
   };
 }
 
+export interface InscriptoPublico {
+  alumnoId: number;
+  apellidoNombre: string;
+  dni: number;
+  email: string;
+}
+
 class CursadaRepository {
   async create(data: CursadaCreateData): Promise<any> {
     return await prisma.cursada.create({
@@ -226,16 +233,28 @@ class CursadaRepository {
     }
 
     const { page, limit, skip } = normalizePagination(filters);
+    const materiaInclude: any = { carrera: true };
+    if (filters.profesorId !== undefined) {
+      materiaInclude.profesorMaterias = {
+        where: {
+          profesorId: filters.profesorId,
+          activo: true,
+          fechaBaja: null
+        },
+        select: {
+          profesorId: true,
+          activo: true,
+          fechaBaja: true
+        }
+      };
+    }
+
     const [data, total] = await Promise.all([prisma.cursada.findMany({
       where,
       skip,
       take: limit,
       include: {
-        materia: {
-          include: {
-            carrera: true
-          }
-        },
+        materia: { include: materiaInclude },
         docente: {
           select: {
             idUsuario: true,
@@ -345,16 +364,16 @@ class CursadaRepository {
     });
   }
 
-  async findInscriptosByCursadaId(cursadaId: number): Promise<any[]> {
-    return await prisma.inscripcionMateria.findMany({
+  async findInscriptosByCursadaId(cursadaId: number): Promise<InscriptoPublico[]> {
+    const inscriptos = await prisma.inscripcionMateria.findMany({
       where: {
         cursadaId,
         estado: 'ACTIVA',
         fechaBaja: null
       },
-      include: {
+      select: {
         alumno: {
-          include: {
+          select: {
             usuario: {
               select: {
                 idUsuario: true,
@@ -368,6 +387,13 @@ class CursadaRepository {
       },
       orderBy: { fechaInscripcion: 'asc' }
     });
+
+    return inscriptos.map(inscripto => ({
+      alumnoId: inscripto.alumno.usuario.idUsuario,
+      apellidoNombre: inscripto.alumno.usuario.apellidoNombre,
+      dni: inscripto.alumno.usuario.dni,
+      email: inscripto.alumno.usuario.email
+    }));
   }
 }
 

@@ -2,6 +2,21 @@ import type { Request, Response, NextFunction } from 'express';
 import estadoAcademicoService from '../services/estadoAcademicoService.js';
 
 class EstadoAcademicoController {
+  async getPorCursada(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const cursadaId = parseInt(req.params.cursadaId!);
+      if (isNaN(cursadaId)) {
+        res.status(400).json({ success: false, message: 'ID de cursada inválido' });
+        return;
+      }
+
+      const data = await estadoAcademicoService.getResumenPorCursada(cursadaId, req.user);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getTrayectoriaIntegral(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const alumnoId = parseInt(req.params.alumnoId!);

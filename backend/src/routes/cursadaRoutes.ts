@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import cursadaController from '../controllers/cursadaController.js';
+import claseController from '../controllers/claseController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
 import {
@@ -8,6 +9,11 @@ import {
   listCursadasSchema
 } from '../validations/cursadaValidation.js';
 import { ROLES } from '../constants/roles.js';
+import {
+  claseCursadaParamsSchema,
+  claseParamsSchema,
+  claseWriteSchema
+} from '../validations/claseValidation.js';
 
 const router = Router();
 
@@ -25,6 +31,32 @@ router.post('/',
   roleCheck(ROLES.ADMINISTRATIVO),
   validationMiddleware(createCursadaSchema),
   cursadaController.createCursada
+);
+
+// Recurso atómico de clase: tema + asistencia completa.
+router.get('/:cursadaId/clases',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(claseCursadaParamsSchema, 'params'),
+  claseController.list
+);
+
+router.get('/:cursadaId/clases/:fecha',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(claseParamsSchema, 'params'),
+  claseController.get
+);
+
+router.put('/:cursadaId/clases/:fecha',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(claseParamsSchema, 'params'),
+  validationMiddleware(claseWriteSchema),
+  claseController.save
+);
+
+router.delete('/:cursadaId/clases/:fecha',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(claseParamsSchema, 'params'),
+  claseController.delete
 );
 
 // Detalle (admin o profesor)

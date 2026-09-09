@@ -3,7 +3,7 @@ import alumnoRepository from '../repositories/alumnoRepository.js';
 import cursadaRepository from '../repositories/cursadaRepository.js';
 import materiaRepository from '../repositories/materiaRepository.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
-import { verificarPermisoCursada } from '../utils/docenteHelper.js';
+import { verificarPermisoCursada, verificarPermisoMutacionCursada } from '../utils/docenteHelper.js';
 import { AppError } from '../utils/AppError.js';
 import { ROLES } from '../constants/roles.js';
 import { umbralTpsRegularizar } from '../utils/reglasAcademicas.js';
@@ -17,18 +17,13 @@ import type { TipoCalificacion } from '@prisma/client';
 type FilaCarga = FilaCargaCalificaciones;
 
 function formatearFechaCalendario(fecha: Date): string {
-  const dia = String(fecha.getUTCDate()).padStart(2, '0');
-  const mes = String(fecha.getUTCMonth() + 1).padStart(2, '0');
-  return `${dia}/${mes}/${fecha.getUTCFullYear()}`;
+  return fecha.toISOString().slice(0, 10);
 }
 
 function presentarFechaEvaluacion<
   T extends { tipoCalificacion: string; fechaEvaluacion: Date | null }
 >(registro: T) {
-  if (
-    registro.fechaEvaluacion !== null &&
-    (registro.tipoCalificacion === 'PARCIAL' || registro.tipoCalificacion === 'RECUPERATORIO')
-  ) {
+  if (registro.fechaEvaluacion !== null) {
     return {
       ...registro,
       fechaEvaluacion: formatearFechaCalendario(registro.fechaEvaluacion)
@@ -36,6 +31,21 @@ function presentarFechaEvaluacion<
   }
 
   return registro;
+}
+
+function presentarAlumnoPublico(registro: any) {
+  const usuario = registro.alumno?.usuario;
+  const { alumno: _alumno, alumnoId: _idAlumno, ...datosPublicos } = registro;
+  if (!usuario) return datosPublicos;
+
+  return {
+    ...datosPublicos,
+    alumno: {
+      alumnoId: usuario.idUsuario,
+      apellidoNombre: usuario.apellidoNombre,
+      dni: usuario.dni
+    }
+  };
 }
 
 class CalificacionService {
@@ -58,7 +68,15 @@ class CalificacionService {
     data: { cursadaId: number; calificaciones: FilaCarga[] },
     currentUser: any
   ) {
-    await verificarPermisoCursada(currentUser, data.cursadaId);
+    await verificarPermisoMutacionCursada(currentUser, data.cursadaId);
+
+    if (data.calificaciones.some(fila => fila.tipoCalificacion === 'EXAMEN_FINAL')) {
+      const cursada = await cursadaRepository.findById(data.cursadaId);
+      if (!cursada) throw new AppError(404, 'Cursada no encontrada');
+      if (cursada.materia?.esPromocionable !== true) {
+        throw new AppError(400, 'EXAMEN_FINAL solo está permitido para materias promocionables');
+      }
+    }
 
     const idsUsuario = [...new Set(data.calificaciones.map(fila => fila.alumnoId))];
     const alumnos = await alumnoRepository.findByUsuarioIds(idsUsuario);
@@ -87,7 +105,7 @@ class CalificacionService {
     if (!preparacion.ok) {
       const error = preparacion.error;
       if (error.tipo === 'ALUMNO_NO_ASOCIADO') {
-        throw new Error('El usuario no tiene un registro de alumno asociado');
+        throw new AppError(400, 'El usuario no tiene un registro de alumno asociado');
       }
       if (error.tipo === 'ALUMNO_NO_INSCRIPTO') {
         throw new AppError(400, `El alumno ${error.idUsuario} no está inscripto a esta cursada`);
@@ -114,7 +132,7 @@ class CalificacionService {
 
   async getByCursada(
     cursadaId: number,
-    filtros: { tipo?: string; alumnoId?: number },
+    filtros: { tipo?: string; numero?: number; alumnoId?: number },
     currentUser: any
   ) {
     await verificarPermisoCursada(currentUser, cursadaId);
@@ -127,9 +145,10 @@ class CalificacionService {
     const registros = await calificacionRepository.findByCursada(
       cursadaId,
       filtros.tipo as TipoCalificacion | undefined,
-      idAlumnoFiltro
+      idAlumnoFiltro,
+      filtros.numero
     );
-    return registros.map(presentarFechaEvaluacion);
+    return registros.map(presentarFechaEvaluacion).map(presentarAlumnoPublico);
   }
 
   async getByAlumno(alumnoUsuarioId: number, currentUser: any) {

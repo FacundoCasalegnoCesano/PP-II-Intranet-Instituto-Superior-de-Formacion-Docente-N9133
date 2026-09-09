@@ -115,6 +115,18 @@ function asistenciasSnapshot(asistencias: AsistenciaRecord[]): AsistenciaRecord[
   }));
 }
 
+function requisitosPendientes(resultado: ReturnType<typeof evaluarCursada>): string[] {
+  const pendientes: string[] = [];
+  if (resultado.asistencia.cumpleRegularidad !== true) pendientes.push('ASISTENCIA');
+  if (resultado.cumpleNotaMinima !== true) pendientes.push('PARCIALES');
+  if (resultado.tps.cumple === false) pendientes.push('TRABAJOS_PRACTICOS');
+  if (resultado.regularidadVencida) pendientes.push('REGULARIDAD');
+  if (resultado.estado === 'HABILITADO_PROMOCION' && resultado.examenFinalNota === null) {
+    pendientes.push('INSTANCIA_INTEGRADORA');
+  }
+  return pendientes;
+}
+
 class EstadoAcademicoService {
   async getTrayectoriaIntegral(alumnoUsuarioId: number, carreraId: number, currentUser: CurrentUser) {
     if (
@@ -286,6 +298,60 @@ class EstadoAcademicoService {
       anioLectivo: cursada.anioLectivo,
       periodo: cursada.periodo,
       alumnos: filas
+    };
+  }
+
+  async getResumenPorCursada(cursadaId: number, currentUser: CurrentUser) {
+    await verificarPermisoCursada(currentUser, cursadaId);
+
+    const cursada = await cursadaRepository.findById(cursadaId) as (CursadaRecord & { materia?: MateriaRecord }) | null;
+    if (!cursada) throw new AppError(404, 'Cursada no encontrada');
+
+    const materia = cursada.materia ?? await materiaRepository.findById(cursada.materiaId);
+    if (!materia) throw new AppError(404, 'Materia no encontrada');
+
+    const [inscriptos, calificaciones, asistencias] = await Promise.all([
+      calificacionRepository.getInscriptosActivosByCursada(cursadaId),
+      calificacionRepository.findAllByCursadaSimple(cursadaId),
+      asistenciaRepository.findAllByCursadaSimple(cursadaId)
+    ]);
+    const evaluadoEn = new Date();
+
+    const alumnos = inscriptos.map(inscripcion => {
+      const resultado = evaluarCursada(
+        snapshot(
+          inscripcion.alumno.idCuenta,
+          inscripcion.alumnoId,
+          cursada,
+          materia,
+          calificacionesSnapshot(calificaciones),
+          asistenciasSnapshot(asistencias)
+        ),
+        evaluadoEn
+      );
+
+      return {
+        alumno: {
+          alumnoId: inscripcion.alumno.idCuenta,
+          apellidoNombre: inscripcion.alumno.usuario.apellidoNombre,
+          dni: inscripcion.alumno.usuario.dni
+        },
+        asistencia: resultado.asistencia,
+        parcialesEfectivos: resultado.parcialesEfectivos,
+        tps: resultado.tps,
+        promedio: resultado.promedio,
+        notaMinima: materia.notaMinima ?? 6,
+        estado: resultado.estado,
+        requisitosPendientes: requisitosPendientes(resultado)
+      };
+    });
+
+    return {
+      cursadaId,
+      materia: { id: materia.id, nombre: materia.nombre },
+      anioLectivo: cursada.anioLectivo,
+      periodo: cursada.periodo,
+      alumnos
     };
   }
 

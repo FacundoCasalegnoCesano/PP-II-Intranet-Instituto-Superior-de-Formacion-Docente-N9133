@@ -5,7 +5,11 @@ import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { AppError } from '../utils/AppError.js';
 import { ROLES } from '../constants/roles.js';
 import { MINIMO_CON_JUSTIFICACION, umbralAsistencia, permiteFlexionJustificadas } from '../utils/reglasAcademicas.js';
-import { verificarPermisoCursada as verificarPermisoCursadaDocente } from '../utils/docenteHelper.js';
+import {
+  verificarPermisoCursada as verificarPermisoCursadaDocente,
+  verificarPermisoMutacionCursada
+} from '../utils/docenteHelper.js';
+import { fechaPerteneceAlAnioLectivo } from '../utils/cicloLectivo.js';
 
 interface FilaCarga {
   alumnoId: number; // id de cuenta (Usuario.idUsuario)
@@ -27,10 +31,14 @@ class AsistenciaService {
     data: { cursadaId: number; fecha: string | Date; asistencias: FilaCarga[] },
     currentUser: any
   ) {
-    await this.verificarPermisoCursada(currentUser, data.cursadaId);
+    await verificarPermisoMutacionCursada(currentUser, data.cursadaId);
 
-    const cursada = (await cursadaRepository.findById(data.cursadaId))!;
     const fechaNormalizada = new Date(new Date(data.fecha).toISOString().slice(0, 10));
+    const cursada = await cursadaRepository.findById(data.cursadaId);
+    if (!cursada) throw new AppError(404, 'Cursada no encontrada');
+    if (!fechaPerteneceAlAnioLectivo(fechaNormalizada, cursada.anioLectivo)) {
+      throw new AppError(400, 'La fecha debe pertenecer al año lectivo de la cursada');
+    }
 
     // Resolver id de cuenta → idAlumno y validar que esté inscripto a la cursada
     const filasConIdAlumno = [];
@@ -52,8 +60,6 @@ class AsistenciaService {
         observacion: fila.observacion ?? null
       });
     }
-    void cursada;
-
     const resultado = await asistenciaRepository.upsertClase(
       data.cursadaId,
       fechaNormalizada,

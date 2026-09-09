@@ -38,12 +38,18 @@ class CalificacionRepository {
     return await prisma.$transaction(operaciones);
   }
 
-  async findByCursada(cursadaId: number, tipo?: TipoCalificacion, alumnoIdFiltro?: number) {
+  async findByCursada(
+    cursadaId: number,
+    tipo?: TipoCalificacion,
+    alumnoIdFiltro?: number,
+    numero?: number
+  ) {
     return await prisma.calificacion.findMany({
       where: {
         cursadaId,
         ...(tipo ? { tipoCalificacion: tipo } : {}),
-        ...(alumnoIdFiltro ? { alumnoId: alumnoIdFiltro } : {})
+        ...(alumnoIdFiltro ? { alumnoId: alumnoIdFiltro } : {}),
+        ...(numero ? { numero } : {})
       },
       include: {
         alumno: {
@@ -109,7 +115,12 @@ class CalificacionRepository {
       },
       select: {
         alumnoId: true,
-        alumno: { select: { idCuenta: true } }
+        alumno: {
+          select: {
+            idCuenta: true,
+            usuario: { select: { idUsuario: true, apellidoNombre: true, dni: true } }
+          }
+        }
       }
     });
   }

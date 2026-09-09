@@ -8,6 +8,12 @@ const router = Router();
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
 
+// Estado calculado de todos los alumnos de una cursada, actual o histórica.
+router.get('/cursada/:cursadaId',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  estadoAcademicoController.getPorCursada
+);
+
 // Estados de todos los alumnos de una materia (admin: cualquier materia;
 // profesor: solo las que tiene asignadas — se valida en el service)
 router.get('/materia/:materiaId',

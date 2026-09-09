@@ -1,11 +1,19 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { Schema } from 'joi';
 
-export const validationMiddleware = (schema: Schema, property: 'body' | 'query' | 'params' = 'body') => {
+interface ValidationOptions {
+  stripUnknown?: boolean;
+}
+
+export const validationMiddleware = (
+  schema: Schema,
+  property: 'body' | 'query' | 'params' = 'body',
+  options: ValidationOptions = {}
+) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     const { error, value } = schema.validate(req[property], {
       abortEarly: false,
-      stripUnknown: true
+      stripUnknown: options.stripUnknown ?? true
     });
 
     if (error) {
