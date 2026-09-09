@@ -8,6 +8,8 @@ import type {
   EnrollmentPeriod,
   Prerequisite,
   Subject,
+  SubjectWritePayload,
+  SubjectYearGroup,
   TeachingAssignment,
 } from '../types/admin'
 
@@ -55,12 +57,16 @@ export const adminApi = {
 
   listSubjects(filters: SubjectListFilters = {}): Promise<PaginatedResult<Subject>> { return apiClient.getPaginated(`/materias${query(filters)}`) },
   getSubject(id: number): Promise<Subject> { return apiClient.get(`/materias/${id}`) },
-  createSubject(payload: Record<string, unknown>): Promise<Subject> { return apiClient.post('/materias', payload) },
-  updateSubject(id: number, payload: Record<string, unknown>): Promise<Subject> { return apiClient.put(`/materias/${id}`, payload) },
+  createSubject(payload: SubjectWritePayload): Promise<Subject> { return apiClient.post('/materias', payload) },
+  updateSubject(id: number, payload: SubjectWritePayload): Promise<Subject> { return apiClient.put(`/materias/${id}`, payload) },
   deactivateSubject(id: number): Promise<void> { return apiClient.delete(`/materias/${id}`) },
-  getSubjectsByYear(careerId: number): Promise<Array<{ anio: number; materias: Subject[] }>> { return apiClient.get(`/materias/carrera/${careerId}/por-anio`) },
+  getSubjectsByYear(careerId: number): Promise<SubjectYearGroup[]> { return apiClient.get(`/materias/carrera/${careerId}/por-anio`) },
   getPrerequisites(id: number): Promise<Prerequisite[]> { return apiClient.get(`/materias/${id}/correlatividades`) },
-  addPrerequisite(id: number, payload: { materiaRequeridaId: number; tipoRequisito: 'OBLIGATORIA'; aplicaCursado?: boolean; aplicaRendir?: boolean }): Promise<Prerequisite> { return apiClient.post(`/materias/${id}/correlatividades`, payload) },
+  addPrerequisite(id: number, payload: { materiaRequeridaId: number }): Promise<Prerequisite> {
+    return apiClient.post(`/materias/${id}/correlatividades`, {
+      materiaRequeridaId: payload.materiaRequeridaId,
+    })
+  },
   removePrerequisite(id: number): Promise<void> { return apiClient.delete(`/materias/correlatividades/${id}`) },
   getTeachingAssignments(id: number): Promise<TeachingAssignment[]> { return apiClient.get(`/materias/${id}/profesores`) },
   assignTeacher(id: number, profesorId: number): Promise<TeachingAssignment> { return apiClient.post(`/materias/${id}/profesores`, { profesorId }) },

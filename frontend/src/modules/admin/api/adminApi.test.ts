@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { adminApi } from './adminApi'
+import type { SubjectWritePayload } from '../types/admin'
 
 vi.mock('@/core/api/client', () => ({
   apiClient: {
@@ -33,5 +34,48 @@ describe('adminApi', () => {
     await adminApi.removeUserRole(7, 'ALUMNO')
     expect(apiClient.put).toHaveBeenCalledWith('/users/7/role', expect.objectContaining({ rol: 'ALUMNO', alumno: expect.any(Object) }))
     expect(apiClient.delete).toHaveBeenCalledWith('/users/7/role/ALUMNO')
+  })
+
+  it('loads active subject options grouped by year', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue([{ anio: 1, cantidad: 1, materias: [] }])
+
+    await adminApi.getSubjectsByYear(3)
+
+    expect(apiClient.get).toHaveBeenCalledWith('/materias/carrera/3/por-anio')
+  })
+
+  it('sends prerequisite ids without legacy flags or requirement types', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({})
+    vi.mocked(apiClient.put).mockResolvedValue({})
+    const payload: SubjectWritePayload = {
+      nombre: 'Didáctica General',
+      carreraId: 3,
+      cursoAnio: 2,
+      cargaHoraria: 64,
+      tipoEspacio: 'MATERIA',
+      correlativasIds: [3, 4],
+    }
+
+    await adminApi.createSubject(payload)
+    await adminApi.updateSubject(9, payload)
+
+    expect(apiClient.post).toHaveBeenCalledWith('/materias', payload)
+    expect(apiClient.put).toHaveBeenCalledWith('/materias/9', payload)
+    expect(payload).not.toHaveProperty('tipoRequisito')
+    expect(payload).not.toHaveProperty('aplicaCursado')
+    expect(payload).not.toHaveProperty('aplicaRendir')
+  })
+
+  it('sends only materiaRequeridaId through the individual prerequisite endpoint', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({})
+
+    await adminApi.addPrerequisite(9, {
+      materiaRequeridaId: 3,
+      tipoRequisito: 'OBLIGATORIA',
+    } as any)
+
+    expect(apiClient.post).toHaveBeenCalledWith('/materias/9/correlatividades', {
+      materiaRequeridaId: 3,
+    })
   })
 })

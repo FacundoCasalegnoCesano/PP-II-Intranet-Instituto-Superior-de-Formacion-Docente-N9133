@@ -32,6 +32,20 @@ test('CURSAR devuelve cumplimiento cuando todas las obligatorias están satisfec
   });
 });
 
+test('CURSAR ignora una correlativa que solo aplica al rendir', () => {
+  const resultado = evaluarCorrelatividades({
+    modo: 'CURSAR',
+    correlatividades: [correlatividad({ aplicaCursado: false, aplicaRendir: true })],
+    materiasCumplidas: new Set()
+  });
+
+  assert.deepEqual(resultado, {
+    cumple: true,
+    primerError: null,
+    pendientes: []
+  });
+});
+
 test('CURSAR devuelve el primer error tipado y conserva los pendientes en orden', () => {
   const resultado = evaluarCorrelatividades({
     modo: 'CURSAR',
@@ -83,6 +97,41 @@ test('RENDIR evalúa únicamente las obligatorias marcadas con aplicaRendir', ()
   });
 
   assert.equal(resultado.cumple, true);
+});
+
+test('RENDIR bloquea hasta aprobar todas las correlativas aplicables', () => {
+  const resultado = evaluarCorrelatividades({
+    modo: 'RENDIR',
+    correlatividades: [
+      correlatividad({
+        materiaRequeridaId: 11,
+        materiaRequerida: { id: 11, nombre: 'Didáctica' }
+      }),
+      correlatividad({
+        materiaRequeridaId: 12,
+        materiaRequerida: { id: 12, nombre: 'Pedagogía' }
+      })
+    ],
+    materiasCumplidas: new Set([11])
+  });
+
+  assert.equal(resultado.cumple, false);
+  if (resultado.cumple) return;
+  assert.equal(resultado.primerError.materiaRequeridaId, 12);
+});
+
+test('MOSTRAR_DISPONIBILIDAD ignora una correlativa que solo aplica al rendir', () => {
+  const resultado = evaluarCorrelatividades({
+    modo: 'MOSTRAR_DISPONIBILIDAD',
+    correlatividades: [correlatividad({ aplicaCursado: false, aplicaRendir: true })],
+    materiasCumplidas: new Set()
+  });
+
+  assert.deepEqual(resultado, {
+    cumple: true,
+    primerError: null,
+    pendientes: []
+  });
 });
 
 test('MOSTRAR_DISPONIBILIDAD conserva orden y duplicados de obligatorias pendientes', () => {

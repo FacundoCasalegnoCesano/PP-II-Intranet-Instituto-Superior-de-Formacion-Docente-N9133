@@ -7,8 +7,9 @@ import AdminState from '../components/AdminState.vue'
 import AdminTable from '../components/AdminTable.vue'
 import { adminApi } from '../api/adminApi'
 import { subjectSchema } from '../schemas/adminSchemas'
-import type { Career, Prerequisite, Subject, TeachingAssignment } from '../types/admin'
+import type { Career, Prerequisite, Subject, SubjectWritePayload, SubjectYearGroup, TeachingAssignment } from '../types/admin'
 import { useFeedback } from '@/ui/feedback'
+import { academicLabel } from '@/core/presentation/academicLabels'
 
 type TeacherOption = { idUsuario: number; apellidoNombre: string }
 
@@ -21,12 +22,24 @@ const selected = ref<Subject | null>(null)
 const prerequisites = ref<Prerequisite[]>([])
 const assignments = ref<TeachingAssignment[]>([])
 const subjectOptions = ref<Subject[]>([])
+const prerequisiteGroups = ref<SubjectYearGroup[]>([])
 const teachers = ref<TeacherOption[]>([])
 const newPrerequisiteId = ref(0)
 const newTeacherId = ref(0)
 const loading = ref(false)
 const error = ref('')
 const saving = ref(false)
+const careersLoading = ref(false)
+const careersReady = ref(false)
+const formReady = ref(true)
+const prerequisiteLoading = ref(false)
+const prerequisiteError = ref('')
+const careerOptionsError = ref('')
+const careerChangeNotice = ref('')
+const removalWarning = ref('')
+const hasCorrelatividades = ref(false)
+const hydratingEdit = ref(false)
+let prerequisiteRequestVersion = 0
 const search = ref(String(route.query.search ?? ''))
 const careerFilter = ref(String(route.query.carreraId ?? ''))
 const pagination = ref({ page: 1, limit: 20, total: 0, totalPages: 0 })
@@ -41,6 +54,7 @@ const form = reactive<Record<string, any>>({
   modalidad: 'PRESENCIAL',
   periodo: 'ANUAL',
   regimen: 'REGULAR_PRESENCIAL_SIN_PROMOCION',
+  correlativasIds: [] as number[],
 })
 const fieldError = ref('')
 
@@ -48,13 +62,81 @@ const mode = computed(() => String(route.name))
 const isList = computed(() => mode.value === 'admin-subjects')
 const isDetail = computed(() => mode.value === 'admin-subject-detail')
 const id = computed(() => Number(route.params.id))
+const isForm = computed(() => !isList.value && !isDetail.value)
+const canSave = computed(() => isForm.value
+  && careersReady.value
+  && formReady.value
+  && !saving.value
+  && (!hasCorrelatividades.value || (!prerequisiteLoading.value && !prerequisiteError.value)))
 
 async function loadCareers(): Promise<void> {
+  careersLoading.value = true
+  careersReady.value = false
+  careerOptionsError.value = ''
   try {
     careers.value = (await adminApi.listCareers({ limit: 100 })).data
+    careersReady.value = true
   } catch {
     careers.value = []
+    careerOptionsError.value = 'No pudimos cargar las carreras.'
+  } finally {
+    careersLoading.value = false
   }
+}
+
+function normalizedGroups(groups: SubjectYearGroup[]): SubjectYearGroup[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      materias: group.materias.filter((subject) => subject.activo && subject.id !== id.value),
+      cantidad: group.materias.filter((subject) => subject.activo && subject.id !== id.value).length,
+    }))
+    .filter((group) => group.materias.length > 0)
+}
+
+async function loadPrerequisiteOptions(careerId: number): Promise<boolean> {
+  const requestVersion = ++prerequisiteRequestVersion
+  prerequisiteLoading.value = true
+  prerequisiteError.value = ''
+  try {
+    const groups = await adminApi.getSubjectsByYear(careerId)
+    if (requestVersion !== prerequisiteRequestVersion) return true
+    prerequisiteGroups.value = normalizedGroups(groups)
+    return true
+  } catch {
+    if (requestVersion !== prerequisiteRequestVersion) return true
+    prerequisiteGroups.value = []
+    prerequisiteError.value = 'No pudimos cargar las materias disponibles para correlatividades.'
+    return false
+  } finally {
+    if (requestVersion === prerequisiteRequestVersion) prerequisiteLoading.value = false
+  }
+}
+
+function clearPrerequisitesAfterCareerChange(): void {
+  form.correlativasIds = []
+  hasCorrelatividades.value = false
+  prerequisiteGroups.value = []
+  careerChangeNotice.value = 'Se limpiaron las correlatividades porque cambiaste de carrera.'
+  removalWarning.value = ''
+}
+
+function toggleCorrelatividades(event: Event): void {
+  const enabled = (event.target as HTMLInputElement).checked
+  hasCorrelatividades.value = enabled
+  removalWarning.value = !enabled && mode.value === 'admin-subject-edit'
+    ? 'Al guardar, se eliminarán todas las correlatividades.'
+    : ''
+  if (enabled && form.carreraId) void loadPrerequisiteOptions(Number(form.carreraId))
+}
+
+function togglePrerequisite(subjectId: number): void {
+  const ids = form.correlativasIds as number[]
+  form.correlativasIds = ids.includes(subjectId) ? ids.filter((idValue) => idValue !== subjectId) : [...ids, subjectId]
+}
+
+function isPrerequisiteSelected(subjectId: number): boolean {
+  return (form.correlativasIds as number[]).includes(subjectId)
 }
 
 async function loadList(): Promise<void> {
@@ -116,23 +198,63 @@ function reset(): void {
     modalidad: 'PRESENCIAL',
     periodo: 'ANUAL',
     regimen: 'REGULAR_PRESENCIAL_SIN_PROMOCION',
+    correlativasIds: [],
   })
+  formReady.value = mode.value !== 'admin-subject-edit'
+  hasCorrelatividades.value = false
+  prerequisiteGroups.value = []
+  prerequisiteError.value = ''
+  careerChangeNotice.value = ''
+  removalWarning.value = ''
   fieldError.value = ''
   if (mode.value === 'admin-subject-edit') {
-    void adminApi.getSubject(id.value).then((subject) => Object.assign(form, subject, { carreraId: subject.carreraId ?? subject.carrera?.id, cursoAnio: subject.curso?.anio ?? 1 }))
+    void loadEditForm()
+  }
+}
+
+async function loadEditForm(): Promise<void> {
+  hydratingEdit.value = true
+  formReady.value = false
+  let loaded = false
+  try {
+    const [subject, currentPrerequisites] = await Promise.all([
+      adminApi.getSubject(id.value),
+      adminApi.getPrerequisites(id.value),
+    ])
+    const careerId = subject.carreraId ?? subject.carrera?.id ?? 0
+    const correlativasIds = currentPrerequisites.map((item) => item.materiaRequeridaId)
+    Object.assign(form, subject, {
+      carreraId: careerId,
+      cursoAnio: subject.curso?.anio ?? 1,
+      descripcion: subject.descripcion ?? '',
+      horasCatedra: subject.horasCatedra ?? '',
+      modalidad: subject.modalidad ?? 'PRESENCIAL',
+      periodo: subject.periodo ?? 'ANUAL',
+      regimen: subject.regimen ?? 'REGULAR_PRESENCIAL_SIN_PROMOCION',
+      correlativasIds,
+    })
+    hasCorrelatividades.value = correlativasIds.length > 0
+    loaded = careerId ? await loadPrerequisiteOptions(careerId) : true
+  } catch {
+    error.value = 'No pudimos cargar la materia y sus correlatividades.'
+    prerequisiteGroups.value = []
+  } finally {
+    hydratingEdit.value = false
+    formReady.value = loaded
   }
 }
 
 async function save(): Promise<void> {
+  if (!canSave.value) return
   fieldError.value = ''
-  const result = subjectSchema.safeParse(form)
+  const result = subjectSchema.safeParse({ ...form, correlativasIds: hasCorrelatividades.value ? form.correlativasIds : [] })
   if (!result.success) {
     fieldError.value = result.error.issues[0]?.message ?? 'Revisá los datos.'
     return
   }
   saving.value = true
   try {
-    const payload = { ...result.data, cursoAnio: Number(result.data.cursoAnio) }
+    const payload: SubjectWritePayload = { ...result.data, cursoAnio: Number(result.data.cursoAnio), correlativasIds: result.data.correlativasIds ?? [] }
     if (mode.value === 'admin-subject-create') await adminApi.createSubject(payload)
     else await adminApi.updateSubject(id.value, payload)
     feedback.success(mode.value === 'admin-subject-create' ? 'Materia creada.' : 'Materia actualizada.')
@@ -158,7 +280,7 @@ async function deactivate(): Promise<void> {
 async function addPrerequisite(): Promise<void> {
   if (!selected.value || !newPrerequisiteId.value) return
   try {
-    await adminApi.addPrerequisite(selected.value.id, { materiaRequeridaId: newPrerequisiteId.value, tipoRequisito: 'OBLIGATORIA' })
+    await adminApi.addPrerequisite(selected.value.id, { materiaRequeridaId: newPrerequisiteId.value })
     newPrerequisiteId.value = 0
     feedback.success('Correlatividad agregada.')
     await loadDetail()
@@ -208,6 +330,12 @@ onMounted(() => {
   else reset()
 })
 
+watch(() => form.carreraId, (careerId, previousCareerId) => {
+  if (hydratingEdit.value) return
+  if (previousCareerId && careerId !== previousCareerId) clearPrerequisitesAfterCareerChange()
+  if (careerId) void loadPrerequisiteOptions(Number(careerId))
+})
+
 watch(() => route.fullPath, () => {
   if (isList.value) void loadList()
   else if (isDetail.value) void loadDetail()
@@ -236,7 +364,40 @@ watch(() => route.fullPath, () => {
       <AdminState :loading="loading" :error="error" @retry="loadDetail"><section v-if="selected" class="mt-7 grid gap-5 lg:grid-cols-[1fr_20rem]"><div class="rounded-xl border border-[var(--color-border)] bg-white p-6"><div class="flex items-start justify-between gap-4"><div><h2 class="text-2xl font-semibold">{{ selected.nombre }}</h2><p class="text-[var(--color-graphite)]">{{ selected.carrera?.nombre ?? 'Carrera' }} · {{ selected.curso?.anio ?? '—' }}° año · {{ selected.cargaHoraria }} h</p></div><div class="flex gap-2"><RouterLink :to="{ name: 'admin-subject-edit', params: { id: selected.id } }" class="min-h-10 rounded-lg bg-[var(--color-brand)] px-4 py-2 font-semibold text-white">Editar</RouterLink><button type="button" class="min-h-10 rounded-lg border border-[var(--color-border)] px-4 py-2" @click="deactivate">Desactivar</button></div></div><p class="mt-5 whitespace-pre-wrap">{{ selected.descripcion || 'Sin descripción.' }}</p><h3 class="mt-7 text-xl font-semibold">Correlatividades obligatorias</h3><form class="mt-3 flex flex-wrap gap-2" @submit.prevent="addPrerequisite"><label class="sr-only" for="new-prerequisite">Materia requerida</label><select id="new-prerequisite" v-model.number="newPrerequisiteId" class="admin-input min-w-0 flex-1"><option :value="0">Agregar materia requerida</option><option v-for="subject in subjectOptions" :key="subject.id" :value="subject.id">{{ subject.nombre }}</option></select><button type="submit" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-4 text-sm font-semibold text-white" :disabled="!newPrerequisiteId">Agregar</button></form><ul v-if="prerequisites.length" class="mt-3 space-y-2"><li v-for="item in prerequisites" :key="item.id" class="flex items-center justify-between rounded-lg bg-[#f6f7f4] p-3"><span>{{ item.materiaRequerida.nombre }}</span><button type="button" class="text-sm text-[var(--color-brand)]" @click="removePrerequisite(item)">Quitar</button></li></ul><p v-else class="mt-2 text-sm text-[var(--color-graphite)]">No hay correlativas.</p></div><aside class="rounded-xl border border-[var(--color-border)] bg-white p-6"><h3 class="font-semibold">Designaciones docentes</h3><form class="mt-3 flex flex-wrap gap-2" @submit.prevent="addTeacher"><label class="sr-only" for="new-teacher">Docente</label><select id="new-teacher" v-model.number="newTeacherId" class="admin-input min-w-0 flex-1"><option :value="0">Designar docente</option><option v-for="teacher in teachers" :key="teacher.idUsuario" :value="teacher.idUsuario">{{ teacher.apellidoNombre }}</option></select><button type="submit" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-4 text-sm font-semibold text-white" :disabled="!newTeacherId">Agregar</button></form><ul v-if="assignments.length" class="mt-3 space-y-2"><li v-for="item in assignments" :key="item.id" class="flex items-center justify-between rounded-lg bg-[#f6f7f4] p-3 text-sm"><span>{{ item.profesor.apellidoNombre }}</span><button type="button" class="text-[var(--color-brand)]" @click="removeTeacher(item)">Quitar</button></li></ul><p v-else class="mt-2 text-sm text-[var(--color-graphite)]">No hay docentes designados.</p></aside></section></AdminState>
     </template>
 
-    <template v-else><section class="mt-7 max-w-3xl rounded-xl border border-[var(--color-border)] bg-white p-6"><h2 class="text-2xl font-semibold">{{ mode === 'admin-subject-create' ? 'Nueva materia' : 'Editar materia' }}</h2><form class="mt-5 grid gap-4 sm:grid-cols-2" @submit.prevent="save"><label class="font-semibold sm:col-span-2">Nombre<input v-model="form.nombre" class="admin-input" /></label><label class="font-semibold">Carrera<select v-model.number="form.carreraId" class="admin-input"><option :value="0">Seleccionar</option><option v-for="career in careers" :key="career.id" :value="career.id">{{ career.nombre }}</option></select></label><label class="font-semibold">Año del plan<input v-model.number="form.cursoAnio" type="number" min="1" class="admin-input" /></label><label class="font-semibold">Carga horaria<input v-model.number="form.cargaHoraria" type="number" min="1" class="admin-input" /></label><label class="font-semibold">Tipo de espacio<select v-model="form.tipoEspacio" class="admin-input"><option>MATERIA</option><option>SEMINARIO</option><option>TALLER</option><option>TALLER_PRACTICA</option></select></label><label class="font-semibold">Modalidad<select v-model="form.modalidad" class="admin-input"><option>PRESENCIAL</option><option>SEMIPRESENCIAL</option><option>LIBRE</option></select></label><label class="font-semibold">Período<select v-model="form.periodo" class="admin-input"><option>ANUAL</option><option>PRIMER_CUATRIMESTRE</option><option>SEGUNDO_CUATRIMESTRE</option></select></label><label class="font-semibold sm:col-span-2">Descripción<textarea v-model="form.descripcion" class="admin-input min-h-24"></textarea></label><p v-if="fieldError" class="field-error sm:col-span-2" role="alert">{{ fieldError }}</p><div class="flex gap-3 sm:col-span-2"><button type="submit" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-5 font-semibold text-white" :disabled="saving">{{ saving ? 'Guardando…' : 'Guardar materia' }}</button><RouterLink :to="{ name: 'admin-subjects' }" class="min-h-11 rounded-lg border border-[var(--color-border)] px-5 py-2.5">Cancelar</RouterLink></div></form></section></template>
+    <template v-else>
+        <section class="mt-7 max-w-3xl rounded-xl border border-[var(--color-border)] bg-white p-6" :aria-busy="careersLoading || hydratingEdit || prerequisiteLoading">
+        <h2 class="text-2xl font-semibold">{{ mode === 'admin-subject-create' ? 'Nueva materia' : 'Editar materia' }}</h2>
+        <p v-if="!careersReady || hydratingEdit || prerequisiteLoading" class="mt-3 text-sm text-[var(--color-graphite)]" role="status">Cargando opciones…</p>
+        <form class="mt-5 grid gap-4 sm:grid-cols-2" @submit.prevent="save">
+          <label class="font-semibold sm:col-span-2">Nombre<input v-model="form.nombre" class="admin-input" /></label>
+          <label class="font-semibold">Carrera<select v-model.number="form.carreraId" class="admin-input"><option :value="0">Seleccionar</option><option v-for="career in careers" :key="career.id" :value="career.id">{{ career.nombre }}</option></select></label>
+          <div v-if="careerOptionsError" class="sm:col-span-2"><p class="field-error" role="alert">{{ careerOptionsError }}</p><button type="button" class="mt-2 min-h-11 rounded-lg border border-[var(--color-brand)] px-4 font-semibold text-[var(--color-brand)]" @click="loadCareers">Reintentar carreras</button></div>
+          <label class="font-semibold">Año del plan<input v-model.number="form.cursoAnio" type="number" min="1" class="admin-input" /></label>
+          <label class="font-semibold">Carga horaria<input v-model.number="form.cargaHoraria" type="number" min="1" class="admin-input" /></label>
+          <label class="font-semibold">Tipo de espacio<select v-model="form.tipoEspacio" class="admin-input"><option value="MATERIA">{{ academicLabel('MATERIA') }}</option><option value="SEMINARIO">{{ academicLabel('SEMINARIO') }}</option><option value="TALLER">{{ academicLabel('TALLER') }}</option><option value="TALLER_PRACTICA">{{ academicLabel('TALLER_PRACTICA') }}</option></select></label>
+          <label class="font-semibold">Modalidad<select v-model="form.modalidad" class="admin-input"><option value="PRESENCIAL">{{ academicLabel('PRESENCIAL') }}</option><option value="SEMIPRESENCIAL">{{ academicLabel('SEMIPRESENCIAL') }}</option><option value="LIBRE">{{ academicLabel('LIBRE') }}</option></select></label>
+          <label class="font-semibold">Período<select v-model="form.periodo" class="admin-input"><option value="ANUAL">{{ academicLabel('ANUAL') }}</option><option value="PRIMER_CUATRIMESTRE">{{ academicLabel('PRIMER_CUATRIMESTRE') }}</option><option value="SEGUNDO_CUATRIMESTRE">{{ academicLabel('SEGUNDO_CUATRIMESTRE') }}</option></select></label>
+          <fieldset class="sm:col-span-2 rounded-lg border border-[var(--color-border)] p-4">
+            <legend class="px-1 font-semibold">Correlatividades</legend>
+            <label class="flex min-h-11 items-center gap-3"><input v-model="hasCorrelatividades" type="checkbox" class="h-5 w-5" @change="toggleCorrelatividades" />Tiene correlatividades</label>
+            <p v-if="careerChangeNotice" class="mt-2 text-sm text-[var(--color-graphite)]" role="status" aria-live="polite">{{ careerChangeNotice }}</p>
+            <p v-if="removalWarning" class="mt-2 text-sm text-[#a31118]" role="alert">{{ removalWarning }}</p>
+            <p v-if="hasCorrelatividades && !form.carreraId" class="mt-2 text-sm text-[var(--color-graphite)]">Seleccioná una carrera para ver las materias disponibles.</p>
+            <p v-if="prerequisiteError" class="mt-2 text-sm text-[#a31118]" role="alert">{{ prerequisiteError }}</p>
+            <div v-if="hasCorrelatividades && !prerequisiteLoading && !prerequisiteError" class="mt-3 space-y-3">
+              <div v-for="group in prerequisiteGroups" :key="String(group.anio)" class="rounded-lg bg-[#f6f7f4] p-3">
+                <h3 class="font-semibold">{{ group.anio === null ? 'Sin año' : `${group.anio}° año` }}</h3>
+                <label v-for="subject in group.materias" :key="subject.id" class="mt-2 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" class="h-5 w-5" :checked="isPrerequisiteSelected(subject.id)" @change="togglePrerequisite(subject.id)" /><span>{{ subject.nombre }}</span></label>
+              </div>
+              <p v-if="!prerequisiteGroups.length" class="text-sm text-[var(--color-graphite)]">No hay materias activas disponibles.</p>
+            </div>
+          </fieldset>
+          <label class="font-semibold sm:col-span-2">Descripción<textarea v-model="form.descripcion" class="admin-input min-h-24"></textarea></label>
+          <p v-if="fieldError" class="field-error sm:col-span-2" role="alert">{{ fieldError }}</p>
+          <div class="flex gap-3 sm:col-span-2"><button type="submit" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-5 font-semibold text-white" :disabled="!canSave">{{ saving ? 'Guardando…' : 'Guardar materia' }}</button><RouterLink :to="{ name: 'admin-subjects' }" class="min-h-11 rounded-lg border border-[var(--color-border)] px-5 py-2.5">Cancelar</RouterLink></div>
+        </form>
+      </section>
+    </template>
   </main>
 </template>
 

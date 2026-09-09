@@ -4,7 +4,7 @@ import { afterEach, test } from 'node:test';
 import materiaService from '../src/services/materiaService.js';
 import materiaRepository from '../src/repositories/materiaRepository.js';
 import carreraRepository from '../src/repositories/carreraRepository.js';
-import { createMateriaSchema } from '../src/validations/materiaValidation.js';
+import { createMateriaSchema, updateMateriaSchema } from '../src/validations/materiaValidation.js';
 
 const restorations: Array<() => void> = [];
 
@@ -29,11 +29,16 @@ function materiaInput(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
+function stubTransaction() {
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({}));
+}
+
 afterEach(() => {
   while (restorations.length > 0) restorations.pop()?.();
 });
 
 test('permite materias homónimas en carreras distintas y guarda el nombre normalizado', async () => {
+  stubTransaction();
   replaceMethod(carreraRepository, 'findById', async () => ({ id: 2, nombre: 'Profesorado B', duracionAnios: 4 }));
   replaceMethod(materiaRepository, 'findByNombre', async () => ({ id: 1, carreraId: 1, nombre: 'Lengua' }));
   replaceMethod(materiaRepository, 'findByCareerAndName', async () => null);
@@ -43,6 +48,7 @@ test('permite materias homónimas en carreras distintas y guarda el nombre norma
     persisted = data;
     return { id: 9, ...data };
   });
+  replaceMethod(materiaRepository, 'findById', async (id: number) => ({ id, carreraId: 2 }));
 
   await materiaService.createMateria(materiaInput({ nombre: '  Lengua   y   Literatura  ' }));
 
@@ -53,6 +59,7 @@ test('permite materias homónimas en carreras distintas y guarda el nombre norma
 });
 
 test('rechaza el mismo nombre normalizado dentro de una carrera', async () => {
+  stubTransaction();
   replaceMethod(carreraRepository, 'findById', async () => ({ id: 2, nombre: 'Profesorado B', duracionAnios: 4 }));
   replaceMethod(materiaRepository, 'findByNombre', async () => null);
   replaceMethod(materiaRepository, 'findByCareerAndName', async () => ({ id: 8, carreraId: 2, nombre: 'Lengua' }));
@@ -70,6 +77,7 @@ test('rechaza el mismo nombre normalizado dentro de una carrera', async () => {
 });
 
 test('cursoAnio es preferido, debe estar dentro de la duración y conserva cursoId heredado', async () => {
+  stubTransaction();
   const valid = createMateriaSchema.validate(materiaInput()).error;
   assert.equal(valid, undefined);
   assert.ok(createMateriaSchema.validate(materiaInput({ cursoAnio: undefined, cursoId: undefined })).error);
@@ -84,6 +92,13 @@ test('cursoAnio es preferido, debe estar dentro de la duración y conserva curso
     materiaService.createMateria(materiaInput({ cursoAnio: 5 })),
     (error: any) => error.statusCode === 400 && /duraci/i.test(error.message)
   );
+});
+
+test('correlativasIds admite cero o varias correlativas y rechaza duplicados', () => {
+  assert.equal(createMateriaSchema.validate(materiaInput({ correlativasIds: [] })).error, undefined);
+  assert.equal(createMateriaSchema.validate(materiaInput({ correlativasIds: [2, 3] })).error, undefined);
+  assert.equal(updateMateriaSchema.validate({ correlativasIds: [] }).error, undefined);
+  assert.ok(createMateriaSchema.validate(materiaInput({ correlativasIds: [2, 2] })).error);
 });
 
 test('rechaza correlativas de otra carrera y correlativas duplicadas', async () => {
@@ -131,4 +146,33 @@ test('rechaza ciclos directos o transitivos entre correlatividades', async () =>
     (error: any) => error.statusCode === 400 && /ciclo/i.test(error.message)
   );
   assert.equal(persisted, false);
+});
+
+test('la ruta individual ignora flags del cliente y delega solo la materia requerida', async () => {
+  replaceMethod(materiaRepository, 'findById', async (id: number) => ({
+    id,
+    carreraId: 2,
+    nombre: `Materia ${id}`,
+    activo: true
+  }));
+  replaceMethod(materiaRepository, 'findCorrelativity', async () => null);
+  replaceMethod(materiaRepository, 'getCorrelativityEdges', async () => []);
+  let persisted: any;
+  replaceMethod(materiaRepository, 'addCorrelatividad', async (data: any) => {
+    persisted = data;
+    return data;
+  });
+
+  await materiaService.addCorrelatividad({
+    materiaOrigenId: 1,
+    materiaRequeridaId: 2,
+    tipoRequisito: 'OBLIGATORIA',
+    aplicaCursado: true,
+    aplicaRendir: false
+  });
+
+  assert.deepEqual(persisted, {
+    materiaOrigenId: 1,
+    materiaRequeridaId: 2
+  });
 });

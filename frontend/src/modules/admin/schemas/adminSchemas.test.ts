@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adminUserCreateSchema, adminUserSchema } from './adminSchemas'
+import { adminUserCreateSchema, adminUserSchema, subjectSchema } from './adminSchemas'
 
 const common = {
   apellidoNombre: 'Ada Lovelace',
@@ -25,5 +25,23 @@ describe('admin user schemas', () => {
 
   it('allows an empty CUIL on edits so omitted values are not sent', () => {
     expect(adminUserSchema.safeParse({ ...common, cuil: '' }).success).toBe(true)
+  })
+})
+
+describe('subject schema', () => {
+  const validSubject = {
+    nombre: 'Didáctica General',
+    carreraId: 3,
+    cursoAnio: 2,
+    cargaHoraria: 64,
+    tipoEspacio: 'MATERIA',
+  }
+
+  it('preserves selected prerequisite ids', () => {
+    expect(subjectSchema.parse({ ...validSubject, correlativasIds: [3, 4] }).correlativasIds).toEqual([3, 4])
+  })
+
+  it('rejects duplicate prerequisite ids', () => {
+    expect(() => subjectSchema.parse({ ...validSubject, correlativasIds: [3, 3] })).toThrow()
   })
 })

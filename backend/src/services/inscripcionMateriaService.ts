@@ -90,7 +90,8 @@ class InscripcionMateriaService {
 
   async verificarCorrelatividades(idAlumno: number, materiaId: number) {
     // Obtener correlatividades de la materia
-    const correlatividades = await materiaRepository.getCorrelatividades(materiaId);
+    const correlatividades = (await materiaRepository.getCorrelatividades(materiaId))
+      .filter(correlatividad => correlatividad.aplicaCursado);
 
     if (correlatividades.length === 0) {
       return; // No hay correlatividades, todo ok

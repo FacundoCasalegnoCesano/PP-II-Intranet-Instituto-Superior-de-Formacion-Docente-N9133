@@ -58,7 +58,7 @@ export function evaluarCorrelatividades<
 ): ResultadoCorrelatividades<TMateria> {
   const correlatividades = input.modo === 'RENDIR'
     ? input.correlatividades.filter(correlatividad => correlatividad.aplicaRendir)
-    : input.correlatividades;
+    : input.correlatividades.filter(correlatividad => correlatividad.aplicaCursado);
 
   let primerError: CorrelatividadError | null = null;
   const pendientes: CorrelatividadPendiente<TMateria>[] = [];

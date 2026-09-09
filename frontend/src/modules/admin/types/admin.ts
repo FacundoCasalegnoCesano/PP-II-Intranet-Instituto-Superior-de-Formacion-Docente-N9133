@@ -31,9 +31,9 @@ export interface Subject {
   cargaHoraria: number
   horasCatedra?: string | null
   tipoEspacio: string
-  modalidad?: string
-  periodo?: string
-  regimen?: string
+  modalidad?: string | null
+  periodo?: string | null
+  regimen?: string | null
   carreraId?: number
   carrera?: Career
   cursoId?: number | null
@@ -41,6 +41,26 @@ export interface Subject {
   activo: boolean
   correlatividades?: Prerequisite[]
   profesorMaterias?: TeachingAssignment[]
+}
+
+export interface SubjectWritePayload {
+  nombre: string
+  carreraId: number
+  cursoAnio: number
+  cargaHoraria: number
+  tipoEspacio: string
+  correlativasIds?: number[]
+  descripcion?: string
+  horasCatedra?: string
+  modalidad?: string
+  periodo?: string
+  regimen?: string
+}
+
+export interface SubjectYearGroup {
+  anio: number | null
+  cantidad: number
+  materias: Subject[]
 }
 
 export interface Prerequisite {

@@ -1,4 +1,5 @@
 import materiaRepository from '../repositories/materiaRepository.js';
+import type { Prisma } from '@prisma/client';
 import carreraRepository from '../repositories/carreraRepository.js';
 import cursadaRepository from '../repositories/cursadaRepository.js';
 import profesorMateriaRepository from '../repositories/profesorMateriaRepository.js';
@@ -36,15 +37,16 @@ class MateriaService {
 
   private async resolveCourseId(
     carrera: { id: number; nombre: string; duracionAnios: number },
-    data: { cursoAnio?: number; cursoId?: number | null }
+    data: { cursoAnio?: number; cursoId?: number | null },
+    tx?: Prisma.TransactionClient
   ): Promise<number> {
     if (data.cursoAnio !== undefined) {
       this.validateCourseYear(data.cursoAnio, carrera.duracionAnios);
-      return await materiaRepository.resolveCursoId(carrera.id, carrera.nombre, data.cursoAnio);
+      return await materiaRepository.resolveCursoId(carrera.id, carrera.nombre, data.cursoAnio, tx);
     }
 
     if (data.cursoId !== undefined && data.cursoId !== null) {
-      const curso = await materiaRepository.findCourseById(data.cursoId);
+      const curso = await materiaRepository.findCourseById(data.cursoId, tx);
       if (!curso) throw new AppError(400, 'Curso no encontrado');
       this.validateCourseYear(curso.anio, carrera.duracionAnios);
       return curso.id;
@@ -77,6 +79,91 @@ class MateriaService {
     return false;
   }
 
+  private async validarConjuntoCorrelativas(
+    materiaOrigenId: number,
+    carreraId: number,
+    correlativasIds: number[],
+    tx: Prisma.TransactionClient
+  ): Promise<void> {
+    if (new Set(correlativasIds).size !== correlativasIds.length) {
+      throw new AppError(400, 'No se pueden repetir correlativas');
+    }
+
+    const requeridas = await Promise.all(
+      correlativasIds.map(id => materiaRepository.findById(id, tx))
+    );
+    for (let i = 0; i < correlativasIds.length; i += 1) {
+      const requerida = requeridas[i];
+      const requeridaId = correlativasIds[i];
+      if (!requerida) throw new AppError(400, 'Materia correlativa no encontrada');
+      if (requerida.activo === false) {
+        throw new AppError(400, 'No se puede usar una materia inactiva como correlativa');
+      }
+      if (requeridaId === materiaOrigenId) {
+        throw new AppError(400, 'Una materia no puede ser correlativa de sí misma');
+      }
+      if (requerida.carreraId !== carreraId) {
+        throw new AppError(400, 'Las correlatividades deben pertenecer a la misma carrera');
+      }
+    }
+
+    const edges = (await materiaRepository.getCorrelativityEdges(carreraId, tx))
+      .filter(edge => edge.materiaOrigenId !== materiaOrigenId);
+    const candidateEdges = [
+      ...edges,
+      ...correlativasIds.map(materiaRequeridaId => ({ materiaOrigenId, materiaRequeridaId }))
+    ];
+    for (const materiaRequeridaId of correlativasIds) {
+      if (this.createsCorrelationCycle(materiaOrigenId, materiaRequeridaId, candidateEdges)) {
+        throw new AppError(400, 'La correlatividad generaría un ciclo');
+      }
+    }
+  }
+
+  private async validarGrafoFinalMateria(
+    materiaId: number,
+    carreraFinalId: number,
+    salientesFinales: number[],
+    tx: Prisma.TransactionClient
+  ): Promise<void> {
+    const incidentes = await materiaRepository.getIncidentCorrelativityEdges(materiaId, tx);
+    const aristasFinales = [
+      ...incidentes.filter(edge => edge.materiaOrigenId !== materiaId),
+      ...salientesFinales.map(materiaRequeridaId => ({
+        materiaOrigenId: materiaId,
+        materiaRequeridaId
+      }))
+    ];
+    const idsRelacionados = new Set<number>();
+    for (const arista of aristasFinales) {
+      idsRelacionados.add(arista.materiaOrigenId);
+      idsRelacionados.add(arista.materiaRequeridaId);
+    }
+    idsRelacionados.delete(materiaId);
+
+    const materiasRelacionadas = new Map<number, any>();
+    for (const idRelacionado of idsRelacionados) {
+      const materia = await materiaRepository.findById(idRelacionado, tx);
+      if (!materia) throw new AppError(400, 'Materia relacionada no encontrada');
+      materiasRelacionadas.set(idRelacionado, materia);
+    }
+
+    for (const arista of aristasFinales) {
+      const carreraOrigen = arista.materiaOrigenId === materiaId
+        ? carreraFinalId
+        : materiasRelacionadas.get(arista.materiaOrigenId)?.carreraId;
+      const carreraRequerida = arista.materiaRequeridaId === materiaId
+        ? carreraFinalId
+        : materiasRelacionadas.get(arista.materiaRequeridaId)?.carreraId;
+      if (carreraOrigen !== carreraRequerida) {
+        throw new AppError(
+          409,
+          'El cambio de carrera dejaría una correlatividad entre carreras distintas'
+        );
+      }
+    }
+  }
+
   /**
    * Años de regularidad según tipo de espacio cuando el administrativo
    * no carga un valor explícito: seminarios y talleres 1 año, resto 3.
@@ -98,18 +185,32 @@ class MateriaService {
       throw new Error('Carrera no encontrada');
     }
 
-    // Verificar nombre único
     const nombre = this.normalizeName(data.nombre);
-    const existing = await materiaRepository.findByCareerAndName(data.carreraId, nombre);
-    if (existing) {
-      throw new AppError(409, 'Ya existe una materia con ese nombre en la carrera');
-    }
-
     const aniosRegularidad = this.resolverAniosRegularidad(data.tipoEspacio, data.aniosRegularidad);
-    const cursoId = await this.resolveCourseId(carrera, data);
-    const { cursoAnio: _cursoAnio, ...persistable } = data;
+    const { cursoAnio: _cursoAnio, correlativasIds, ...persistable } = data;
 
-    return await materiaRepository.create({ ...persistable, nombre, cursoId, aniosRegularidad });
+    return await materiaRepository.withTransaction(async tx => {
+      const existing = await materiaRepository.findByCareerAndName(data.carreraId, nombre, undefined, tx);
+      if (existing) {
+        throw new AppError(409, 'Ya existe una materia con ese nombre en la carrera');
+      }
+
+      const cursoId = await this.resolveCourseId(carrera, data, tx);
+      const materia = await materiaRepository.create(
+        { ...persistable, nombre, cursoId, aniosRegularidad },
+        tx
+      );
+
+      if (correlativasIds !== undefined) {
+        await this.validarConjuntoCorrelativas(materia.id, materia.carreraId, correlativasIds, tx);
+      }
+      await this.validarGrafoFinalMateria(materia.id, materia.carreraId, correlativasIds ?? [], tx);
+      if (correlativasIds !== undefined) {
+        await materiaRepository.replaceCorrelatividades(materia.id, correlativasIds, tx);
+      }
+
+      return await materiaRepository.findById(materia.id, tx);
+    });
   }
 
   async getMateriaById(id: number, currentUser?: any) {
@@ -132,38 +233,56 @@ class MateriaService {
       throw new Error('Materia no encontrada');
     }
 
-    // Verificar nombre único
     const carreraId = data.carreraId ?? materia.carreraId;
     const carrera = await carreraRepository.findById(carreraId);
     if (!carrera) throw new AppError(404, 'Carrera no encontrada');
 
     const nombre = data.nombre === undefined ? materia.nombre : this.normalizeName(data.nombre);
-    if (nombre !== materia.nombre || carreraId !== materia.carreraId) {
-      const existing = await materiaRepository.findByCareerAndName(carreraId, nombre, id);
-      if (existing) {
-        throw new AppError(409, 'Ya existe una materia con ese nombre en la carrera');
-      }
-    }
 
     // Si cambia el tipo de espacio sin cargar años de regularidad,
     // se recalculan automáticamente (valor explícito = prioridad).
-    if (data.tipoEspacio && data.aniosRegularidad === undefined) {
-      data.aniosRegularidad = this.resolverAniosRegularidad(data.tipoEspacio, null);
-    }
+    const aniosRegularidad = data.tipoEspacio && data.aniosRegularidad === undefined
+      ? this.resolverAniosRegularidad(data.tipoEspacio, null)
+      : data.aniosRegularidad;
+    const { cursoAnio: _cursoAnio, correlativasIds, ...persistable } = data;
 
-    let cursoId = data.cursoId;
-    if (data.cursoAnio !== undefined || data.cursoId !== undefined) {
-      cursoId = await this.resolveCourseId(carrera, data);
-    } else if (carreraId !== materia.carreraId && materia.curso?.anio) {
-      cursoId = await this.resolveCourseId(carrera, { cursoAnio: materia.curso.anio });
-    }
+    return await materiaRepository.withTransaction(async tx => {
+      if (nombre !== materia.nombre || carreraId !== materia.carreraId) {
+        const existing = await materiaRepository.findByCareerAndName(carreraId, nombre, id, tx);
+        if (existing) {
+          throw new AppError(409, 'Ya existe una materia con ese nombre en la carrera');
+        }
+      }
 
-    const { cursoAnio: _cursoAnio, ...persistable } = data;
-    return await materiaRepository.update(id, {
-      ...persistable,
-      nombre,
-      carreraId,
-      ...(cursoId !== undefined ? { cursoId } : {})
+      let cursoId = data.cursoId;
+      if (data.cursoAnio !== undefined || data.cursoId !== undefined) {
+        cursoId = await this.resolveCourseId(carrera, data, tx);
+      } else if (carreraId !== materia.carreraId && materia.curso?.anio) {
+        cursoId = await this.resolveCourseId(carrera, { cursoAnio: materia.curso.anio }, tx);
+      }
+
+      const incidentes = await materiaRepository.getIncidentCorrelativityEdges(id, tx);
+      const salientesFinales = correlativasIds ?? incidentes
+        .filter(edge => edge.materiaOrigenId === id)
+        .map(edge => edge.materiaRequeridaId);
+
+      const actualizada = await materiaRepository.update(id, {
+        ...persistable,
+        ...(aniosRegularidad !== undefined ? { aniosRegularidad } : {}),
+        nombre,
+        carreraId,
+        ...(cursoId !== undefined ? { cursoId } : {})
+      }, tx);
+
+      if (correlativasIds !== undefined) {
+        await this.validarConjuntoCorrelativas(id, carreraId, correlativasIds, tx);
+      }
+      await this.validarGrafoFinalMateria(id, carreraId, salientesFinales, tx);
+      if (correlativasIds !== undefined) {
+        await materiaRepository.replaceCorrelatividades(id, correlativasIds, tx);
+      }
+
+      return await materiaRepository.findById(actualizada.id, tx);
     });
   }
 
@@ -224,7 +343,7 @@ class MateriaService {
   async addCorrelatividad(data: {
     materiaOrigenId: number;
     materiaRequeridaId: number;
-    tipoRequisito: 'OBLIGATORIA';
+    tipoRequisito?: 'OBLIGATORIA';
     aplicaCursado?: boolean;
     aplicaRendir?: boolean;
   }) {
@@ -237,6 +356,10 @@ class MateriaService {
     const requerida = await materiaRepository.findById(data.materiaRequeridaId);
     if (!requerida) {
       throw new Error('Materia requerida no encontrada');
+    }
+
+    if (origen.activo === false || requerida.activo === false) {
+      throw new AppError(400, 'No se pueden relacionar materias inactivas');
     }
 
     // Verificar que no sea la misma materia
@@ -261,7 +384,10 @@ class MateriaService {
       throw new AppError(400, 'La correlatividad generaría un ciclo');
     }
 
-    return await materiaRepository.addCorrelatividad(data);
+    return await materiaRepository.addCorrelatividad({
+      materiaOrigenId: data.materiaOrigenId,
+      materiaRequeridaId: data.materiaRequeridaId
+    });
   }
 
   async removeCorrelatividad(id: number) {

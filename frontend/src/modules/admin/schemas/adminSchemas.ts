@@ -36,6 +36,10 @@ export const adminUserCreateSchema = adminUserFields.extend({
 
 export const careerSchema = z.object({ nombre: z.string().trim().min(1, 'El nombre es requerido.').max(255), duracionAnios: z.coerce.number().int().min(1).max(10) })
 
+const prerequisiteIdsSchema = z.array(z.coerce.number().int().min(1)).superRefine((ids, ctx) => {
+  if (new Set(ids).size !== ids.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'No podés repetir una correlatividad.' })
+})
+
 export const subjectSchema = z.object({
   nombre: z.string().trim().min(1, 'El nombre es requerido.').max(255),
   carreraId: z.coerce.number().int().min(1),
@@ -47,6 +51,7 @@ export const subjectSchema = z.object({
   modalidad: z.string().optional(),
   periodo: z.string().optional(),
   regimen: z.string().optional(),
+  correlativasIds: prerequisiteIdsSchema.optional(),
 })
 
 export const courseSchema = z.object({ materiaId: z.coerce.number().int().min(1), anioLectivo: z.coerce.number().int().min(2000).max(2100), periodo: z.string().min(1), docenteId: z.coerce.number().int().min(1).nullable().optional() })
