@@ -40,7 +40,7 @@ class ExamenController {
         return;
       }
 
-      const examen = await examenService.getExamenById(id);
+      const examen = await examenService.getExamenById(id, req.user!);
       
       res.json({
         success: true,
@@ -62,7 +62,7 @@ class ExamenController {
       if (req.query.fechaDesde) filters.fechaDesde = req.query.fechaDesde as string;
       if (req.query.fechaHasta) filters.fechaHasta = req.query.fechaHasta as string;
       
-      const result = await examenService.listExamenes(filters);
+      const result = await examenService.listExamenes(filters, req.user!);
       
       res.json({
         success: true,
@@ -321,7 +321,7 @@ class ExamenController {
         return;
       }
 
-      const inscriptos = await examenService.getInscriptosByExamen(examenId);
+      const inscriptos = await examenService.getInscriptosByExamen(examenId, req.user!);
       
       res.json({
         success: true,

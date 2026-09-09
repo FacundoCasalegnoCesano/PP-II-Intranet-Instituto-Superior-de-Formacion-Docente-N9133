@@ -24,6 +24,13 @@ export interface CursadaDisponibleCalificaciones {
   };
 }
 
+export interface InscriptoPublico {
+  alumnoId: number;
+  apellidoNombre: string;
+  dni: number;
+  email: string;
+}
+
 class CursadaRepository {
   async create(data: CursadaCreateData): Promise<any> {
     return await prisma.cursada.create({
@@ -148,6 +155,13 @@ class CursadaRepository {
     });
   }
 
+  async findByDocenteAndMateria(materiaId: number, docenteId: number): Promise<any[]> {
+    return await prisma.cursada.findMany({
+      where: { materiaId, docenteId },
+      select: { id: true }
+    });
+  }
+
   async findDisponiblesParaCalificaciones(filtros: {
     anioLectivo: number;
     profesorId?: number;
@@ -195,24 +209,52 @@ class CursadaRepository {
     }));
   }
 
-  async findAll(filters: { anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } & PaginationInput = {}) {
+  async findAll(filters: { anioLectivo?: number; materiaId?: number; docenteId?: number; profesorId?: number; activo?: boolean } & PaginationInput = {}) {
     const where: any = {};
     if (filters.anioLectivo) where.anioLectivo = filters.anioLectivo;
     if (filters.materiaId) where.materiaId = filters.materiaId;
     if (filters.docenteId) where.docenteId = filters.docenteId;
     if (filters.activo !== undefined) where.activo = filters.activo;
+    if (filters.profesorId !== undefined) {
+      where.OR = [
+        { docenteId: filters.profesorId },
+        {
+          materia: {
+            profesorMaterias: {
+              some: {
+                profesorId: filters.profesorId,
+                activo: true,
+                fechaBaja: null
+              }
+            }
+          }
+        }
+      ];
+    }
 
     const { page, limit, skip } = normalizePagination(filters);
+    const materiaInclude: any = { carrera: true };
+    if (filters.profesorId !== undefined) {
+      materiaInclude.profesorMaterias = {
+        where: {
+          profesorId: filters.profesorId,
+          activo: true,
+          fechaBaja: null
+        },
+        select: {
+          profesorId: true,
+          activo: true,
+          fechaBaja: true
+        }
+      };
+    }
+
     const [data, total] = await Promise.all([prisma.cursada.findMany({
       where,
       skip,
       take: limit,
       include: {
-        materia: {
-          include: {
-            carrera: true
-          }
-        },
+        materia: { include: materiaInclude },
         docente: {
           select: {
             idUsuario: true,
@@ -242,6 +284,12 @@ class CursadaRepository {
       ]
     }), prisma.cursada.count({ where })]);
     return paginated(data, total, page, limit);
+  }
+
+  async findAllForProfesor(filters: { anioLectivo?: number; materiaId?: number; activo?: boolean; profesorId?: number } & PaginationInput = {}, profesorId?: number) {
+    const id = profesorId ?? filters.profesorId;
+    if (id === undefined) throw new Error('profesorId es requerido');
+    return await this.findAll({ ...filters, profesorId: id });
   }
 
   async update(id: number, data: CursadaUpdateData): Promise<any> {
@@ -316,16 +364,16 @@ class CursadaRepository {
     });
   }
 
-  async findInscriptosByCursadaId(cursadaId: number): Promise<any[]> {
-    return await prisma.inscripcionMateria.findMany({
+  async findInscriptosByCursadaId(cursadaId: number): Promise<InscriptoPublico[]> {
+    const inscriptos = await prisma.inscripcionMateria.findMany({
       where: {
         cursadaId,
         estado: 'ACTIVA',
         fechaBaja: null
       },
-      include: {
+      select: {
         alumno: {
-          include: {
+          select: {
             usuario: {
               select: {
                 idUsuario: true,
@@ -339,6 +387,13 @@ class CursadaRepository {
       },
       orderBy: { fechaInscripcion: 'asc' }
     });
+
+    return inscriptos.map(inscripto => ({
+      alumnoId: inscripto.alumno.usuario.idUsuario,
+      apellidoNombre: inscripto.alumno.usuario.apellidoNombre,
+      dni: inscripto.alumno.usuario.dni,
+      email: inscripto.alumno.usuario.email
+    }));
   }
 }
 

@@ -1,4 +1,43 @@
+@import "@fontsource-variable/source-sans-3";
 @import "tailwindcss";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  font-family: "Source Sans 3", sans-serif;
+  color: #171a18;
+  background: #f6f7f4;
+  --color-sidebar: #74151a;
+  --color-brand: #8b151b;
+  --color-graphite: #263238;
+  --color-text: #171a18;
+  --color-background: #f6f7f4;
+  --color-border: #dce2dd;
+  --color-surface: #ffffff;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

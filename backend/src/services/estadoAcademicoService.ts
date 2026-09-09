@@ -1,4 +1,5 @@
 import cursadaRepository from '../repositories/cursadaRepository.js';
+import carreraRepository from '../repositories/carreraRepository.js';
 import materiaRepository from '../repositories/materiaRepository.js';
 import calificacionRepository from '../repositories/calificacionRepository.js';
 import asistenciaRepository from '../repositories/asistenciaRepository.js';
@@ -114,7 +115,154 @@ function asistenciasSnapshot(asistencias: AsistenciaRecord[]): AsistenciaRecord[
   }));
 }
 
+function requisitosPendientes(resultado: ReturnType<typeof evaluarCursada>): string[] {
+  const pendientes: string[] = [];
+  if (resultado.asistencia.cumpleRegularidad !== true) pendientes.push('ASISTENCIA');
+  if (resultado.cumpleNotaMinima !== true) pendientes.push('PARCIALES');
+  if (resultado.tps.cumple === false) pendientes.push('TRABAJOS_PRACTICOS');
+  if (resultado.regularidadVencida) pendientes.push('REGULARIDAD');
+  if (resultado.estado === 'HABILITADO_PROMOCION' && resultado.examenFinalNota === null) {
+    pendientes.push('INSTANCIA_INTEGRADORA');
+  }
+  return pendientes;
+}
+
 class EstadoAcademicoService {
+  async getTrayectoriaIntegral(alumnoUsuarioId: number, carreraId: number, currentUser: CurrentUser) {
+    if (
+      !currentUser ||
+      (currentUser.rol !== ROLES.ALUMNO && currentUser.rol !== ROLES.ADMINISTRATIVO) ||
+      (currentUser.rol === ROLES.ALUMNO && currentUser.id !== alumnoUsuarioId)
+    ) {
+      throw new AppError(403, 'Solo puedes consultar tu propia trayectoria académica');
+    }
+
+    const carrera = await carreraRepository.getPlanEstudio(carreraId);
+    if (!carrera || (currentUser.rol === ROLES.ALUMNO && !carrera.activo)) {
+      throw new AppError(404, 'Carrera no encontrada');
+    }
+
+    const idAlumno = await getAlumnoIdByUsuarioId(alumnoUsuarioId);
+    const [inscripciones, examenes, homologaciones] = await Promise.all([
+      prisma.inscripcionMateria.findMany({
+        where: { alumnoId: idAlumno, materia: { carreraId }, estado: { not: 'BAJA' } },
+        include: {
+          materia: { include: { curso: true } },
+          cursada: { include: { materia: true, calificaciones: true, asistencias: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.inscripcionExamen.findMany({
+        where: {
+          alumnoId: idAlumno,
+          aprobado: true,
+          notaFinal: { not: null },
+          fechaBaja: null,
+          mesa: { materia: { carreraId } }
+        },
+        include: { mesa: { include: { materia: true } } },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      prisma.homologacion.findMany({
+        where: { alumnoId: idAlumno, estado: 'APROBADA', materia: { carreraId } },
+        include: { materia: true },
+        orderBy: { updatedAt: 'desc' }
+      })
+    ]);
+
+    const porMateria = new Map<number, any[]>();
+    for (const inscripcion of inscripciones as any[]) {
+      const filas = porMateria.get(inscripcion.materiaId) ?? [];
+      filas.push(inscripcion);
+      porMateria.set(inscripcion.materiaId, filas);
+    }
+    const examenPorMateria = new Map<number, any>();
+    for (const examen of examenes as any[]) {
+      if (!examenPorMateria.has(examen.mesa.materiaId)) examenPorMateria.set(examen.mesa.materiaId, examen);
+    }
+    const homologacionPorMateria = new Map<number, any>();
+    for (const homologacion of homologaciones as any[]) {
+      if (!homologacionPorMateria.has(homologacion.materiaId)) homologacionPorMateria.set(homologacion.materiaId, homologacion);
+    }
+
+    const materias = (carrera.materias ?? []).map((materia: any, indice: number) => {
+      const historial = porMateria.get(materia.id) ?? [];
+      const cursadas = historial
+        .filter((inscripcion: any) => inscripcion.cursada)
+        .map((inscripcion: any) => {
+          const cursada = inscripcion.cursada;
+          const resultado = evaluarCursada(
+            snapshot(
+              alumnoUsuarioId,
+              idAlumno,
+              cursada,
+              cursada.materia ?? materia,
+              calificacionesSnapshot(cursada.calificaciones ?? []),
+              asistenciasSnapshot(cursada.asistencias ?? [])
+            ),
+            new Date()
+          );
+          return { cursadaId: cursada.id, anioLectivo: cursada.anioLectivo, periodo: cursada.periodo, activo: cursada.activo, ...resultado };
+        });
+      const ultimaInscripcion = historial[0] ?? null;
+      const ultimoResultado = cursadas[0] ?? null;
+      const examenFinal = examenPorMateria.get(materia.id) ?? null;
+      const homologacion = homologacionPorMateria.get(materia.id) ?? null;
+      const promocion = cursadas.find((cursada: any) => cursada.estado === 'PROMOCIONADO') ?? null;
+
+      let estado = ultimoResultado?.estado ?? 'PENDIENTE';
+      let definitiva: any = null;
+      if (examenFinal) {
+        estado = 'APROBADA';
+        definitiva = { via: 'EXAMEN_FINAL', nota: examenFinal.notaFinal, fecha: examenFinal.mesa?.fecha ?? examenFinal.updatedAt };
+      } else if (homologacion) {
+        estado = 'HOMOLOGADA';
+        definitiva = { via: 'HOMOLOGACION', nota: homologacion.calificacion, fecha: homologacion.fechaHomologacion };
+      } else if (promocion) {
+        estado = 'PROMOCIONADO';
+        definitiva = { via: 'PROMOCION_DIRECTA', nota: promocion.examenFinalNota, fecha: null };
+      }
+
+      return {
+        materia: { id: materia.id, nombre: materia.nombre },
+        plan: { cursoId: materia.cursoId ?? null, anio: materia.curso?.anio ?? null, posicion: indice + 1 },
+        estado,
+        inscripcion: ultimaInscripcion ? {
+          id: ultimaInscripcion.id,
+          cicloLectivo: ultimaInscripcion.cicloLectivo,
+          modalidad: ultimaInscripcion.modalidadElegida,
+          estado: ultimaInscripcion.estado,
+          fechaInscripcion: ultimaInscripcion.fechaInscripcion,
+          fechaBaja: ultimaInscripcion.fechaBaja
+        } : null,
+        cursadas,
+        asistencia: ultimoResultado?.asistencia ?? null,
+        tps: ultimoResultado?.tps ?? null,
+        parcialesEfectivos: ultimoResultado?.parcialesEfectivos ?? [],
+        regularidad: ultimoResultado ? { hasta: ultimoResultado.regularHasta, vencida: ultimoResultado.regularidadVencida } : null,
+        promocionDirecta: promocion ? { habilitada: true, nota: promocion.examenFinalNota } : null,
+        examenFinal: examenFinal ? { mesaId: examenFinal.mesaId, nota: examenFinal.notaFinal, aprobado: examenFinal.aprobado, fecha: examenFinal.mesa?.fecha ?? examenFinal.updatedAt } : null,
+        homologacion: homologacion ? { id: homologacion.id, nota: homologacion.calificacion, tipo: homologacion.tipoHomologacion, fecha: homologacion.fechaHomologacion } : null,
+        definitiva
+      };
+    });
+
+    const notasDefinitivas = materias
+      .map((materia: any) => materia.definitiva?.nota)
+      .filter((nota: unknown): nota is number => typeof nota === 'number');
+    const promedioGeneral = notasDefinitivas.length > 0
+      ? Number((notasDefinitivas.reduce((total: number, nota: number) => total + nota, 0) / notasDefinitivas.length).toFixed(2))
+      : null;
+
+    return {
+      alumnoUsuarioId,
+      carrera: { id: carrera.id, nombre: carrera.nombre, duracionAnios: carrera.duracionAnios },
+      promedioGeneral,
+      cantidadMateriasAprobadas: notasDefinitivas.length,
+      materias
+    };
+  }
+
   async getResumenPorMateria(materiaId: number, currentUser: CurrentUser, cicloLectivo?: number) {
     const ciclo = cicloLectivo ?? new Date().getFullYear();
     const cursada = await cursadaRepository.getCursadaActivaByMateria(materiaId, ciclo);
@@ -153,7 +301,64 @@ class EstadoAcademicoService {
     };
   }
 
+  async getResumenPorCursada(cursadaId: number, currentUser: CurrentUser) {
+    await verificarPermisoCursada(currentUser, cursadaId);
+
+    const cursada = await cursadaRepository.findById(cursadaId) as (CursadaRecord & { materia?: MateriaRecord }) | null;
+    if (!cursada) throw new AppError(404, 'Cursada no encontrada');
+
+    const materia = cursada.materia ?? await materiaRepository.findById(cursada.materiaId);
+    if (!materia) throw new AppError(404, 'Materia no encontrada');
+
+    const [inscriptos, calificaciones, asistencias] = await Promise.all([
+      calificacionRepository.getInscriptosActivosByCursada(cursadaId),
+      calificacionRepository.findAllByCursadaSimple(cursadaId),
+      asistenciaRepository.findAllByCursadaSimple(cursadaId)
+    ]);
+    const evaluadoEn = new Date();
+
+    const alumnos = inscriptos.map(inscripcion => {
+      const resultado = evaluarCursada(
+        snapshot(
+          inscripcion.alumno.idCuenta,
+          inscripcion.alumnoId,
+          cursada,
+          materia,
+          calificacionesSnapshot(calificaciones),
+          asistenciasSnapshot(asistencias)
+        ),
+        evaluadoEn
+      );
+
+      return {
+        alumno: {
+          alumnoId: inscripcion.alumno.idCuenta,
+          apellidoNombre: inscripcion.alumno.usuario.apellidoNombre,
+          dni: inscripcion.alumno.usuario.dni
+        },
+        asistencia: resultado.asistencia,
+        parcialesEfectivos: resultado.parcialesEfectivos,
+        tps: resultado.tps,
+        promedio: resultado.promedio,
+        notaMinima: materia.notaMinima ?? 6,
+        estado: resultado.estado,
+        requisitosPendientes: requisitosPendientes(resultado)
+      };
+    });
+
+    return {
+      cursadaId,
+      materia: { id: materia.id, nombre: materia.nombre },
+      anioLectivo: cursada.anioLectivo,
+      periodo: cursada.periodo,
+      alumnos
+    };
+  }
+
   async getEstadoAlumno(alumnoUsuarioId: number, currentUser: CurrentUser) {
+    if (currentUser?.rol === ROLES.PROFESOR) {
+      throw new AppError(403, 'Los profesores deben consultar el estado desde sus materias');
+    }
     if (currentUser!.rol === ROLES.ALUMNO && currentUser!.id !== alumnoUsuarioId) {
       throw new AppError(403, 'Solo puedes consultar tu propio estado académico');
     }
@@ -314,6 +519,9 @@ class EstadoAcademicoService {
     currentUser: CurrentUser,
     carreraId?: number
   ) {
+    if (currentUser?.rol === ROLES.PROFESOR) {
+      throw new AppError(403, 'Los profesores no pueden consultar promedios globales');
+    }
     if (currentUser!.rol === ROLES.ALUMNO && currentUser!.id !== alumnoUsuarioId) {
       throw new AppError(403, 'Solo puedes consultar tu propio promedio');
     }

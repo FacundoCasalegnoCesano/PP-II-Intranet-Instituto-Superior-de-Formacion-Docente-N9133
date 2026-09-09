@@ -4,8 +4,8 @@ info:
   description: |
     Backend Express + TypeScript + Prisma (MariaDB) para gestión académica.
     ### Autenticación
-    - `POST /auth/login` devuelve un **token sin rol**.
-    - `POST /auth/select-role` (con ese token) devuelve un **token con rol**.
+    - `POST /auth/login` devuelve un **accessToken sin rol**.
+    - `POST /auth/select-role` (con ese token) devuelve un **accessToken con rol**.
     - Todas las demás rutas protegen el acceso por rol del token.
     - Envío del token: cabecera `Authorization: Bearer <token>`.
   version: 1.0.0
@@ -30,6 +30,7 @@ tags:
   - name: Inscripciones a Materias
   - name: Exámenes
   - name: Horarios
+  - name: Horarios Publicados
   - name: Libro de Temas
   - name: Períodos de Inscripción
   - name: Asistencias
@@ -52,7 +53,7 @@ paths:
             schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
         '200':
-          description: Login exitoso. devuelve token sin rol.
+          description: Login exitoso. Devuelve accessToken sin rol y refreshToken.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoginResponse' }
@@ -61,7 +62,7 @@ paths:
   /auth/select-role:
     post:
       tags: [Auth]
-      summary: Seleccionar rol de la sesión (devuelve token con rol)
+      summary: Seleccionar rol de la sesión (devuelve accessToken con rol)
       operationId: selectRole
       requestBody:
         required: true
@@ -103,7 +104,7 @@ paths:
           description: Perfil del usuario
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/ProfileResponse' }
 
   /auth/logout:
     post:
@@ -131,12 +132,13 @@ paths:
           description: Token renovado
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/RefreshTokenResponse' }
 
   /auth/change-password:
     put:
       tags: [Auth]
-      summary: Cambiar contraseña propia
+      summary: Cambiar contraseña propia y revocar las demás sesiones de su familia
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
       requestBody:
         required: true
         content:
@@ -147,12 +149,12 @@ paths:
           description: Contraseña actualizada
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/ChangePasswordResponse' }
 
   /auth/forgot-password:
     post:
       tags: [Auth]
-      summary: Solicitar reset de contraseña (envía token por email)
+      summary: Solicitar reset de contraseña (envía un token de un solo uso por email)
       security: []
       requestBody:
         required: true
@@ -161,15 +163,16 @@ paths:
             schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
       responses:
         '200':
-          description: Email de reset enviado
+          description: Solicitud procesada. La respuesta no revela si el email existe.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /auth/reset-password:
     post:
       tags: [Auth]
-      summary: Resetear contraseña con el token del email
+      summary: Restablecer contraseña con el token de un solo uso del email
       security: []
       requestBody:
         required: true
@@ -181,12 +184,13 @@ paths:
           description: Contraseña reseteada
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
 
   /auth/verify-reset-token/{token}:
     get:
       tags: [Auth]
-      summary: Verificar validez de un token de reset
+      summary: Verificar validez de un token de recuperación no utilizado
       security: []
       parameters:
         - { name: token, in: path, required: true, schema: { type: string } }
@@ -195,7 +199,7 @@ paths:
           description: Token válido
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/VerifyResetTokenResponse' }
 
   # ========================= USUARIOS =========================
   /users:
@@ -220,6 +224,7 @@ paths:
     get:
       tags: [Usuarios]
       summary: Obtener usuario por ID (admin o el mismo usuario)
+      x-roles: [ADMINISTRATIVO, ALUMNO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -227,33 +232,39 @@ paths:
           description: Usuario
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
         '403': { $ref: '#/components/responses/Forbidden' }
     put:
       tags: [Usuarios]
       summary: Actualizar usuario (admin o el mismo usuario)
+      x-roles: [ADMINISTRATIVO, ALUMNO, PROFESOR]
+      description: "Los usuarios no administrativos solo pueden editar su propio perfil mediante la allowlist `apellidoNombre`, `dni`, `email`, `fechaNacimiento`, `telefono`, `cuil`, `contactoEmergencia` y `foto`. Los campos `rol`, `activo`, `password`, `passwordHash` y `backupCodes` se rechazan; la contraseña se cambia mediante `/auth/change-password`. Los administradores pueden usar los campos administrativos de `UserUpdateRequest`."
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/UserUpdateRequest' }
+            schema:
+              anyOf:
+                - $ref: '#/components/schemas/OwnProfileUpdateRequest'
+                - $ref: '#/components/schemas/UserUpdateRequest'
       responses:
         '200':
           description: Usuario actualizado
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
     delete:
       tags: [Usuarios]
-      summary: Eliminar un usuario (solo admin)
+      summary: Aplicar baja lógica a un usuario (solo admin)
+      description: "Conserva la cuenta y el historial académico, marca `activo=false` y revoca sus sesiones."
       x-roles: [ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
         '200':
-          description: Usuario eliminado
+          description: Usuario desactivado
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
@@ -275,7 +286,22 @@ paths:
           description: Rol actualizado
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SuccessResponse' }
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
+
+  /users/{id}/role/{rol}:
+    delete:
+      tags: [Usuarios]
+      summary: Quitar un rol de un usuario (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: rol, in: path, required: true, schema: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] } }
+      responses:
+        '200':
+          description: Rol eliminado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
 
   /users/{id}/activate:
     put:
@@ -295,7 +321,8 @@ paths:
   /alumnos:
     get:
       tags: [Alumnos]
-      summary: Listar alumnos (admin o profesor)
+      summary: Listar alumnos (admin o alumnos de cursadas del profesor)
+      description: El profesor solo ve estudiantes con inscripción activa en alguna cursada o materia que le pertenece.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -328,7 +355,8 @@ paths:
   /alumnos/{id}:
     get:
       tags: [Alumnos]
-      summary: Obtener alumno (admin, profesor o el mismo alumno)
+      summary: Obtener alumno (admin, alumno propio o profesor autorizado)
+      description: El profesor solo puede consultar estudiantes con inscripción activa en una cursada o materia propia; los no autorizados se presentan como no disponibles.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -521,6 +549,18 @@ paths:
       responses:
         '201': { $ref: '#/components/responses/Created' }
 
+  /carreras/catalogo:
+    get:
+      tags: [Carreras]
+      summary: Catálogo de carreras activas para alumnos
+      x-roles: [ALUMNO]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/ListOK' }
+
   /carreras/{id}:
     get:
       tags: [Carreras]
@@ -556,7 +596,7 @@ paths:
     get:
       tags: [Carreras]
       summary: Plan de estudio de una carrera
-      x-roles: [ADMINISTRATIVO, PROFESOR]
+      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -566,7 +606,8 @@ paths:
   /materias:
     get:
       tags: [Materias]
-      summary: Listar materias (admin o profesor)
+      summary: Listar materias (admin o materias propias del profesor)
+      description: El profesor solo recibe materias con asignación activa o cursada propia.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -602,7 +643,7 @@ paths:
   /materias/{id}:
     get:
       tags: [Materias]
-      summary: Obtener materia por ID
+      summary: Obtener materia por ID (profesor solo si es propia)
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -667,8 +708,8 @@ paths:
   /inscripciones-carreras:
     post:
       tags: [Inscripciones a Carreras]
-      summary: Inscribir alumno a una carrera (alumno = él mismo, admin indica alumnoId)
-      x-roles: [ALUMNO, ADMINISTRATIVO]
+      summary: Inscribir un alumno a una carrera (solo admin)
+      x-roles: [ADMINISTRATIVO]
       requestBody:
         required: true
         content:
@@ -680,8 +721,8 @@ paths:
   /inscripciones-carreras/{id}:
     delete:
       tags: [Inscripciones a Carreras]
-      summary: Dar de baja inscripción a carrera
-      x-roles: [ALUMNO, ADMINISTRATIVO]
+      summary: Dar de baja inscripción a carrera (solo admin)
+      x-roles: [ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -690,12 +731,15 @@ paths:
   /inscripciones-carreras/alumno/{alumnoId}:
     get:
       tags: [Inscripciones a Carreras]
+      description: "El parámetro `alumnoId` es `Usuario.idUsuario` (ID de cuenta), no `Alumno.idAlumno`. Un ALUMNO solo puede consultar su propio ID; ADMINISTRATIVO puede consultar cualquier cuenta."
       summary: Carreras de un alumno
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripciones de carrera
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionesCarreraResponse' } } }
 
   /inscripciones-carreras/carrera/{carreraId}/inscriptos:
     get:
@@ -711,17 +755,21 @@ paths:
   /inscripciones-materias/disponibles:
     get:
       tags: [Inscripciones a Materias]
+      description: "Para ALUMNO la identidad se deriva del JWT; ADMINISTRATIVO debe enviar `alumnoId` como `Usuario.idUsuario`. No incluye horarios estructurados: la disponibilidad académica no sustituye el horario PDF publicado."
       summary: "Materias disponibles para inscribirse (alumno usa su ID; admin usa ?alumnoId=)"
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: query, schema: { type: integer }, description: Requerido si eres ADMINISTRATIVO }
         - { name: cicloLectivo, in: query, schema: { type: integer }, description: Por defecto el año actual }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Materias y condiciones calculadas por el backend
+          content: { application/json: { schema: { $ref: '#/components/schemas/MateriasDisponiblesResponse' } } }
 
   /inscripciones-materias/verificar/{materiaId}:
     get:
       tags: [Inscripciones a Materias]
+      description: "Para ALUMNO se usa el JWT; ADMINISTRATIVO indica `alumnoId` como `Usuario.idUsuario`. Es una vista previa; el alta vuelve a verificar período y correlatividades."
       summary: Verificar si el alumno puede inscribirse a una materia
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
@@ -729,11 +777,14 @@ paths:
         - { name: alumnoId, in: query, schema: { type: integer }, description: Requerido si eres ADMINISTRATIVO }
         - { name: cicloLectivo, in: query, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Resultado de la verificación académica
+          content: { application/json: { schema: { $ref: '#/components/schemas/VerificacionInscripcionMateriaResponse' } } }
 
   /inscripciones-materias:
     post:
       tags: [Inscripciones a Materias]
+      description: "ALUMNO omite `alumnoId`: el backend deriva `Usuario.idUsuario` del JWT y revalida período y correlatividades. ADMINISTRATIVO puede indicar `alumnoId` (ID de cuenta)."
       summary: Inscribir alumno a materia (alumno = él mismo, admin indica alumnoId)
       x-roles: [ALUMNO, ADMINISTRATIVO]
       requestBody:
@@ -742,27 +793,35 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/InscripcionMateriaRequest' }
       responses:
-        '201': { $ref: '#/components/responses/Created' }
+        '201':
+          description: Inscripción a materia creada o reactivada
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionMateriaMutationResponse' } } }
 
   /inscripciones-materias/{id}:
     delete:
       tags: [Inscripciones a Materias]
+      description: "ALUMNO puede dar de baja únicamente una inscripción propia; ADMINISTRATIVO puede actuar sobre cualquier inscripción. No recibe `alumnoId` en el cuerpo."
       summary: Dar de baja inscripción a materia
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripción a materia dada de baja
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionMateriaMutationResponse' } } }
 
   /inscripciones-materias/alumno/{alumnoId}:
     get:
       tags: [Inscripciones a Materias]
+      description: "`alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`; ALUMNO solo accede a su propio ID."
       summary: Materias de un alumno
-      x-roles: [ALUMNO, ADMINISTRATIVO, PROFESOR]
+      x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripciones activas paginadas
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionesMateriaResponse' } } }
 
   /inscripciones-materias/materia/{materiaId}/inscriptos:
     get:
@@ -777,13 +836,16 @@ paths:
   /inscripciones-materias/historial/{alumnoId}/{materiaId}:
     get:
       tags: [Inscripciones a Materias]
+      description: "`alumnoId` es `Usuario.idUsuario`; ALUMNO solo puede consultar su propio historial."
       summary: Historial de un alumno en una materia
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
         - { name: materiaId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Historial de inscripciones para la materia
+          content: { application/json: { schema: { $ref: '#/components/schemas/HistorialInscripcionMateriaResponse' } } }
 
   /inscripciones-materias/{id}/modalidad:
     put:
@@ -804,7 +866,8 @@ paths:
   /examenes:
     get:
       tags: [Exámenes]
-      summary: Listar exámenes (admin o profesor)
+      summary: Listar exámenes (admin o tribunal del profesor)
+      description: El profesor solo recibe mesas en cuyos tribunales participa.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -851,7 +914,7 @@ paths:
   /examenes/{id}:
     get:
       tags: [Exámenes]
-      summary: Obtener examen por ID
+      summary: Obtener examen por ID (profesor solo si integra tribunal)
       x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -905,6 +968,7 @@ paths:
   /examenes/{examenId}/inscribir:
     post:
       tags: [Exámenes]
+      description: "ALUMNO omite `alumnoId`: el backend deriva la identidad del JWT y vuelve a validar período, fecha de corte, condición y correlatividades. ADMINISTRATIVO puede indicar `alumnoId` como `Usuario.idUsuario`."
       summary: Inscribir alumno a un examen (alumno usa su propio ID)
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
@@ -915,11 +979,14 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/InscripcionExamenRequest' }
       responses:
-        '201': { $ref: '#/components/responses/Created' }
+        '201':
+          description: Inscripción a mesa creada o reactivada
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionExamenMutationResponse' } } }
 
   /examenes/{examenId}/desinscribir:
     post:
       tags: [Exámenes]
+      description: "ALUMNO omite `alumnoId` y solo puede darse de baja a sí mismo; ADMINISTRATIVO puede indicar `alumnoId` como `Usuario.idUsuario`."
       summary: Desinscribir alumno de un examen
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
@@ -930,12 +997,14 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/DesinscripcionExamenRequest' }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripción a mesa dada de baja
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionExamenMutationResponse' } } }
 
   /examenes/{examenId}/inscriptos:
     get:
       tags: [Exámenes]
-      summary: Inscriptos de un examen (admin o profesor)
+      summary: Inscriptos de una mesa autorizada
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: examenId, in: path, required: true, schema: { type: integer } }
@@ -945,17 +1014,21 @@ paths:
   /examenes/alumno/{alumnoId}/inscripciones:
     get:
       tags: [Exámenes]
+      description: "`alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`; ALUMNO solo puede consultar su propio ID."
       summary: Inscripciones a exámenes de un alumno
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscripciones activas a mesas
+          content: { application/json: { schema: { $ref: '#/components/schemas/InscripcionesExamenResponse' } } }
 
   /examenes/{examenId}/calificacion:
     post:
       tags: [Exámenes]
-      summary: Registrar nota a un alumno en un examen (admin o profesor)
+      summary: Registrar nota a un alumno en un examen (admin o integrante del tribunal)
+      description: Un profesor solo puede registrar la nota si forma parte del tribunal de la mesa.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: examenId, in: path, required: true, schema: { type: integer } }
@@ -969,6 +1042,10 @@ paths:
 
   # ========================= HORARIOS =========================
   /horarios:
+    description: >
+      API legado compatible para integraciones existentes. El frontend actual no consume
+      estos horarios estructurados; administra y consulta los horarios oficiales mediante
+      el PDF publicado en /horarios-publicados.
     post:
       tags: [Horarios]
       summary: Crear horario (solo admin)
@@ -982,6 +1059,10 @@ paths:
         '201': { $ref: '#/components/responses/Created' }
 
   /horarios/{id}:
+    description: >
+      API legado compatible para integraciones existentes. El frontend actual no consume
+      estos horarios estructurados; administra y consulta los horarios oficiales mediante
+      el PDF publicado en /horarios-publicados.
     get:
       tags: [Horarios]
       summary: Obtener horario por ID (admin o profesor)
@@ -1013,6 +1094,10 @@ paths:
         '200': { $ref: '#/components/responses/OK' }
 
   /horarios/cursada/{cursadaId}:
+    description: >
+      API legado compatible para integraciones existentes. El frontend actual no consume
+      estos horarios estructurados; administra y consulta los horarios oficiales mediante
+      el PDF publicado en /horarios-publicados.
     get:
       tags: [Horarios]
       summary: Horarios de una cursada (admin o profesor)
@@ -1023,6 +1108,10 @@ paths:
         '200': { $ref: '#/components/responses/OK' }
 
   /horarios/materia/{materiaId}:
+    description: >
+      API legado compatible para integraciones existentes. El frontend actual no consume
+      estos horarios estructurados; administra y consulta los horarios oficiales mediante
+      el PDF publicado en /horarios-publicados.
     get:
       tags: [Horarios]
       summary: Horarios de una materia (admin o profesor)
@@ -1036,7 +1125,8 @@ paths:
   /cursadas:
     get:
       tags: [Cursadas]
-      summary: Listar cursadas (admin o profesor)
+      summary: Listar cursadas (admin o propias del profesor)
+      description: El profesor recibe únicamente cursadas cuyo docenteId coincide o cuya materia tiene una asignación activa vigente.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: anioLectivo, in: query, schema: { type: integer } }
@@ -1060,7 +1150,7 @@ paths:
   /cursadas/{id}:
     get:
       tags: [Cursadas]
-      summary: Obtener cursada por ID (admin o profesor)
+      summary: Obtener cursada por ID (admin o profesor autorizado)
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1091,18 +1181,74 @@ paths:
   /cursadas/{id}/inscriptos:
     get:
       tags: [Cursadas]
-      summary: Alumnos inscriptos a una cursada (admin o profesor)
+      summary: Alumnos inscriptos a una cursada autorizada
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
         '200': { $ref: '#/components/responses/OK' }
 
+  /cursadas/{cursadaId}/clases:
+    get:
+      tags: [Cursadas]
+      summary: Listar clases de una cursada
+      description: La fecha es calendario YYYY-MM-DD. ADMINISTRATIVO y PROFESOR acceden solo a cursadas autorizadas; el profesor puede consultar también históricas.
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Historial de clases
+          content: { application/json: { schema: { $ref: '#/components/schemas/ClasesResumenResponse' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /cursadas/{cursadaId}/clases/{fecha}:
+    get:
+      tags: [Cursadas]
+      summary: Obtener una clase de una cursada
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: fecha, in: path, required: true, schema: { type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
+      responses:
+        '200':
+          description: Tema y asistencia completa de la clase
+          content: { application/json: { schema: { $ref: '#/components/schemas/ClaseDetalleResponse' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Cursadas]
+      summary: Crear o corregir una clase completa
+      description: La operación es idempotente y actualiza tema y asistencia en una única transacción. El profesor solo puede modificar cursadas actuales.
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: fecha, in: path, required: true, schema: { type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ClaseWritePayload' } } }
+      responses:
+        '200':
+          description: Clase guardada
+          content: { application/json: { schema: { $ref: '#/components/schemas/ClaseGuardadaResponse' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Cursadas]
+      summary: Eliminar una clase completa
+      description: Eliminación reservada a ADMINISTRATIVO.
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: fecha, in: path, required: true, schema: { type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   # ========================= LIBRO DE TEMAS =========================
   /libro-de-temas:
     get:
       tags: [Libro de Temas]
-      summary: Listar registros del libro de temas (admin o profesor)
+      summary: Listar registros del libro de temas (admin o materias propias)
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -1127,7 +1273,7 @@ paths:
   /libro-de-temas/{id}:
     get:
       tags: [Libro de Temas]
-      summary: Obtener registro del libro de temas por ID (admin o profesor)
+      summary: Obtener registro del libro de temas autorizado
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -1173,6 +1319,9 @@ paths:
       parameters:
         - { name: tipo, in: query, schema: { $ref: '#/components/schemas/TipoPeriodo' } }
         - { name: activo, in: query, schema: { type: boolean } }
+        - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
         '200': { $ref: '#/components/responses/OK' }
     post:
@@ -1342,7 +1491,7 @@ paths:
     get:
       tags: [Asistencias]
       summary: Historial de asistencia del alumno
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
 
@@ -1384,10 +1533,17 @@ paths:
     get:
       tags: [Calificaciones]
       summary: Listar calificaciones de una cursada
-      description: Para PARCIAL y RECUPERATORIO, fechaEvaluacion se devuelve como DD/MM/YYYY, sin componente horaria.
+      description: alumnoId es Usuario.idUsuario. numero filtra la instancia exacta. Las fechas de evaluación se devuelven como calendario YYYY-MM-DD, sin componente horaria.
       x-roles: [ADMINISTRATIVO, PROFESOR]
-      parameters: [{ name: cursadaId, in: path, required: true, schema: { type: integer } }, { name: tipo, in: query, schema: { type: string } }, { name: numero, in: query, schema: { type: integer } }]
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      parameters:
+        - { name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: tipo, in: query, schema: { type: string, enum: [PARCIAL, RECUPERATORIO, EXAMEN_FINAL, TRABAJO_PRACTICO] } }
+        - { name: numero, in: query, schema: { type: integer, minimum: 1, maximum: 99 } }
+        - { name: alumnoId, in: query, description: ID público Usuario.idUsuario, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Calificaciones con identidad pública del alumno
+          content: { application/json: { schema: { $ref: '#/components/schemas/CalificacionesCursadaResponse' } } }
   /calificaciones/resumen/{cursadaId}:
     get:
       tags: [Calificaciones]
@@ -1399,15 +1555,15 @@ paths:
     get:
       tags: [Calificaciones]
       summary: Historial de calificaciones del alumno
-      description: Para PARCIAL y RECUPERATORIO, fechaEvaluacion se devuelve como DD/MM/YYYY, sin componente horaria.
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      description: alumnoId es Usuario.idUsuario. Las fechas de evaluación se devuelven como calendario YYYY-MM-DD, sin componente horaria.
+      x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
   /calificaciones/mis-calificaciones:
     get:
       tags: [Calificaciones]
       summary: Calificaciones del usuario autenticado
-      description: Para PARCIAL y RECUPERATORIO, fechaEvaluacion se devuelve como DD/MM/YYYY, sin componente horaria.
+      description: Las fechas de evaluación se devuelven como calendario YYYY-MM-DD, sin componente horaria.
       x-roles: [ALUMNO]
       responses: { '200': { $ref: '#/components/responses/OK' } }
 
@@ -1418,18 +1574,46 @@ paths:
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters: [{ name: materiaId, in: path, required: true, schema: { type: integer } }, { name: cicloLectivo, in: query, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
+  /estado-academico/cursada/{cursadaId}:
+    get:
+      tags: [Estado Academico]
+      summary: Resumen académico calculado por cursada
+      description: Consulta alumnos de cursadas actuales o históricas autorizadas. Estados, promedios, asistencia, parciales efectivos, TPs y requisitos pendientes son calculados por el backend.
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters: [{ name: cursadaId, in: path, required: true, schema: { type: integer, minimum: 1 } }]
+      responses:
+        '200':
+          description: Resumen académico por alumno con identidad pública
+          content: { application/json: { schema: { $ref: '#/components/schemas/EstadoAcademicoCursadaResponse' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /estado-academico/alumno/{alumnoId}:
     get:
       tags: [Estado Academico]
       summary: Estado academico de un alumno
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      responses:
+        '200':
+          description: Estado académico propio o consultado por administración
+          content: { application/json: { schema: { $ref: '#/components/schemas/EstadoAcademicoAlumnoResponse' } } }
+  /estado-academico/alumno/{alumnoId}/trayectoria:
+    get:
+      tags: [Estado Academico]
+      summary: Trayectoria académica integral por carrera
+      description: "`alumnoId` es `Usuario.idUsuario`, no `Alumno.idAlumno`. Devuelve una entrada por materia del plan, incluyendo materias pendientes, cursadas históricas, regularidad, promoción, finales y homologaciones."
+      x-roles: [ADMINISTRATIVO, ALUMNO]
+      parameters:
+        - { name: alumnoId, in: path, required: true, schema: { type: integer } }
+        - { name: carreraId, in: query, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Trayectoria integral por carrera
+          content: { application/json: { schema: { $ref: '#/components/schemas/TrayectoriaAcademicaResponse' } } }
   /estado-academico/promedio/{alumnoId}:
     get:
       tags: [Estado Academico]
       summary: Promedio general del alumno
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, ALUMNO]
       parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }, { name: carreraId, in: query, schema: { type: integer } }]
       responses: { '200': { $ref: '#/components/responses/OK' } }
 
@@ -1469,6 +1653,108 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [accion], properties: { accion: { type: string, enum: [APROBAR, RECHAZAR] } } } } } }
       responses: { '200': { $ref: '#/components/responses/OK' } }
 
+  # ========================= HORARIOS PUBLICADOS =========================
+  /horarios-publicados/anios:
+    get:
+      tags: [Horarios Publicados]
+      summary: Listar ciclos lectivos con un horario PDF vigente
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
+      responses:
+        '200':
+          description: Ciclos lectivos publicados en orden descendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /horarios-publicados/actual:
+    get:
+      tags: [Horarios Publicados]
+      summary: Consultar el horario publicado vigente
+      description: "Sin `cicloLectivo`, busca el año actual y luego el último ciclo publicado."
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
+      parameters:
+        - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+      responses:
+        '200':
+          description: Metadatos del horario PDF vigente
+          content: { application/json: { schema: { $ref: '#/components/schemas/HorarioPublicadoResponse' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /horarios-publicados/{id}/archivo:
+    get:
+      tags: [Horarios Publicados]
+      summary: Descargar el PDF de un horario
+      description: La versión vigente puede ser descargada por cualquier rol; una histórica solo por ADMINISTRATIVO.
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Archivo PDF binario
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /horarios-publicados:
+    post:
+      tags: [Horarios Publicados]
+      summary: Publicar inmediatamente un PDF de horarios
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo, cicloLectivo]
+              properties:
+                archivo: { type: string, format: binary, description: PDF simple de hasta 10 MB }
+                cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
+                titulo: { type: string, maxLength: 160 }
+      responses:
+        '200':
+          description: Se reutilizó y restauró como vigente un PDF idéntico del mismo ciclo lectivo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+        '201':
+          description: PDF nuevo publicado inmediatamente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /horarios-publicados/historial:
+    get:
+      tags: [Horarios Publicados]
+      summary: Consultar el historial de versiones de un ciclo
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: cicloLectivo, in: query, required: true, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+      responses:
+        '200':
+          description: Historial de metadatos de versiones del PDF
+          content: { application/json: { schema: { $ref: '#/components/schemas/HistorialHorarioPublicadoResponse' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /horarios-publicados/{id}/publicar:
+    post:
+      tags: [Horarios Publicados]
+      summary: Restaurar una versión histórica como vigente
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Versión histórica restaurada como vigente
+          content: { application/json: { schema: { $ref: '#/components/schemas/HorarioPublicadoMutationResponse' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 components:
   parameters:
     Page:
@@ -1502,8 +1788,18 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
     RoleRequired:
       description: El token no tiene rol seleccionado (hacer /auth/select-role)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RateLimited:
+      description: Demasiadas solicitudes desde el mismo origen
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1532,11 +1828,19 @@ components:
     # -------- Envoltorios de respuesta --------
     SuccessResponse:
       type: object
+      description: "Envelope exitoso. `data` es opcional porque algunas operaciones solo responden `success` y `message`."
       properties:
         success: { type: boolean, example: true }
         message: { type: string, nullable: true, example: Operación exitosa }
         data: { type: object, nullable: true }
       additionalProperties: true
+    MessageResponse:
+      type: object
+      required: [success, message]
+      description: "Envelope exitoso sin `data`."
+      properties:
+        success: { type: boolean, enum: [true] }
+        message: { type: string }
     PaginatedResponse:
       type: object
       properties:
@@ -1573,13 +1877,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
         - type: object
+          required: [success, message, data]
           properties:
             data:
               type: object
+              required: [user, roles, accessToken, refreshToken, sessionId]
               properties:
-                user: { type: object }
-                roles: { type: array, items: { type: string } }
-                token: { type: string, description: Token JWT sin rol }
+                user: { $ref: '#/components/schemas/PublicUser' }
+                roles: { type: array, items: { $ref: '#/components/schemas/Role' } }
+                accessToken: { type: string, description: Token JWT sin rol }
                 refreshToken: { type: string }
                 sessionId: { type: integer }
     SelectRoleRequest:
@@ -1593,15 +1899,132 @@ components:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
         - type: object
+          required: [success, message, data]
           properties:
             data:
               type: object
+              required: [accessToken, refreshToken, sessionId, rol, rolesDisponibles]
               properties:
-                token: { type: string, description: Token JWT con rol }
+                accessToken: { type: string, description: Token JWT con rol }
                 refreshToken: { type: string }
                 sessionId: { type: integer }
-                rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
-                rolesDisponibles: { type: array, items: { type: string } }
+                rol: { $ref: '#/components/schemas/Role' }
+                rolesDisponibles: { type: array, items: { $ref: '#/components/schemas/Role' } }
+    RefreshTokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data:
+              type: object
+              required: [accessToken, refreshToken]
+              properties:
+                accessToken: { type: string, description: Token JWT renovado que conserva el rol activo, si lo tenía. }
+                refreshToken: { type: string, description: Refresh token rotado. }
+    ProfileResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, data]
+          properties:
+            data:
+              allOf:
+                - $ref: '#/components/schemas/PublicUser'
+                - type: object
+                  required: [roles]
+                  properties:
+                    roles: { type: array, items: { $ref: '#/components/schemas/Role' } }
+    ChangePasswordResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, example: Contraseña actualizada exitosamente }
+    VerifyResetTokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, data]
+          properties:
+            data:
+              type: object
+              required: [valid]
+              properties:
+                valid: { type: boolean }
+                email: { type: string, format: email, description: Solo se incluye si el token es válido. }
+    Role:
+      type: string
+      enum: [ALUMNO, ADMINISTRATIVO, PROFESOR]
+    PublicUser:
+      type: object
+      description: Usuario público; nunca incluye hashes de contraseñas ni códigos de respaldo.
+      required: [idUsuario, apellidoNombre, dni, email, fechaNacimiento, telefono, activo, rol]
+      properties:
+        idUsuario: { type: integer }
+        apellidoNombre: { type: string }
+        dni: { type: integer }
+        email: { type: string, format: email }
+        fechaNacimiento: { type: string, format: date-time }
+        telefono: { type: string }
+        cuil: { type: string, nullable: true }
+        activo: { type: boolean }
+        rol: { type: string, description: Lista de roles histórica, separada por comas. }
+        contactoEmergencia: { type: string, nullable: true }
+        foto: { type: string, nullable: true }
+        ultimoAcceso: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AlumnoProfileInput:
+      type: object
+      additionalProperties: false
+      required: [domicilio, anioEgreso]
+      properties:
+        domicilio: { type: string, maxLength: 255 }
+        anioEgreso: { type: integer, minimum: 1900, maximum: 2100 }
+        institucionProcedencia: { type: string, nullable: true, maxLength: 255 }
+    AlumnoProfileUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        domicilio: { type: string, maxLength: 255 }
+        anioEgreso: { type: integer, minimum: 1900, maximum: 2100 }
+        institucionProcedencia: { type: string, nullable: true, maxLength: 255 }
+    AlumnoProfile:
+      allOf:
+        - $ref: '#/components/schemas/AlumnoProfileInput'
+        - type: object
+          required: [idAlumno, idCuenta, adeudaMateria]
+          properties:
+            idAlumno: { type: integer }
+            idCuenta: { type: integer, description: ID público de la cuenta Usuario }
+            adeudaMateria: { type: boolean }
+    AdminUserDetail:
+      allOf:
+        - $ref: '#/components/schemas/PublicUser'
+        - type: object
+          required: [roles, alumno]
+          properties:
+            roles:
+              type: array
+              items: { $ref: '#/components/schemas/Role' }
+            alumno:
+              nullable: true
+              allOf:
+                - $ref: '#/components/schemas/AlumnoProfile'
+    AdminUserResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, data]
+          properties:
+            data: { $ref: '#/components/schemas/AdminUserDetail' }
     RegisterRequest:
       type: object
       required: [apellidoNombre, dni, email, fechaNacimiento, telefono, password, cuil, rol]
@@ -1634,23 +2057,40 @@ components:
         institucionProcedencia: Escuela Secundaria Nº 42
     UserUpdateRequest:
       type: object
+      additionalProperties: false
       properties:
         apellidoNombre: { type: string, maxLength: 255 }
         dni: { type: string, pattern: '^\\d{7,8}$' }
         email: { type: string, format: email }
         fechaNacimiento: { type: string, format: date }
         telefono: { type: string, pattern: '^\\d{10,11}$' }
-        password: { type: string, format: password, minLength: 8 }
         cuil: { type: string, pattern: '^\\d{11}$' }
-        rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
         contactoEmergencia: { type: string, nullable: true }
         foto: { type: string, nullable: true }
-        activo: { type: boolean }
+        alumno: { $ref: '#/components/schemas/AlumnoProfileUpdate' }
+    OwnProfileUpdateRequest:
+      type: object
+      description: Allowlist del perfil propio. No admite rol, estado ni secretos.
+      additionalProperties: false
+      properties:
+        apellidoNombre: { type: string, maxLength: 255 }
+        dni: { type: string, pattern: '^\\d{7,8}$' }
+        email: { type: string, format: email, maxLength: 255 }
+        fechaNacimiento: { type: string, format: date }
+        telefono: { type: string, pattern: '^\\d{10,11}$' }
+        cuil: { type: string, pattern: '^\\d{11}$', nullable: true }
+        contactoEmergencia: { type: string, nullable: true, maxLength: 255 }
+        foto: { type: string, nullable: true, maxLength: 255 }
     ChangeRoleRequest:
       type: object
+      additionalProperties: false
       required: [rol]
       properties:
         rol: { type: string, enum: [ALUMNO, ADMINISTRATIVO, PROFESOR] }
+        alumno:
+          allOf:
+            - $ref: '#/components/schemas/AlumnoProfileInput'
+          description: Solo se admite con rol ALUMNO; es obligatorio si no existe una ficha preservada.
     ChangePasswordRequest:
       type: object
       required: [currentPassword, newPassword]
@@ -1675,6 +2115,107 @@ components:
         refreshToken: { type: string }
 
     # -------- Carreras --------
+    Career:
+      type: object
+      required: [id, nombre, duracionAnios, activo]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        duracionAnios: { type: integer }
+        activo: { type: boolean }
+    Subject:
+      type: object
+      required: [id, nombre, cargaHoraria, tipoEspacio, carrera, curso, activo]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        descripcion: { type: string, nullable: true }
+        cargaHoraria: { type: integer }
+        tipoEspacio: { $ref: '#/components/schemas/TipoEspacio' }
+        carrera: { $ref: '#/components/schemas/Career' }
+        curso:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            anio: { type: integer }
+            descripcion: { type: string }
+        correlatividades:
+          type: array
+          description: Requisitos obligatorios para rendir; no bloquean cursar.
+          items: { $ref: '#/components/schemas/Prerequisite' }
+        activo: { type: boolean }
+    Prerequisite:
+      type: object
+      required: [id, materiaOrigenId, materiaRequeridaId, materiaRequerida, tipoRequisito]
+      properties:
+        id: { type: integer }
+        materiaOrigenId: { type: integer }
+        materiaRequeridaId: { type: integer }
+        materiaRequerida: { $ref: '#/components/schemas/Subject' }
+        tipoRequisito: { type: string, enum: [OBLIGATORIA] }
+        aplicaCursado: { type: boolean }
+        aplicaRendir: { type: boolean }
+    TeachingAssignment:
+      type: object
+      required: [id, profesorId, materiaId, profesor, fechaAsignacion, activo]
+      properties:
+        id: { type: integer }
+        profesorId: { type: integer }
+        materiaId: { type: integer }
+        profesor: { $ref: '#/components/schemas/PublicUser' }
+        fechaAsignacion: { type: string, format: date-time }
+        fechaBaja: { type: string, format: date-time, nullable: true }
+        activo: { type: boolean }
+    Schedule:
+      type: object
+      required: [id, cursadaId, dia, horaInicio, horaFin, activo]
+      properties:
+        id: { type: integer }
+        cursadaId: { type: integer }
+        dia: { $ref: '#/components/schemas/DiaSemana' }
+        horaInicio: { type: string, format: date-time, description: La interfaz edita HH:mm y lo convierte de forma estable al contrato ISO. }
+        horaFin: { type: string, format: date-time }
+        aula: { type: string, nullable: true }
+        activo: { type: boolean }
+    CourseOffering:
+      type: object
+      required: [id, materia, anioLectivo, periodo, horarios, activo]
+      properties:
+        id: { type: integer }
+        materiaId: { type: integer }
+        materia: { $ref: '#/components/schemas/Subject' }
+        anioLectivo: { type: integer }
+        periodo: { type: string, enum: [ANUAL, PRIMER_CUATRIMESTRE, SEGUNDO_CUATRIMESTRE] }
+        docenteId: { type: integer, nullable: true }
+        docente: { allOf: [{ $ref: '#/components/schemas/PublicUser' }], nullable: true }
+        horarios:
+          type: array
+          items: { $ref: '#/components/schemas/Schedule' }
+        activo: { type: boolean }
+    EnrollmentPeriod:
+      type: object
+      required: [id, tipo, cicloLectivo, fechaInicio, fechaFin, materias, mesas, activo]
+      properties:
+        id: { type: integer }
+        tipo: { $ref: '#/components/schemas/TipoPeriodo' }
+        cicloLectivo: { type: integer }
+        fechaInicio: { type: string, format: date-time }
+        fechaFin: { type: string, format: date-time }
+        materias:
+          type: array
+          items:
+            type: object
+            required: [materiaId, materia]
+            properties:
+              materiaId: { type: integer }
+              materia: { $ref: '#/components/schemas/Subject' }
+        mesas:
+          type: array
+          description: Mesas de períodos EXAMEN heredados, informativas en la consola de esta etapa.
+          items: { type: object, additionalProperties: true }
+        descripcion: { type: string, nullable: true }
+        activo: { type: boolean }
     CarreraCreateRequest:
       type: object
       required: [nombre, duracionAnios]
@@ -1704,10 +2245,12 @@ components:
     MateriaCreateRequest:
       type: object
       required: [nombre, cargaHoraria, tipoEspacio, carreraId]
+      anyOf:
+        - required: [cursoAnio]
+        - required: [cursoId]
       properties:
         nombre: { type: string, maxLength: 255 }
         descripcion: { type: string, nullable: true }
-        codigo: { type: string, maxLength: 50, nullable: true }
         cargaHoraria: { type: integer, minimum: 1, maximum: 9999 }
         horasCatedra: { type: string, maxLength: 50, nullable: true }
         tipoEspacio: { $ref: '#/components/schemas/TipoEspacio' }
@@ -1721,14 +2264,19 @@ components:
         notaPromocion: { type: number, minimum: 0, maximum: 10, default: 8 }
         aniosRegularidad: { type: integer, minimum: 1, maximum: 5, default: 3 }
         carreraId: { type: integer, minimum: 1 }
+        cursoAnio: { type: integer, minimum: 1, description: Año dentro de la duración de la carrera. Entrada preferida. }
         cursoId: { type: integer, nullable: true }
         espacioCurricularId: { type: integer, nullable: true }
+        correlativasIds:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+          description: IDs de materias correlativas obligatorias; se reemplaza de forma atómica.
     MateriaUpdateRequest:
       type: object
       properties:
         nombre: { type: string, maxLength: 255 }
         descripcion: { type: string, nullable: true }
-        codigo: { type: string, maxLength: 50, nullable: true }
         cargaHoraria: { type: integer, minimum: 1, maximum: 9999 }
         horasCatedra: { type: string, maxLength: 50, nullable: true }
         tipoEspacio: { $ref: '#/components/schemas/TipoEspacio' }
@@ -1742,25 +2290,28 @@ components:
         notaPromocion: { type: number, minimum: 0, maximum: 10 }
         aniosRegularidad: { type: integer, minimum: 1, maximum: 5 }
         carreraId: { type: integer, minimum: 1 }
+        cursoAnio: { type: integer, minimum: 1, description: Entrada preferida; el backend resuelve o crea un curso compatible. }
         cursoId: { type: integer, nullable: true }
         espacioCurricularId: { type: integer, nullable: true }
         activo: { type: boolean }
+        correlativasIds:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+          description: Omitido conserva; [] elimina; con IDs reemplaza el conjunto completo.
     CorrelatividadRequest:
       type: object
-      required: [materiaRequeridaId, tipoRequisito]
+      required: [materiaRequeridaId]
       additionalProperties: false
       properties:
         materiaRequeridaId: { type: integer, minimum: 1 }
-        tipoRequisito: { type: string, enum: [OBLIGATORIA] }
-        aplicaCursado: { type: boolean, default: true }
-        aplicaRendir: { type: boolean, default: true }
 
     # -------- Inscripciones --------
     InscripcionCarreraRequest:
       type: object
-      required: [carreraId]
+      required: [alumnoId, carreraId]
       properties:
-        alumnoId: { type: integer, description: Solo para admin; el alumno se inscribe solo }
+        alumnoId: { type: integer, description: Alumno que el administrativo inscribe }
         carreraId: { type: integer }
         cicloLectivo: { type: integer, default: 2026 }
       example:
@@ -1771,18 +2322,250 @@ components:
       type: object
       required: [materiaId]
       properties:
-        alumnoId: { type: integer, description: Solo para admin; el alumno se inscribe solo }
+        alumnoId: { type: integer, description: Solo para ADMINISTRATIVO; es Usuario.idUsuario y ALUMNO debe omitirlo. }
         materiaId: { type: integer }
         cicloLectivo: { type: integer, default: 2026 }
+        modalidadElegida: { $ref: '#/components/schemas/Modalidad' }
       example:
         alumnoId: 3
         materiaId: 1
         cicloLectivo: 2026
     CambiarModalidadRequest:
       type: object
-      required: [modalidad]
+      required: [modalidadElegida]
       properties:
-        modalidad: { $ref: '#/components/schemas/Modalidad' }
+        modalidadElegida: { $ref: '#/components/schemas/Modalidad' }
+    MateriaDisponibleAlumno:
+      type: object
+      required: [id, nombre, carrera, yaInscripto, yaAprobada, cumpleCorrelativas, correlativasPendientes, carreras]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        carrera: { $ref: '#/components/schemas/Career' }
+        curso: { type: object, nullable: true, properties: { id: { type: integer }, anio: { type: integer } } }
+        cursadas: { type: array, description: Cursadas activas sin horarios estructurados, items: { type: object, properties: { id: { type: integer }, anioLectivo: { type: integer } } } }
+        modalidad: { $ref: '#/components/schemas/Modalidad', nullable: true, description: Modalidad propia de la materia disponible. }
+        yaInscripto: { type: boolean }
+        yaAprobada: { type: boolean }
+        cumpleCorrelativas: { type: boolean }
+        correlativasPendientes: { type: array, items: { type: object, properties: { id: { type: integer }, nombre: { type: string } } } }
+        carreras: { type: array, items: { $ref: '#/components/schemas/Career' } }
+        habilitada: { type: boolean, description: Resultado informativo; el alta revalida en backend. }
+    MateriasDisponiblesResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data: { type: array, items: { $ref: '#/components/schemas/MateriaDisponibleAlumno' } }
+    VerificacionInscripcionMateriaResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          required: [puedeInscribirse, materia]
+          properties:
+            puedeInscribirse: { type: boolean }
+            materia: { $ref: '#/components/schemas/MateriaDisponibleAlumno' }
+    InscripcionMateriaAlumno:
+      type: object
+      properties:
+        id: { type: integer }
+        materiaId: { type: integer }
+        alumnoId: { type: integer, description: Identificador interno Alumno.idAlumno en respuestas persistidas. }
+        cicloLectivo: { type: integer }
+        modalidadElegida: { $ref: '#/components/schemas/Modalidad' }
+        estado: { type: string, enum: [ACTIVA, RECURSANDO, BAJA] }
+        fechaInscripcion: { type: string, format: date-time }
+        fechaBaja: { type: string, format: date-time, nullable: true }
+        materia: { $ref: '#/components/schemas/Subject' }
+    InscripcionMateriaMutationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data: { $ref: '#/components/schemas/InscripcionMateriaAlumno' }
+    InscripcionesMateriaResponse:
+      type: object
+      required: [success, data, pagination]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/InscripcionMateriaAlumno' } }
+        pagination:
+          type: object
+          required: [page, limit, total, totalPages]
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            totalPages: { type: integer }
+    HistorialInscripcionMateriaResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/InscripcionMateriaAlumno' } }
+    InscripcionCarreraAlumno:
+      type: object
+      properties:
+        id: { type: integer }
+        usuarioId: { type: integer, description: Usuario.idUsuario }
+        carreraId: { type: integer }
+        cicloLectivo: { type: integer }
+        activo: { type: boolean }
+        fechaBaja: { type: string, format: date-time, nullable: true }
+        carrera: { $ref: '#/components/schemas/Career' }
+    InscripcionesCarreraResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/InscripcionCarreraAlumno' } }
+    InscripcionExamenAlumno:
+      type: object
+      properties:
+        id: { type: integer }
+        mesaId: { type: integer }
+        alumnoId: { type: integer, description: Identificador interno Alumno.idAlumno en respuestas persistidas. }
+        condicion: { type: string, enum: [REGULAR, LIBRE] }
+        fechaInscripcion: { type: string, format: date-time }
+        fechaBaja: { type: string, format: date-time, nullable: true }
+        mesa: { type: object, properties: { id: { type: integer }, fecha: { type: string, format: date-time }, materia: { $ref: '#/components/schemas/Subject' } } }
+    InscripcionExamenMutationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data: { $ref: '#/components/schemas/InscripcionExamenAlumno' }
+    InscripcionesExamenResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/InscripcionExamenAlumno' } }
+    TrayectoriaMateria:
+      type: object
+      properties:
+        materia: { $ref: '#/components/schemas/Subject' }
+        estado: { type: string, enum: [PENDIENTE, EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO, APROBADA, HOMOLOGADA] }
+        plan: { type: object, properties: { cursoId: { type: integer, nullable: true }, anio: { type: integer, nullable: true }, posicion: { type: integer } } }
+        inscripcion: { type: object, nullable: true, additionalProperties: true }
+        cursadas: { type: array, items: { $ref: '#/components/schemas/InscripcionMateriaAlumno' } }
+        asistencia: { type: object, nullable: true, additionalProperties: true }
+        tps: { type: object, nullable: true, additionalProperties: true }
+        parcialesEfectivos: { type: array, items: { type: object, additionalProperties: true } }
+        regularidad: { type: object, nullable: true, additionalProperties: true }
+        promocionDirecta: { type: object, nullable: true, additionalProperties: true }
+        examenFinal: { type: object, nullable: true, additionalProperties: true }
+        homologacion: { type: object, nullable: true, additionalProperties: true }
+        definitiva: { type: object, nullable: true, additionalProperties: true }
+    TrayectoriaAcademicaResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          required: [alumnoUsuarioId, carrera, materias]
+          properties:
+            alumnoUsuarioId: { type: integer, description: Usuario.idUsuario }
+            carrera: { $ref: '#/components/schemas/Career' }
+            materias: { type: array, items: { $ref: '#/components/schemas/TrayectoriaMateria' } }
+    EstadoAcademicoCursadaAlumno:
+      type: object
+      required: [alumno, asistencia, parcialesEfectivos, tps, promedio, notaMinima, estado, requisitosPendientes]
+      properties:
+        alumno:
+          type: object
+          required: [alumnoId, apellidoNombre, dni]
+          properties:
+            alumnoId: { type: integer, description: Usuario.idUsuario público }
+            apellidoNombre: { type: string }
+            dni: { type: integer }
+        asistencia: { type: object, additionalProperties: true }
+        parcialesEfectivos: { type: array, items: { type: object, additionalProperties: true } }
+        tps: { type: object, additionalProperties: true }
+        promedio: { type: number, nullable: true }
+        notaMinima: { type: number }
+        estado: { type: string, enum: [EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO] }
+        requisitosPendientes:
+          type: array
+          items: { type: string, enum: [ASISTENCIA, PARCIALES, TRABAJOS_PRACTICOS, REGULARIDAD, INSTANCIA_INTEGRADORA] }
+    EstadoAcademicoCursadaResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          required: [cursadaId, materia, anioLectivo, periodo, alumnos]
+          properties:
+            cursadaId: { type: integer }
+            materia:
+              type: object
+              required: [id, nombre]
+              properties:
+                id: { type: integer }
+                nombre: { type: string }
+            anioLectivo: { type: integer }
+            periodo: { $ref: '#/components/schemas/PeriodoMateria' }
+            alumnos:
+              type: array
+              items: { $ref: '#/components/schemas/EstadoAcademicoCursadaAlumno' }
+    EstadoAcademicoAlumnoResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          required: [alumnoUsuarioId, materias]
+          properties:
+            alumnoUsuarioId: { type: integer, description: Usuario.idUsuario }
+            materias:
+              type: array
+              items:
+                type: object
+                required: [materia, cicloLectivo, modalidadElegida, estado]
+                properties:
+                  materia: { type: object, required: [id, nombre], properties: { id: { type: integer }, nombre: { type: string } } }
+                  cicloLectivo: { type: integer }
+                  modalidadElegida: { $ref: '#/components/schemas/Modalidad' }
+                  estado: { type: string, enum: [EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO] }
+    HorarioPublicado:
+      type: object
+      required: [id, cicloLectivo, titulo, nombreOriginal, tamanio, fechaPublicacion, vigente]
+      properties:
+        id: { type: integer }
+        cicloLectivo: { type: integer }
+        titulo: { type: string }
+        nombreOriginal: { type: string }
+        tamanio: { type: integer }
+        fechaPublicacion: { type: string, format: date-time }
+        vigente: { type: boolean }
+        publicadoPor: { type: object, nullable: true, properties: { id: { type: integer }, nombre: { type: string } } }
+    HorarioPublicadoResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/HorarioPublicado' }
+    HistorialHorarioPublicadoResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/HorarioPublicado' } }
+    HorarioPublicadoMutationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessResponse'
+        - type: object
+          required: [success, message, data]
+          properties:
+            data: { $ref: '#/components/schemas/HorarioPublicado' }
 
     # -------- Exámenes --------
     TipoExamen:
@@ -1845,22 +2628,20 @@ components:
         activo: { type: boolean }
     TribunalRequest:
       type: object
-      required: [examenId, profesorId]
+      required: [mesaId, profesorId]
       properties:
-        examenId: { type: integer }
+        mesaId: { type: integer, description: Identificador de la mesa de examen. }
         profesorId: { type: integer }
         rolTribunal: { type: string, enum: [PRESIDENTE, VOCAL, SUPLENTE], default: VOCAL }
     InscripcionExamenRequest:
       type: object
-      required: [alumnoId]
       properties:
-        alumnoId: { type: integer, description: Solo para admin; el alumno usa su propio ID }
+        alumnoId: { type: integer, description: Solo para ADMINISTRATIVO; es Usuario.idUsuario y ALUMNO debe omitirlo. }
         condicion: { type: string, enum: [REGULAR, LIBRE], default: REGULAR }
     DesinscripcionExamenRequest:
       type: object
-      required: [alumnoId]
       properties:
-        alumnoId: { type: integer, description: Solo para admin }
+        alumnoId: { type: integer, description: Solo para ADMINISTRATIVO; es Usuario.idUsuario y ALUMNO debe omitirlo. }
     CalificacionRequest:
       type: object
       required: [alumnoId, nota]
@@ -1950,18 +2731,40 @@ components:
         observaciones: Consigna de trabajo práctico
     PeriodoRequest:
       type: object
-      required: [tipo, fechaInicio, fechaFin]
+      required: [tipo, cicloLectivo, fechaInicio, fechaFin]
       properties:
         tipo: { $ref: '#/components/schemas/TipoPeriodo' }
+        cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
         fechaInicio: { type: string, format: date-time }
         fechaFin: { type: string, format: date-time }
+        materiasIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        mesasIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
         descripcion: { type: string, maxLength: 255, nullable: true }
     PeriodoUpdateRequest:
       type: object
       properties:
         tipo: { $ref: '#/components/schemas/TipoPeriodo' }
+        cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
         fechaInicio: { type: string, format: date-time }
         fechaFin: { type: string, format: date-time }
+        materiasIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        mesasIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
         descripcion: { type: string, maxLength: 255, nullable: true }
         activo: { type: boolean }
 
@@ -1982,6 +2785,76 @@ components:
               presente: { type: boolean }
               justificado: { type: boolean, default: false }
               observacion: { type: string, nullable: true }
+
+    ClaseAsistenciaInput:
+      type: object
+      required: [alumnoId, presente]
+      properties:
+        alumnoId: { type: integer, minimum: 1, description: Usuario.idUsuario público }
+        presente: { type: boolean }
+        justificado: { type: boolean, default: false, description: Solo aplica si presente=false }
+        observacion: { type: string, nullable: true }
+    ClaseWritePayload:
+      type: object
+      required: [temaDesarrollado, asistencias]
+      properties:
+        temaDesarrollado: { type: string, minLength: 1, maxLength: 5000 }
+        asistencias:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ClaseAsistenciaInput' }
+    ClaseResumen:
+      type: object
+      required: [fecha, temaDesarrollado, presentes, ausentes, ausentesJustificados]
+      properties:
+        fecha: { type: string, format: date }
+        temaDesarrollado: { type: string }
+        presentes: { type: integer, minimum: 0 }
+        ausentes: { type: integer, minimum: 0 }
+        ausentesJustificados: { type: integer, minimum: 0 }
+    ClaseDetalle:
+      allOf:
+        - $ref: '#/components/schemas/ClaseResumen'
+        - type: object
+          required: [asistencias]
+          properties:
+            asistencias:
+              type: array
+              items:
+                allOf:
+                  - $ref: '#/components/schemas/ClaseAsistenciaInput'
+                  - type: object
+                    required: [nombre, dni]
+                    properties:
+                      nombre: { type: string }
+                      dni: { type: integer }
+    ClasesResumenResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/ClaseResumen' } }
+    ClaseDetalleResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/ClaseDetalle' }
+    ClaseGuardada:
+      type: object
+      required: [fecha, temaDesarrollado, registros]
+      properties:
+        fecha: { type: string, format: date }
+        temaDesarrollado: { type: string }
+        registros: { type: integer, minimum: 0 }
+    ClaseGuardadaResponse:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/ClaseGuardada' }
 
     CursadaDisponibleCalificaciones:
       type: object
@@ -2034,6 +2907,32 @@ components:
                   nota: { type: integer, minimum: 0, maximum: 10 }
                   fechaEvaluacion: { type: string, format: date }
                   observacion: { type: string, nullable: true }
+
+    CalificacionCursada:
+      type: object
+      required: [id, cursadaId, tipoCalificacion, numero, nota, alumno]
+      properties:
+        id: { type: integer }
+        cursadaId: { type: integer }
+        tipoCalificacion: { type: string, enum: [PARCIAL, RECUPERATORIO, EXAMEN_FINAL, TRABAJO_PRACTICO] }
+        numero: { type: integer, minimum: 1 }
+        nota: { type: number, minimum: 0, maximum: 10 }
+        fechaEvaluacion: { type: string, format: date, nullable: true }
+        parcialOriginalId: { type: integer, nullable: true, description: Identificador técnico del parcial vinculado; no es una identidad de alumno. }
+        observacion: { type: string, nullable: true }
+        alumno:
+          type: object
+          required: [alumnoId, apellidoNombre, dni]
+          properties:
+            alumnoId: { type: integer, description: Usuario.idUsuario público }
+            apellidoNombre: { type: string }
+            dni: { type: integer }
+    CalificacionesCursadaResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/CalificacionCursada' } }
 
     HomologacionRequest:
       type: object

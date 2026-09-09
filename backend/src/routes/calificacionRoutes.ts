@@ -40,9 +40,10 @@ router.get('/resumen/:cursadaId',
   calificacionController.getResumenCursada
 );
 
-// Historial del alumno (el propio, admin o profesor)
+// Historial del alumno (el propio o administrativo). Los profesores consultan
+// calificaciones desde sus cursadas autorizadas.
 router.get('/alumno/:alumnoId',
-  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
   calificacionController.getByAlumno
 );
 

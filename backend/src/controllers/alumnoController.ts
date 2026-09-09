@@ -9,6 +9,15 @@ class AlumnoController extends UserController {
   async listarAlumnos(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       req.query.rol = ROLES.ALUMNO as string;
+      if (req.user?.rol === ROLES.PROFESOR) {
+        const result = await userService.listAlumnosForProfesor({
+          page: req.query.page ? parseInt(req.query.page as string) : 1,
+          limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+          search: req.query.search as string | undefined
+        }, req.user.id);
+        res.json({ success: true, data: result.data, pagination: result.pagination });
+        return;
+      }
       await super.listUsers(req, res, next);
     } catch (error) {
       next(error);
@@ -33,6 +42,11 @@ class AlumnoController extends UserController {
           success: false,
           message: 'ID de usuario inválido'
         });
+        return;
+      }
+
+      if (req.user?.rol === ROLES.PROFESOR && !(await userService.alumnoVisibleParaProfesor(userId, req.user.id))) {
+        res.status(404).json({ success: false, message: 'Alumno no disponible' });
         return;
       }
 

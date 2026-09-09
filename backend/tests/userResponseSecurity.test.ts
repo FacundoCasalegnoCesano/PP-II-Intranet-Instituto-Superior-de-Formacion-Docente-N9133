@@ -98,6 +98,7 @@ test('cambio de rol no expone credenciales internas del usuario', async () => {
     backupCodes: 'encrypted-backup-codes'
   }) as any);
   replaceMethod(userRepository, 'update', async () => ({}) as any);
+  replaceMethod(prisma.sesion, 'updateMany', async () => ({ count: 0 }) as any);
 
   const result = await userService.changeUserRole(
     20,

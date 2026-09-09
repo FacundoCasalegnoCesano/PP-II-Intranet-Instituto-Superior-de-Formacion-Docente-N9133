@@ -54,6 +54,7 @@ class PeriodoInscripcionController {
       const filters: any = {};
       if (req.query.tipo) filters.tipo = req.query.tipo as string;
       if (req.query.activo !== undefined) filters.activo = req.query.activo === 'true';
+      if (req.query.cicloLectivo) filters.cicloLectivo = parseInt(req.query.cicloLectivo as string);
       filters.page = req.query.page ? parseInt(req.query.page as string) : 1;
       filters.limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
       

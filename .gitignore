@@ -8,3 +8,9 @@ node_modules/
 /backend/SECURITY.md
 /backend/endpoints.http
 /context.md
+/.superpowers/
+/.artifact-work/
+/.codex/
+/graphify-out/
+/AGENTS.md
+/backend/.env.example

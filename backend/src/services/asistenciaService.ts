@@ -1,11 +1,15 @@
 import asistenciaRepository from '../repositories/asistenciaRepository.js';
 import cursadaRepository from '../repositories/cursadaRepository.js';
 import materiaRepository from '../repositories/materiaRepository.js';
-import profesorMateriaRepository from '../repositories/profesorMateriaRepository.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { AppError } from '../utils/AppError.js';
 import { ROLES } from '../constants/roles.js';
 import { MINIMO_CON_JUSTIFICACION, umbralAsistencia, permiteFlexionJustificadas } from '../utils/reglasAcademicas.js';
+import {
+  verificarPermisoCursada as verificarPermisoCursadaDocente,
+  verificarPermisoMutacionCursada
+} from '../utils/docenteHelper.js';
+import { fechaPerteneceAlAnioLectivo } from '../utils/cicloLectivo.js';
 
 interface FilaCarga {
   alumnoId: number; // id de cuenta (Usuario.idUsuario)
@@ -20,37 +24,21 @@ class AsistenciaService {
    * o está asignado a la materia (profesores_materias).
    */
   private async verificarPermisoCursada(currentUser: any, cursadaId: number): Promise<void> {
-    if (currentUser.rol === ROLES.ADMINISTRATIVO) return;
-
-    if (currentUser.rol !== ROLES.PROFESOR) {
-      throw new AppError(403, 'No tienes permisos para gestionar asistencias');
-    }
-
-    const cursada = await cursadaRepository.findById(cursadaId);
-    if (!cursada) {
-      throw new AppError(404, 'Cursada no encontrada');
-    }
-
-    const esDocenteDeCursada = cursada.docenteId === currentUser.id;
-    const asignacion = await profesorMateriaRepository.findByProfesorAndMateria(
-      currentUser.id,
-      cursada.materiaId
-    );
-    const estaAsignado = asignacion !== null && asignacion.activo && !asignacion.fechaBaja;
-
-    if (!esDocenteDeCursada && !estaAsignado) {
-      throw new AppError(403, 'Solo el docente de la materia puede gestionar asistencias');
-    }
+    await verificarPermisoCursadaDocente(currentUser, cursadaId);
   }
 
   async cargarClase(
     data: { cursadaId: number; fecha: string | Date; asistencias: FilaCarga[] },
     currentUser: any
   ) {
-    await this.verificarPermisoCursada(currentUser, data.cursadaId);
+    await verificarPermisoMutacionCursada(currentUser, data.cursadaId);
 
-    const cursada = (await cursadaRepository.findById(data.cursadaId))!;
     const fechaNormalizada = new Date(new Date(data.fecha).toISOString().slice(0, 10));
+    const cursada = await cursadaRepository.findById(data.cursadaId);
+    if (!cursada) throw new AppError(404, 'Cursada no encontrada');
+    if (!fechaPerteneceAlAnioLectivo(fechaNormalizada, cursada.anioLectivo)) {
+      throw new AppError(400, 'La fecha debe pertenecer al año lectivo de la cursada');
+    }
 
     // Resolver id de cuenta → idAlumno y validar que esté inscripto a la cursada
     const filasConIdAlumno = [];
@@ -72,8 +60,6 @@ class AsistenciaService {
         observacion: fila.observacion ?? null
       });
     }
-    void cursada;
-
     const resultado = await asistenciaRepository.upsertClase(
       data.cursadaId,
       fechaNormalizada,
@@ -94,6 +80,9 @@ class AsistenciaService {
   }
 
   async getByAlumno(alumnoUsuarioId: number, currentUser: any) {
+    if (currentUser.rol === ROLES.PROFESOR) {
+      throw new AppError(403, 'Los profesores deben consultar asistencia desde sus cursadas');
+    }
     // El alumno solo puede ver su propio historial
     if (
       currentUser.rol === ROLES.ALUMNO &&

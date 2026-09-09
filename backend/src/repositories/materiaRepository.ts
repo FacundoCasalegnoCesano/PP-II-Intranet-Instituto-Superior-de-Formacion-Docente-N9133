@@ -1,5 +1,8 @@
 import { prisma } from '../config/prisma.js';
+import type { Prisma } from '@prisma/client';
 import type { CorrelatividadSnapshot } from '../domain/academico/correlatividades.js';
+
+type PrismaDb = typeof prisma | Prisma.TransactionClient;
 
 export type CorrelatividadConMateria = CorrelatividadSnapshot<{
   id: number;
@@ -18,6 +21,7 @@ export interface MateriaFilters {
   carreraId?: number;
   tipoEspacio?: string;
   activo?: boolean;
+  profesorId?: number;
 }
 
 export interface MateriaCreateData {
@@ -37,7 +41,9 @@ export interface MateriaCreateData {
   aniosRegularidad?: number | null;
   carreraId: number;
   cursoId?: number | null;
+  cursoAnio?: number;
   espacioCurricularId?: number | null;
+  correlativasIds?: number[];
 }
 
 export interface MateriaUpdateData {
@@ -57,12 +63,18 @@ export interface MateriaUpdateData {
   aniosRegularidad?: number | null;
   carreraId?: number;
   cursoId?: number | null;
+  cursoAnio?: number;
   espacioCurricularId?: number | null;
   activo?: boolean;
+  correlativasIds?: number[];
 }
 
 class MateriaRepository {
-  async create(data: MateriaCreateData): Promise<any> {
+  async withTransaction<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return await prisma.$transaction(operation);
+  }
+
+  async create(data: MateriaCreateData, db: PrismaDb = prisma): Promise<any> {
     const cleanData: any = {
       nombre: data.nombre,
       cargaHoraria: data.cargaHoraria,
@@ -85,7 +97,7 @@ class MateriaRepository {
     if (data.cursoId !== undefined) cleanData.cursoId = data.cursoId ?? null;
     if (data.espacioCurricularId !== undefined) cleanData.espacioCurricularId = data.espacioCurricularId ?? null;
 
-    return await prisma.materia.create({
+    return await db.materia.create({
       data: cleanData,
       include: {
         carrera: true,
@@ -94,8 +106,8 @@ class MateriaRepository {
     });
   }
 
-  async findById(id: number): Promise<any> {
-    return await prisma.materia.findUnique({
+  async findById(id: number, db: PrismaDb = prisma): Promise<any> {
+    return await db.materia.findUnique({
       where: { id },
       include: {
         carrera: true,
@@ -142,6 +154,14 @@ class MateriaRepository {
     if (carreraId) where.carreraId = carreraId;
     if (tipoEspacio) where.tipoEspacio = tipoEspacio;
     if (activo !== undefined) where.activo = activo;
+    if (filters.profesorId !== undefined) {
+      where.AND = [{
+        OR: [
+          { profesorMaterias: { some: { profesorId: filters.profesorId, activo: true, fechaBaja: null } } },
+          { cursadas: { some: { docenteId: filters.profesorId } } }
+        ]
+      }];
+    }
 
     const [materias, total] = await Promise.all([
       prisma.materia.findMany({
@@ -202,13 +222,15 @@ class MateriaRepository {
     };
   }
 
-  async update(id: number, data: MateriaUpdateData): Promise<any> {
+  async update(id: number, data: MateriaUpdateData, db: PrismaDb = prisma): Promise<any> {
     const cleanData: any = { ...data };
     Object.keys(cleanData).forEach(key => {
       if (cleanData[key] === undefined) delete cleanData[key];
     });
 
-    return await prisma.materia.update({
+    delete cleanData.correlativasIds;
+
+    return await db.materia.update({
       where: { id },
       data: cleanData,
       include: {
@@ -237,12 +259,16 @@ class MateriaRepository {
     });
   }
 
-  async getMateriasByCarrera(carreraId: number): Promise<any> {
+  async getMateriasByCarrera(carreraId: number, profesorId?: number): Promise<any> {
+    const where: any = { carreraId, activo: true };
+    if (profesorId !== undefined) {
+      where.OR = [
+        { profesorMaterias: { some: { profesorId, activo: true, fechaBaja: null } } },
+        { cursadas: { some: { docenteId: profesorId } } }
+      ];
+    }
     return await prisma.materia.findMany({
-      where: {
-        carreraId,
-        activo: true
-      },
+      where,
       orderBy: { nombre: 'asc' },
       include: {
         curso: true,
@@ -287,21 +313,80 @@ class MateriaRepository {
     }));
   }
 
+  async findByCareerAndName(
+    carreraId: number,
+    nombre: string,
+    excludeId?: number,
+    db: PrismaDb = prisma
+  ): Promise<any> {
+    return await db.materia.findFirst({
+      where: {
+        carreraId,
+        nombre,
+        ...(excludeId !== undefined ? { id: { not: excludeId } } : {})
+      }
+    });
+  }
+
+  async findCourseById(cursoId: number, db: PrismaDb = prisma): Promise<any> {
+    return await db.curso.findUnique({ where: { id: cursoId } });
+  }
+
+  async resolveCursoId(
+    carreraId: number,
+    carreraNombre: string,
+    anio: number,
+    db: PrismaDb = prisma
+  ): Promise<number> {
+    const used = await db.curso.findFirst({
+      where: {
+        anio,
+        materias: { some: { carreraId } }
+      },
+      orderBy: { id: 'asc' }
+    });
+    if (used) return used.id;
+
+    const descripcion = `${anio}° Año - ${carreraNombre}`;
+    const curso = await db.curso.upsert({
+      where: { anio_descripcion: { anio, descripcion } },
+      update: { activo: true },
+      create: { anio, descripcion, activo: true }
+    });
+    return curso.id;
+  }
+
   async addCorrelatividad(data: {
     materiaOrigenId: number;
     materiaRequeridaId: number;
-    tipoRequisito: 'OBLIGATORIA';
-    aplicaCursado?: boolean;
-    aplicaRendir?: boolean;
-  }): Promise<any> {
-    return await prisma.correlatividad.create({
+  }, db: PrismaDb = prisma): Promise<any> {
+    return await db.correlatividad.create({
       data: {
         materiaOrigenId: data.materiaOrigenId,
         materiaRequeridaId: data.materiaRequeridaId,
-        tipoRequisito: data.tipoRequisito,
-        aplicaCursado: data.aplicaCursado ?? true,
-        aplicaRendir: data.aplicaRendir ?? true
+        tipoRequisito: 'OBLIGATORIA',
+        aplicaCursado: false,
+        aplicaRendir: true
       }
+    });
+  }
+
+  async replaceCorrelatividades(
+    materiaOrigenId: number,
+    ids: number[],
+    db: Prisma.TransactionClient
+  ): Promise<void> {
+    await db.correlatividad.deleteMany({ where: { materiaOrigenId } });
+    if (ids.length === 0) return;
+
+    await db.correlatividad.createMany({
+      data: ids.map(materiaRequeridaId => ({
+        materiaOrigenId,
+        materiaRequeridaId,
+        tipoRequisito: 'OBLIGATORIA' as const,
+        aplicaCursado: false,
+        aplicaRendir: true
+      }))
     });
   }
 
@@ -325,15 +410,7 @@ class MateriaRepository {
         carrera: true,
         curso: true,
         cursadas: {
-          where: { activo: true },
-          include: {
-            horarios: {
-              where: { activo: true },
-              include: {
-                cursada: true
-              }
-            }
-          }
+          where: { activo: true }
         },
         correlatividadesOrigen: {
           where: { tipoRequisito: 'OBLIGATORIA' },
@@ -375,6 +452,55 @@ class MateriaRepository {
       materiasInscriptasIds,
       materiasAprobadasIds
     };
+  }
+
+  async findCorrelativity(
+    materiaOrigenId: number,
+    materiaRequeridaId: number,
+    db: PrismaDb = prisma
+  ): Promise<any> {
+    return await db.correlatividad.findFirst({
+      where: {
+        materiaOrigenId,
+        materiaRequeridaId,
+        tipoRequisito: 'OBLIGATORIA'
+      }
+    });
+  }
+
+  async getCorrelativityEdges(
+    carreraId: number,
+    db: PrismaDb = prisma
+  ): Promise<Array<{
+    materiaOrigenId: number;
+    materiaRequeridaId: number;
+  }>> {
+    return await db.correlatividad.findMany({
+      where: {
+        tipoRequisito: 'OBLIGATORIA',
+        materiaOrigen: { carreraId },
+        materiaRequerida: { carreraId }
+      },
+      select: { materiaOrigenId: true, materiaRequeridaId: true }
+    });
+  }
+
+  async getIncidentCorrelativityEdges(
+    materiaId: number,
+    db: PrismaDb = prisma
+  ): Promise<Array<{
+    materiaOrigenId: number;
+    materiaRequeridaId: number;
+  }>> {
+    return await db.correlatividad.findMany({
+      where: {
+        OR: [
+          { materiaOrigenId: materiaId },
+          { materiaRequeridaId: materiaId }
+        ]
+      },
+      select: { materiaOrigenId: true, materiaRequeridaId: true }
+    });
   }
 
   async getHorariosByMateriaAndCiclo(materiaId: number, cicloLectivo: number): Promise<any> {

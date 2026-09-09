@@ -1,5 +1,17 @@
 import Joi from 'joi';
 
+const alumnoUpdateSchema = Joi.object({
+  domicilio: Joi.string().max(255),
+  anioEgreso: Joi.number().integer().min(1900).max(2100),
+  institucionProcedencia: Joi.string().max(255).allow('', null)
+}).min(1);
+
+const alumnoRoleSchema = Joi.object({
+  domicilio: Joi.string().max(255).required(),
+  anioEgreso: Joi.number().integer().min(1900).max(2100).required(),
+  institucionProcedencia: Joi.string().max(255).allow('', null)
+});
+
 export const updateUserSchema = Joi.object({
   apellidoNombre: Joi.string()
     .max(255)
@@ -33,26 +45,10 @@ export const updateUserSchema = Joi.object({
       'string.pattern.base': 'El teléfono debe tener entre 10 y 11 dígitos'
     }),
   
-  password: Joi.string()
-    .min(8)
-    .max(50)
-    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/)
-    .messages({
-      'string.min': 'La contraseña debe tener al menos 8 caracteres',
-      'string.max': 'La contraseña no puede exceder 50 caracteres',
-      'string.pattern.base': 'La contraseña debe tener al menos una mayúscula, una minúscula, un número y un carácter especial'
-    }),
-  
   cuil: Joi.string()
     .pattern(/^\d{11}$/)
     .messages({
       'string.pattern.base': 'El CUIL debe tener 11 dígitos'
-    }),
-  
-  rol: Joi.string()
-    .valid('ALUMNO', 'ADMINISTRATIVO', 'PROFESOR')
-    .messages({
-      'any.only': 'Rol inválido. Debe ser ALUMNO, ADMINISTRATIVO o PROFESOR'
     }),
   
   contactoEmergencia: Joi.string()
@@ -63,7 +59,26 @@ export const updateUserSchema = Joi.object({
     .max(255)
     .allow('', null),
   
-  activo: Joi.boolean()
+  alumno: alumnoUpdateSchema
+});
+
+// Perfil propio: los campos administrativos y la contraseña tienen endpoints
+// específicos y no deben llegar a la actualización general del perfil.
+export const updateOwnUserSchema = Joi.object({
+  apellidoNombre: updateUserSchema.extract('apellidoNombre'),
+  dni: updateUserSchema.extract('dni'),
+  email: updateUserSchema.extract('email'),
+  fechaNacimiento: updateUserSchema.extract('fechaNacimiento'),
+  telefono: updateUserSchema.extract('telefono'),
+  cuil: updateUserSchema.extract('cuil'),
+  contactoEmergencia: updateUserSchema.extract('contactoEmergencia'),
+  foto: updateUserSchema.extract('foto'),
+  rol: Joi.forbidden(),
+  activo: Joi.forbidden(),
+  password: Joi.forbidden(),
+  passwordHash: Joi.forbidden(),
+  backupCodes: Joi.forbidden(),
+  alumno: Joi.forbidden()
 });
 
 export const changeRoleSchema = Joi.object({
@@ -73,7 +88,12 @@ export const changeRoleSchema = Joi.object({
     .messages({
       'any.required': 'El nuevo rol es requerido',
       'any.only': 'Rol inválido. Debe ser ALUMNO, ADMINISTRATIVO o PROFESOR'
-    })
+    }),
+  alumno: Joi.when('rol', {
+    is: 'ALUMNO',
+    then: alumnoRoleSchema.optional(),
+    otherwise: Joi.forbidden()
+  })
 });
 
 export const toggleActiveSchema = Joi.object({

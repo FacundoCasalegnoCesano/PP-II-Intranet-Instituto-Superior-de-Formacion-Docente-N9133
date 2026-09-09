@@ -38,7 +38,7 @@ class HorarioController {
         return;
       }
 
-      const horario = await horarioService.getHorarioById(id);
+      const horario = await horarioService.getHorarioById(id, req.user!);
       
       res.json({
         success: true,
@@ -69,7 +69,7 @@ class HorarioController {
         return;
       }
 
-      const horarios = await horarioService.getHorariosByCursada(cursadaId);
+      const horarios = await horarioService.getHorariosByCursada(cursadaId, req.user!);
       
       res.json({
         success: true,
@@ -100,7 +100,7 @@ class HorarioController {
         return;
       }
 
-      const horarios = await horarioService.getHorariosByMateria(materiaId);
+      const horarios = await horarioService.getHorariosByMateria(materiaId, req.user!);
       
       res.json({
         success: true,

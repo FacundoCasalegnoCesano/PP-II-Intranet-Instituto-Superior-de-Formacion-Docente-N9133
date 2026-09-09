@@ -3,6 +3,7 @@ import Joi from 'joi';
 export const listarPeriodosSchema = Joi.object({
   tipo: Joi.string().valid('MATERIA', 'EXAMEN'),
   activo: Joi.boolean(),
+  cicloLectivo: Joi.number().integer().min(2000).max(2100),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20)
 });

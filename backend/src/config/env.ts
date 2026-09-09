@@ -28,9 +28,11 @@ export interface Config {
   // Email (SMTP)
   smtpHost: string;
   smtpPort: number;
+  smtpSecure: boolean;
   smtpUser: string;
   smtpPass: string;
   emailFrom: string;
+  horariosStorageDir: string;
   
   // URLs
   frontendUrl: string;
@@ -57,9 +59,14 @@ const config: Config = {
   // Email (SMTP)
   smtpHost: process.env.SMTP_HOST || '',
   smtpPort: parseInt(process.env.SMTP_PORT || '587'),
+  smtpSecure: process.env.SMTP_SECURE
+    ? process.env.SMTP_SECURE.toLowerCase() === 'true'
+    : parseInt(process.env.SMTP_PORT || '587') === 465,
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   emailFrom: process.env.EMAIL_FROM || 'Instituto <noreply@instituto.edu.ar>',
+  // No se sirve como estático: queda fuera de cualquier webroot público.
+  horariosStorageDir: path.resolve(process.env.HORARIOS_STORAGE_DIR || path.join(__dirname, '../../storage/horarios-publicados')),
   
   // URLs
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -69,6 +76,10 @@ const config: Config = {
 // Validar variables críticas
 if (!config.jwtSecret) {
   throw new Error('JWT_SECRET no está definido en las variables de entorno');
+}
+
+if (config.nodeEnv === 'production' && (!config.smtpHost || !config.smtpPort || !config.smtpUser || !config.smtpPass || !config.emailFrom)) {
+  throw new Error('La configuración SMTP es obligatoria en producción');
 }
 
 export default config;

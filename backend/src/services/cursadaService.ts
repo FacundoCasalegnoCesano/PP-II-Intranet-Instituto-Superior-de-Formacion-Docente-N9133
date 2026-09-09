@@ -3,8 +3,56 @@ import materiaRepository from '../repositories/materiaRepository.js';
 import userRepository from '../repositories/userRepository.js';
 import { ROLES } from '../constants/roles.js';
 import { AppError } from '../utils/AppError.js';
-import type { CursadaCreateData, CursadaUpdateData } from '../repositories/cursadaRepository.js';
-import { verificarPermisoCursada } from '../utils/docenteHelper.js';
+import type {
+  CursadaCreateData,
+  CursadaUpdateData,
+  InscriptoPublico
+} from '../repositories/cursadaRepository.js';
+import { puedeMutarCursada, verificarPermisoCursada } from '../utils/docenteHelper.js';
+import { anioInstitucionalActual } from '../utils/cicloLectivo.js';
+
+function definedFields(fields: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+}
+
+function presentarMateriaPublica(materia: any): Record<string, unknown> | null {
+  if (!materia) return null;
+  return definedFields({
+    id: materia.id,
+    nombre: materia.nombre,
+    carreraId: materia.carreraId,
+    cargaHoraria: materia.cargaHoraria,
+    horasCatedra: materia.horasCatedra,
+    tipoEspacio: materia.tipoEspacio,
+    modalidad: materia.modalidad,
+    periodo: materia.periodo,
+    regimen: materia.regimen,
+    notaMinima: materia.notaMinima,
+    asistenciaRequerida: materia.asistenciaRequerida,
+    tpRequeridos: materia.tpRequeridos,
+    esPromocionable: materia.esPromocionable,
+    notaPromocion: materia.notaPromocion,
+    aniosRegularidad: materia.aniosRegularidad,
+    activo: materia.activo,
+    carrera: materia.carrera,
+    curso: materia.curso
+  });
+}
+
+function presentarCursadaPublica(cursada: any, editable: boolean) {
+  return {
+    id: cursada.id,
+    materiaId: cursada.materiaId,
+    materia: presentarMateriaPublica(cursada.materia),
+    anioLectivo: cursada.anioLectivo,
+    periodo: cursada.periodo,
+    docenteId: cursada.docenteId ?? null,
+    docente: cursada.docente ?? null,
+    horarios: cursada.horarios ?? [],
+    activo: cursada.activo,
+    editable
+  };
+}
 
 class CursadaService {
   private esAdministrativo(currentUser: any): void {
@@ -53,36 +101,72 @@ class CursadaService {
     return await cursadaRepository.create(data);
   }
 
-  async getCursadas(filters: { page?: number; limit?: number; anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } = {}) {
-    return await cursadaRepository.findAll(filters);
+  async getCursadas(filters: { page?: number; limit?: number; anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean } = {}, currentUser?: any) {
+    let result;
+    if (currentUser?.rol === ROLES.PROFESOR) {
+      const { docenteId: _ignored, ...profesorFilters } = filters;
+      result = await cursadaRepository.findAllForProfesor({ ...profesorFilters, profesorId: currentUser.id });
+    } else {
+      if (currentUser && currentUser.rol !== ROLES.ADMINISTRATIVO) {
+        throw new AppError(403, 'No tienes permisos para listar cursadas');
+      }
+      result = await cursadaRepository.findAll(filters);
+    }
+
+    if (!result) {
+      throw new AppError(403, 'No tienes permisos para listar cursadas');
+    }
+
+    return {
+      ...result,
+      data: result.data.map((cursada: any) => {
+        const materia = cursada.materia;
+        const materiaSinAsignaciones = materia
+          ? (({ profesorMaterias: _profesorMaterias, ...rest }: any) => rest)(materia)
+          : materia;
+        return {
+          ...cursada,
+          ...(materia ? { materia: materiaSinAsignaciones } : {}),
+          editable: currentUser ? puedeMutarCursada(currentUser, cursada) : false
+        };
+      })
+    };
   }
 
-  async getCursadaById(id: number) {
+  async getCursadaById(id: number, currentUser?: any) {
     const cursada = await cursadaRepository.findById(id);
     if (!cursada) {
       throw new AppError(404, 'Cursada no encontrada');
     }
-    return cursada;
+    if (currentUser?.rol === ROLES.PROFESOR) {
+      await verificarPermisoCursada(currentUser, id);
+    }
+    if (currentUser && currentUser.rol !== ROLES.ADMINISTRATIVO && currentUser.rol !== ROLES.PROFESOR) {
+      throw new AppError(403, 'No tienes permisos para consultar cursadas');
+    }
+    const editable = currentUser?.rol === ROLES.ADMINISTRATIVO || (
+      currentUser?.rol === ROLES.PROFESOR &&
+      cursada.activo &&
+      cursada.anioLectivo === anioInstitucionalActual()
+    );
+    return presentarCursadaPublica(cursada, editable);
   }
 
   async updateCursada(id: number, data: CursadaUpdateData, currentUser: any) {
     this.esAdministrativo(currentUser);
-    await this.getCursadaById(id);
+    await this.getCursadaById(id, currentUser);
     await this.validarDatos(data, id);
     return await cursadaRepository.update(id, data);
   }
 
   async deleteCursada(id: number, currentUser: any) {
     this.esAdministrativo(currentUser);
-    await this.getCursadaById(id);
+    await this.getCursadaById(id, currentUser);
     return await cursadaRepository.delete(id);
   }
 
-  async getInscriptosByCursada(cursadaId: number, currentUser: any) {
-    await this.getCursadaById(cursadaId);
-    if (currentUser.rol !== ROLES.ADMINISTRATIVO) {
-      await verificarPermisoCursada(currentUser, cursadaId);
-    }
+  async getInscriptosByCursada(cursadaId: number, currentUser: any): Promise<InscriptoPublico[]> {
+    await this.getCursadaById(cursadaId, currentUser);
     return await cursadaRepository.findInscriptosByCursadaId(cursadaId);
   }
 }

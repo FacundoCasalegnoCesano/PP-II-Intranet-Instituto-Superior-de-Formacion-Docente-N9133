@@ -64,7 +64,7 @@ router.delete('/:id',
 
 router.post('/:id/correlatividades',
   roleCheck(ROLES.ADMINISTRATIVO),
-  validationMiddleware(correlatividadSchema),
+  validationMiddleware(correlatividadSchema, 'body', { stripUnknown: false }),
   materiaController.addCorrelatividad
 );
 

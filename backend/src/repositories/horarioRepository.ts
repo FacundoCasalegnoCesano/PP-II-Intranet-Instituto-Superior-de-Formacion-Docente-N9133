@@ -85,6 +85,22 @@ class HorarioRepository {
     });
   }
 
+  async findActiveByCursadaAndDay(cursadaId: number, dia: string, excludeId?: number): Promise<any[]> {
+    return await prisma.horario.findMany({
+      where: {
+        cursadaId,
+        dia: dia as any,
+        activo: true,
+        ...(excludeId !== undefined ? { id: { not: excludeId } } : {})
+      },
+      select: {
+        id: true,
+        horaInicio: true,
+        horaFin: true
+      }
+    });
+  }
+
   async update(id: number, data: HorarioUpdateData): Promise<any> {
     const cleanData: any = { ...data };
     Object.keys(cleanData).forEach(key => {

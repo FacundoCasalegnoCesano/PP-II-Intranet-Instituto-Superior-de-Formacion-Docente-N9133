@@ -50,7 +50,7 @@ export const inscripcionMateriaSchema = Joi.object({
 });
 
 export const cambiarModalidadSchema = Joi.object({
-  modalidad: Joi.string()
+  modalidadElegida: Joi.string()
     .valid(...MODALIDADES)
     .required()
     .messages({

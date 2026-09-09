@@ -77,7 +77,7 @@ class PeriodoInscripcionService {
     return periodo;
   }
 
-  async listPeriodos(filters: { tipo?: string; activo?: boolean; page?: number; limit?: number } = {}) {
+  async listPeriodos(filters: { tipo?: string; activo?: boolean; cicloLectivo?: number; page?: number; limit?: number } = {}) {
     return await periodoInscripcionRepository.findAll(filters);
   }
 

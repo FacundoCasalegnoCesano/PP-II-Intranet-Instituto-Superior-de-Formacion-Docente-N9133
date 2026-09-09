@@ -103,14 +103,19 @@ class PeriodoInscripcionRepository {
 
   async findById(id: number): Promise<any> {
     return await prisma.periodoInscripcion.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        materias: { include: { materia: true } },
+        mesas: { include: { mesa: true } }
+      }
     });
   }
 
-  async findAll(filters: { tipo?: string; activo?: boolean } & PaginationInput = {}) {
+  async findAll(filters: { tipo?: string; activo?: boolean; cicloLectivo?: number } & PaginationInput = {}) {
     const where: any = {};
     if (filters.tipo) where.tipo = filters.tipo as any;
     if (filters.activo !== undefined) where.activo = filters.activo;
+    if (filters.cicloLectivo !== undefined) where.cicloLectivo = filters.cicloLectivo;
 
     const { page, limit, skip } = normalizePagination(filters);
     const [data, total] = await Promise.all([prisma.periodoInscripcion.findMany({

@@ -10,17 +10,16 @@ const router = Router();
 
 router.use(authMiddleware);
 
-// Alumno puede inscribirse a carrera (self-service)
-// Admin puede inscribir a cualquier alumno
+// Solo admin puede inscribir a cualquier alumno
 router.post('/',
-  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
+  roleCheck(ROLES.ADMINISTRATIVO),
   validationMiddleware(inscripcionCarreraSchema),
   inscripcionCarreraController.inscribirAlumno
 );
 
-// Dar de baja (Alumno o Admin)
+// Dar de baja (solo Admin)
 router.delete('/:id',
-  roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
+  roleCheck(ROLES.ADMINISTRATIVO),
   inscripcionCarreraController.darBaja
 );
 

@@ -75,9 +75,11 @@ class ExamenRepository {
     });
   }
 
-  async findExamenById(id: number): Promise<any> {
-    return await prisma.mesa.findUnique({
-      where: { id },
+  async findExamenById(id: number, profesorId?: number): Promise<any> {
+    return await prisma.mesa.findFirst({
+      where: profesorId === undefined
+        ? { id }
+        : { id, tribunales: { some: { profesorId } } },
       include: {
         materia: {
           include: {
@@ -116,7 +118,7 @@ class ExamenRepository {
   }
 
   async findAllExamenes(filters: any = {}) {
-    const { materiaId, fechaDesde, fechaHasta, page = 1, limit = 20 } = filters;
+    const { materiaId, fechaDesde, fechaHasta, profesorId, page = 1, limit = 20 } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -125,6 +127,9 @@ class ExamenRepository {
       where.fecha = {};
       if (fechaDesde) where.fecha.gte = new Date(fechaDesde);
       if (fechaHasta) where.fecha.lte = new Date(fechaHasta);
+    }
+    if (profesorId !== undefined) {
+      where.tribunales = { some: { profesorId } };
     }
 
     const [examenes, total] = await Promise.all([

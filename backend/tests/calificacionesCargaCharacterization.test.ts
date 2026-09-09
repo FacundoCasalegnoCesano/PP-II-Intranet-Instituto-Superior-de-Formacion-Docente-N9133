@@ -4,6 +4,7 @@ import { afterEach, test } from 'node:test';
 import alumnoRepository from '../src/repositories/alumnoRepository.js';
 import calificacionRepository from '../src/repositories/calificacionRepository.js';
 import calificacionService from '../src/services/calificacionService.js';
+import cursadaRepository from '../src/repositories/cursadaRepository.js';
 import { ROLES } from '../src/constants/roles.js';
 
 const restorations: Array<() => void> = [];
@@ -17,6 +18,7 @@ function replaceMethod(target: any, key: string, replacement: any) {
 }
 
 const admin = { id: 1, rol: ROLES.ADMINISTRATIVO };
+const profesor = { id: 22, rol: ROLES.PROFESOR };
 
 function parcial(alumnoId: number, numero = 1) {
   return {
@@ -77,7 +79,7 @@ test('rechaza un alumno sin ficha antes de persistir', async () => {
 
   await assert.rejects(
     calificacionService.cargarLote({ cursadaId: 1, calificaciones: [parcial(10)] }, admin),
-    /no tiene un registro de alumno asociado/
+    (error: any) => error.statusCode === 400 && /no tiene un registro de alumno asociado/.test(error.message)
   );
   assert.equal(escrituras, 0);
 });
@@ -252,4 +254,95 @@ test('permite recargar una misma nota mediante upsert', async () => {
   assert.deepEqual(await calificacionService.cargarLote(lote, admin), { registros: 1 });
   assert.deepEqual(await calificacionService.cargarLote(lote, admin), { registros: 1 });
   assert.equal(escrituras, 2);
+});
+
+test('rechaza EXAMEN_FINAL cuando la materia no es promocionable', async () => {
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 1,
+    materiaId: 3,
+    materia: { esPromocionable: false }
+  }));
+  configurarAlumno(10, 7);
+  configurarInscripcion(true);
+  let escrituras = 0;
+  replaceMethod(calificacionRepository, 'upsertLote', async () => {
+    escrituras += 1;
+    return [];
+  });
+
+  await assert.rejects(
+    calificacionService.cargarLote({
+      cursadaId: 1,
+      calificaciones: [{ alumnoId: 10, tipoCalificacion: 'EXAMEN_FINAL', nota: 8 } as any]
+    }, admin),
+    /EXAMEN_FINAL solo está permitido para materias promocionables/
+  );
+  assert.equal(escrituras, 0);
+});
+
+test('permite EXAMEN_FINAL como instancia integradora en materia promocionable', async () => {
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 1,
+    materiaId: 3,
+    materia: { esPromocionable: true }
+  }));
+  configurarAlumno(10, 7);
+  configurarInscripcion(true);
+  let guardadas: any[] = [];
+  replaceMethod(calificacionRepository, 'upsertLote', async (_cursadaId: number, filas: any[]) => {
+    guardadas = filas;
+    return filas;
+  });
+
+  const resultado = await calificacionService.cargarLote({
+    cursadaId: 1,
+    calificaciones: [{ alumnoId: 10, tipoCalificacion: 'EXAMEN_FINAL', nota: 8 } as any]
+  }, admin);
+
+  assert.equal(resultado.registros, 1);
+  assert.deepEqual(guardadas.map(fila => [fila.tipoCalificacion, fila.nota]), [['EXAMEN_FINAL', 8]]);
+});
+
+test('profesor no persiste calificaciones en cursada inactiva', async () => {
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 1,
+    materiaId: 3,
+    docenteId: profesor.id,
+    anioLectivo: new Date().getFullYear(),
+    activo: false,
+    materia: { profesorMaterias: [] }
+  }));
+  let escrituras = 0;
+  replaceMethod(calificacionRepository, 'upsertLote', async () => {
+    escrituras += 1;
+    return [];
+  });
+
+  await assert.rejects(
+    calificacionService.cargarLote({ cursadaId: 1, calificaciones: [parcial(10)] }, profesor),
+    (error: any) => error.statusCode === 403 && /activas/.test(error.message)
+  );
+  assert.equal(escrituras, 0);
+});
+
+test('profesor no persiste calificaciones fuera del año institucional', async () => {
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 1,
+    materiaId: 3,
+    docenteId: profesor.id,
+    anioLectivo: new Date().getFullYear() - 1,
+    activo: true,
+    materia: { profesorMaterias: [] }
+  }));
+  let escrituras = 0;
+  replaceMethod(calificacionRepository, 'upsertLote', async () => {
+    escrituras += 1;
+    return [];
+  });
+
+  await assert.rejects(
+    calificacionService.cargarLote({ cursadaId: 1, calificaciones: [parcial(10)] }, profesor),
+    (error: any) => error.statusCode === 403 && /año institucional/.test(error.message)
+  );
+  assert.equal(escrituras, 0);
 });

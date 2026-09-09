@@ -8,7 +8,7 @@ export interface TokenPayload {
   dni: string;
   nombre: string;
   rol?: string; // ✅ Hacer opcional - para login sin rol
-  type?: 'access' | 'refresh' | 'password_reset';
+  type?: 'access' | 'refresh';
   familiaId?: string;
   jti?: string;
   exp?: number;

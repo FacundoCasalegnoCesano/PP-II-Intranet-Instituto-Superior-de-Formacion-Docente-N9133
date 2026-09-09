@@ -26,7 +26,7 @@ class CalificacionController {
     }
   }
 
-  // Listado por cursada con filtros opcionales ?tipo= y ?alumnoId=
+  // Listado por cursada con filtros opcionales ?tipo=, ?numero= y ?alumnoId=
   async getByCursada(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const cursadaId = parseInt(req.params.cursadaId!);
@@ -35,9 +35,10 @@ class CalificacionController {
         return;
       }
 
-      const filtros: { tipo?: string; alumnoId?: number } = {};
-      if (req.query.tipo) filtros.tipo = req.query.tipo as string;
-      if (req.query.alumnoId) filtros.alumnoId = parseInt(req.query.alumnoId as string);
+      const filtros: { tipo?: string; numero?: number; alumnoId?: number } = {};
+      if (req.query.tipo !== undefined) filtros.tipo = req.query.tipo as string;
+      if (req.query.numero !== undefined) filtros.numero = Number(req.query.numero);
+      if (req.query.alumnoId !== undefined) filtros.alumnoId = Number(req.query.alumnoId);
 
       const data = await calificacionService.getByCursada(cursadaId, filtros, req.user);
       res.json({ success: true, data });

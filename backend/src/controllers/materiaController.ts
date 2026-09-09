@@ -37,7 +37,7 @@ class MateriaController {
         return;
       }
 
-      const materia = await materiaService.getMateriaById(id);
+      const materia = await materiaService.getMateriaById(id, req.user!);
       
       res.json({
         success: true,
@@ -60,7 +60,7 @@ class MateriaController {
       if (req.query.tipoEspacio) filters.tipoEspacio = req.query.tipoEspacio as string;
       if (req.query.activo !== undefined) filters.activo = req.query.activo === 'true';
       
-      const result = await materiaService.listMaterias(filters);
+      const result = await materiaService.listMaterias(filters, req.user!);
       
       res.json({
         success: true,
@@ -156,7 +156,7 @@ class MateriaController {
         return;
       }
 
-      const materias = await materiaService.getMateriasByCarrera(carreraId);
+      const materias = await materiaService.getMateriasByCarrera(carreraId, req.user!);
       
       res.json({
         success: true,
@@ -188,7 +188,7 @@ class MateriaController {
         return;
       }
 
-      const grupos = await materiaService.getMateriasPorAnio(carreraId);
+      const grupos = await materiaService.getMateriasPorAnio(carreraId, req.user!);
 
       res.json({
         success: true,
@@ -219,7 +219,7 @@ class MateriaController {
         return;
       }
 
-      const correlatividades = await materiaService.getCorrelatividades(id);
+      const correlatividades = await materiaService.getCorrelatividades(id, req.user!);
       
       res.json({
         success: true,
@@ -383,7 +383,7 @@ class MateriaController {
         return;
       }
 
-      const profesores = await materiaService.getProfesoresByMateria(materiaId);
+      const profesores = await materiaService.getProfesoresByMateria(materiaId, req.user!);
 
       res.json({
         success: true,

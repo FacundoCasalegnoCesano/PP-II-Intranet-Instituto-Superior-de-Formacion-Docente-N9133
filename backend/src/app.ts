@@ -8,6 +8,7 @@ import { connectDatabase, disconnectDatabase } from './config/prisma.js';
 import { pathToFileURL } from 'url';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { sanitizeRequestPath } from './utils/requestPrivacy.js';
 
 const app: Express = express();
 
@@ -60,7 +61,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Logging de peticiones (solo en desarrollo)
 if (config.nodeEnv === 'development') {
   app.use((req: Request, res: Response, next: NextFunction) => {
-    console.log(`${req.method} ${req.path} - ${req.ip}`);
+    console.log(`${req.method} ${sanitizeRequestPath(req.path)} - ${req.ip}`);
     next();
   });
 }
@@ -72,7 +73,7 @@ app.use('/api', routes);
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
-    message: `Ruta no encontrada: ${req.method} ${req.path}`
+    message: `Ruta no encontrada: ${req.method} ${sanitizeRequestPath(req.path)}`
   });
 });
 
