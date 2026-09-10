@@ -511,17 +511,18 @@ model Calificacion {
   nota             Float
   fechaEvaluacion  DateTime?        @map("fecha_evaluacion") @db.Date
   fechaRegistro    DateTime         @default(now()) @map("fecha_registro")
-  parcialOriginalId Int?            @unique @map("parcial_original_id")
+  parcialOriginalId Int?            @unique(map: "calificaciones_parcial_original_id_key") @map("parcial_original_id")
   observacion      String?          @db.Text
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
   cursada Cursada @relation(fields: [cursadaId], references: [id])
   alumno  Alumno  @relation(fields: [alumnoId], references: [idAlumno])
-  parcialOriginal Calificacion? @relation("RecuperatorioParcial", fields: [parcialOriginalId], references: [id])
+  parcialOriginal Calificacion? @relation("RecuperatorioParcial", fields: [parcialOriginalId], references: [id], onDelete: Restrict)
   recuperatorio   Calificacion? @relation("RecuperatorioParcial")
 
-  @@unique([cursadaId, alumnoId, tipoCalificacion, numero])
+  @@unique([cursadaId, alumnoId, tipoCalificacion, numero], map: "calificaciones_cursada_alumno_tipo_numero_key")
+  @@map("calificaciones")
 }
 
 /// Mesa de examen. folioExamen/libroExamen son del acta de la mesa
