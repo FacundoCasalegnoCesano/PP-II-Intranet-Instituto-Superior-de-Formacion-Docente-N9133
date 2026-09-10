@@ -1,78 +1,122 @@
-import { prisma } from '../config/prisma.js';
-import { hashPassword } from '../utils/bcrypt.js';
-import { generateBackupCodes, encryptBackupCodes } from '../utils/backupCodes.js';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { prisma } from '../config/prisma.js';
+import { ROLES } from '../constants/roles.js';
+import { generateBackupCodes, encryptBackupCodes } from '../utils/backupCodes.js';
+import { hashPassword } from '../utils/bcrypt.js';
+import { registerSchema } from '../validations/authValidation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
-function printBackupCodes(codes: string[]): void {
-  const rows: string[] = [];
-  for (let i = 0; i < codes.length; i += 3) {
-    const chunk = codes.slice(i, i + 3);
-    rows.push(chunk.map(c => `  ${c}  `).join(' ║ '));
-  }
+type AdminEnvironmentVariable =
+  | 'ADMIN_NAME'
+  | 'ADMIN_DNI'
+  | 'ADMIN_EMAIL'
+  | 'ADMIN_BIRTH_DATE'
+  | 'ADMIN_PHONE'
+  | 'ADMIN_PASSWORD'
+  | 'ADMIN_CUIL';
 
-  console.log('\n╔═══════════════════════════════════════════════════════════════════╗');
-  console.log('║  BACKUP CODES - GUARDAR EN SEGURO                                ║');
-  console.log('║  (Cada código se usa 1 sola vez, no expiran)                     ║');
-  console.log('╠═══════════════════════════════════════════════════════════════════╣');
-  rows.forEach(row => console.log(`║ ${row.padEnd(62)} ║`));
-  console.log('╚═══════════════════════════════════════════════════════════════════╝\n');
+interface AdminBootstrapData {
+  apellidoNombre: string;
+  dni: number;
+  email: string;
+  fechaNacimiento: Date;
+  telefono: string;
+  password: string;
+  cuil: string;
+  contactoEmergencia: string | null;
 }
 
-async function createAdmin(): Promise<void> {
+function requiredEnvironmentVariable(environment: NodeJS.ProcessEnv, name: AdminEnvironmentVariable): string {
+  const value = environment[name]?.trim();
+  if (!value) {
+    throw new Error(`Falta la variable obligatoria ${name}`);
+  }
+  return value;
+}
+
+export function readAdminBootstrapData(environment: NodeJS.ProcessEnv = process.env): AdminBootstrapData {
+  const candidate = {
+    apellidoNombre: requiredEnvironmentVariable(environment, 'ADMIN_NAME'),
+    dni: requiredEnvironmentVariable(environment, 'ADMIN_DNI'),
+    email: requiredEnvironmentVariable(environment, 'ADMIN_EMAIL').toLowerCase(),
+    fechaNacimiento: requiredEnvironmentVariable(environment, 'ADMIN_BIRTH_DATE'),
+    telefono: requiredEnvironmentVariable(environment, 'ADMIN_PHONE'),
+    password: requiredEnvironmentVariable(environment, 'ADMIN_PASSWORD'),
+    cuil: requiredEnvironmentVariable(environment, 'ADMIN_CUIL'),
+    rol: ROLES.ADMINISTRATIVO,
+    contactoEmergencia: environment.ADMIN_EMERGENCY_CONTACT?.trim() || null
+  };
+  const { error, value } = registerSchema.validate(candidate, {
+    abortEarly: false,
+    stripUnknown: true
+  });
+
+  if (error) {
+    throw new Error(`Las variables del administrador no son válidas: ${error.details.map(detail => detail.message).join('; ')}`);
+  }
+
+  return {
+    apellidoNombre: value.apellidoNombre,
+    dni: Number(value.dni),
+    email: value.email,
+    fechaNacimiento: value.fechaNacimiento,
+    telefono: value.telefono,
+    password: value.password,
+    cuil: value.cuil,
+    contactoEmergencia: value.contactoEmergencia
+  };
+}
+
+export async function createAdmin(): Promise<void> {
   try {
     const existingAdmin = await prisma.usuario.findFirst({
-      where: { rol: { contains: 'ADMINISTRATIVO' } }
+      where: { rol: { contains: ROLES.ADMINISTRATIVO } }
     });
 
     if (existingAdmin) {
-      console.log('✅ Ya existe un administrador en el sistema');
-      console.log(`📧 Email: ${existingAdmin.email}`);
-      console.log('ℹ️  Si olvidaste la contraseña, usa la funcionalidad de recuperación');
+      console.log('Ya existe un administrador en el sistema');
+      console.log(`Email: ${existingAdmin.email}`);
       return;
     }
 
-    const passwordHash = await hashPassword('Admin123!');
-
-    const backupCodesPlain = generateBackupCodes(8);
-    const backupCodesEncrypted = encryptBackupCodes(backupCodesPlain);
+    const input = readAdminBootstrapData();
+    const passwordHash = await hashPassword(input.password);
+    const backupCodesEncrypted = encryptBackupCodes(generateBackupCodes(8));
 
     const admin = await prisma.usuario.create({
       data: {
-        apellidoNombre: 'Administrador Sistema',
-        dni: 12345678,
-        email: 'admin@instituto.edu.ar',
-        fechaNacimiento: new Date('1990-01-01'),
-        telefono: '1234567890',
+        apellidoNombre: input.apellidoNombre,
+        dni: input.dni,
+        email: input.email,
+        fechaNacimiento: input.fechaNacimiento,
+        telefono: input.telefono,
         passwordHash,
-        cuil: '20123456789',
-        rol: 'ADMINISTRATIVO',
+        cuil: input.cuil,
+        rol: ROLES.ADMINISTRATIVO,
         activo: true,
-        contactoEmergencia: '1111111111',
+        contactoEmergencia: input.contactoEmergencia,
         backupCodes: backupCodesEncrypted
       }
     });
 
-    console.log('✅ Administrador creado exitosamente');
-    console.log('📧 Email:', admin.email);
-    console.log('🔑 Contraseña:', 'Admin123!');
-    console.log('\n⚠️  IMPORTANTE: Cambia esta contraseña en el primer inicio de sesión');
-
-    printBackupCodes(backupCodesPlain);
-
-    console.log('💾 Guarda estos códigos en un lugar seguro (papel, gestor de contraseñas).');
-    console.log('   NO se volverán a mostrar por consola (podés verlos desde tu perfil en la UI).\n');
-  } catch (error) {
-    console.error('❌ Error al crear administrador:', error);
+    console.log('Administrador creado exitosamente');
+    console.log(`Email: ${admin.email}`);
+    console.log('Ingresá al perfil administrativo para consultar y guardar los códigos de respaldo.');
   } finally {
     await prisma.$disconnect();
   }
 }
 
-createAdmin();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  createAdmin().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : 'Error desconocido';
+    console.error(`No se pudo crear el administrador: ${message}`);
+    process.exitCode = 1;
+  });
+}

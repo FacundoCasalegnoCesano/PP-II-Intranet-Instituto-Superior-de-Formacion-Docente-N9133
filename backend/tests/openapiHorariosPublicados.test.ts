@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 test('OpenAPI documenta los seis contratos de horarios publicados', () => {
-  const openapi = readFileSync(new URL('../openapi.yaml', import.meta.url), 'utf8');
+  const openapi = readFileSync(new URL('../openapi.yaml', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n');
 
   for (const ruta of [
     '/horarios-publicados/anios:',

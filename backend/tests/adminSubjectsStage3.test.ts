@@ -48,6 +48,7 @@ test('permite materias homónimas en carreras distintas y guarda el nombre norma
     persisted = data;
     return { id: 9, ...data };
   });
+  replaceMethod(materiaRepository, 'getIncidentCorrelativityEdges', async () => []);
   replaceMethod(materiaRepository, 'findById', async (id: number) => ({ id, carreraId: 2 }));
 
   await materiaService.createMateria(materiaInput({ nombre: '  Lengua   y   Literatura  ' }));

@@ -5,6 +5,7 @@ node_modules/
 /docs/
 /backend/scripts/
 /backend/test-results/
+/backend/storage/
 /backend/SECURITY.md
 /backend/endpoints.http
 /context.md
