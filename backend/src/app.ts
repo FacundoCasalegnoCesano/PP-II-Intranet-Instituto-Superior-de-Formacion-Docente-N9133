@@ -11,6 +11,14 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { sanitizeRequestPath } from './utils/requestPrivacy.js';
 
 const app: Express = express();
+const isProd = config.nodeEnv === 'production';
+
+// Railway termina TLS en su proxy y reenvía la IP del cliente en
+// X-Forwarded-For. Confiar solo en el primer salto mantiene el rate limiting
+// por cliente sin aceptar una cadena de proxies arbitraria.
+if (isProd) {
+  app.set('trust proxy', 1);
+}
 
 // Nonce para CSP (inline scripts/styles permitidos solo con nonce)
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -19,8 +27,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Configuración de seguridad - Helmet endurecido en producción
-const isProd = config.nodeEnv === 'production';
-
 const cspDirectives = isProd
   ? ({
       defaultSrc: ["'self'"],
