@@ -39,6 +39,7 @@ const administratorModules = [
   ['Materias', 'Gestioná materias, correlatividades y docentes.', 'admin-subjects'],
   ['Cursadas', 'Gestioná la oferta de cursadas.', 'admin-courses'],
   ['Períodos', 'Gestioná períodos de inscripción.', 'admin-periods'],
+  ['Mesas de examen', 'Gestioná mesas, tribunales y resultados.', 'admin-exams'],
   ['Horarios', 'Consultá el horario institucional publicado.', 'schedules'],
   ['Mi perfil', 'Revisá y actualizá tus datos personales.', 'profile'],
 ] as const
@@ -49,6 +50,7 @@ const professorLinks = [
   ['Cursadas', 'Consultá y gestioná tus cursadas docentes.', 'teacher-courses', '{}'],
   ['Calificaciones', 'Cargá y consultá las calificaciones de tus cursadas.', 'teacher-courses', '{"seccion":"calificaciones"}'],
   ['Trayectorias', 'Consultá los resúmenes académicos de tus cursadas.', 'teacher-courses', '{"seccion":"resumen"}'],
+  ['Mis mesas', 'Cargá resultados de las mesas donde integrás tribunal.', 'teacher-exams', '{}'],
 ] as const
 
 const launcherTitles = {
@@ -71,7 +73,7 @@ const exclusiveContentByRole = {
     ],
   },
   ADMINISTRATIVO: {
-    labels: ['Usuarios', 'Carreras', 'Materias', 'Períodos'],
+    labels: ['Usuarios', 'Carreras', 'Materias', 'Períodos', 'Mesas de examen'],
     descriptions: [
       'Administrá cuentas, roles y estados de acceso.',
       'Gestioná carreras y planes de estudio.',
@@ -81,7 +83,7 @@ const exclusiveContentByRole = {
     ],
   },
   PROFESOR: {
-    labels: ['Calificaciones', 'Trayectorias'],
+    labels: ['Calificaciones', 'Trayectorias', 'Mis mesas'],
     descriptions: [
       'Cargá y consultá las calificaciones de tus cursadas.',
       'Consultá los resúmenes académicos de tus cursadas.',

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { BookOpen, CalendarDays, ChevronDown, Home, LibraryBig, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
+import { BookOpen, CalendarDays, ChevronDown, ClipboardList, Home, LibraryBig, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AppButton from '@/ui/AppButton.vue'
@@ -30,9 +30,11 @@ const adminNavItems = [
   { name: 'admin-subjects', label: 'Materias', icon: BookOpen },
   { name: 'admin-courses', label: 'Cursadas', icon: BookOpen },
   { name: 'admin-periods', label: 'Períodos', icon: BookOpen },
+  { name: 'admin-exams', label: 'Mesas de examen', icon: ClipboardList },
 ] as const
 const teacherNavItems = [
   { name: 'teacher-courses', label: 'Mis cursadas', icon: BookOpen },
+  { name: 'teacher-exams', label: 'Mis mesas', icon: ClipboardList },
 ] as const
 const navItems = computed(() => {
   if (auth.activeRole === 'ADMINISTRATIVO') return [...baseNavItems, ...adminNavItems]
@@ -44,6 +46,8 @@ const roleLabel = computed(() => ({ ALUMNO: 'Alumno/a', PROFESOR: 'Profesor/a', 
 const canChangeRole = computed(() => auth.roles.length > 1)
 function isNavItemActive(name: string): boolean {
   if (name === 'teacher-courses') return typeof route.name === 'string' && route.name.startsWith('teacher-course')
+  if (name === 'teacher-exams') return typeof route.name === 'string' && route.name.startsWith('teacher-exam')
+  if (name === 'admin-exams') return typeof route.name === 'string' && route.name.startsWith('admin-exam')
   return route.name === name
 }
 

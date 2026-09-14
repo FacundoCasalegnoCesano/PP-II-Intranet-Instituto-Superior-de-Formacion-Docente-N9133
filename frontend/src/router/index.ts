@@ -20,6 +20,8 @@ import SubjectEnrollmentsView from '@/modules/subjectEnrollments/views/SubjectEn
 import ExamsView from '@/modules/exams/views/ExamsView.vue'
 import CareerCatalogView from '@/modules/careerCatalog/views/CareerCatalogView.vue'
 import TeacherCoursesView from '@/modules/teacherCourses/views/TeacherCoursesView.vue'
+import AdminExamsView from '@/modules/examManagement/views/AdminExamsView.vue'
+import TeacherExamsView from '@/modules/examManagement/views/TeacherExamsView.vue'
 
 export type RouteMeta = {
   guest?: boolean
@@ -86,6 +88,8 @@ const SubjectEnrollmentsPage = defineComponent({ name: 'SubjectEnrollmentsPage',
 const ExamsPage = defineComponent({ name: 'ExamsPage', render: () => h(AppShell, null, { default: () => h(ExamsView) }) })
 const CareerCatalogPage = defineComponent({ name: 'CareerCatalogPage', render: () => h(AppShell, null, { default: () => h(CareerCatalogView) }) })
 const TeacherCoursesPage = defineComponent({ name: 'TeacherCoursesPage', render: () => h(AppShell, null, { default: () => h(TeacherCoursesView) }) })
+const AdminExamsPage = defineComponent({ name: 'AdminExamsPage', render: () => h(AppShell, null, { default: () => h(AdminExamsView) }) })
+const TeacherExamsPage = defineComponent({ name: 'TeacherExamsPage', render: () => h(AppShell, null, { default: () => h(TeacherExamsView) }) })
 
 function routeMeta(route: RouteLocationNormalized): RouteMeta {
   return route.meta as RouteMeta
@@ -132,6 +136,8 @@ export function createAppRouter() {
       { path: '/app/profesor/cursadas/:id/clases', name: 'teacher-course-classes', component: TeacherCoursesPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
       { path: '/app/profesor/cursadas/:id/calificaciones', name: 'teacher-course-grades', component: TeacherCoursesPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
       { path: '/app/profesor/cursadas/:id/resumen', name: 'teacher-course-summary', component: TeacherCoursesPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
+      { path: '/app/docente/mesas', name: 'teacher-exams', component: TeacherExamsPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
+      { path: '/app/docente/mesas/:id', name: 'teacher-exam-detail', component: TeacherExamsPage, meta: { requiresSession: true, allowedRoles: ['PROFESOR'] } },
       { path: '/app/administracion', redirect: '/app/administracion/usuarios', meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios', name: 'admin-users', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios/nuevo', name: 'admin-user-create', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
@@ -153,6 +159,10 @@ export function createAppRouter() {
       { path: '/app/administracion/periodos/nuevo', name: 'admin-period-create', component: AdminPeriodsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/mesas/nueva', name: 'admin-exam-new', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       {
         path: '/app/perfil',
         name: 'profile',

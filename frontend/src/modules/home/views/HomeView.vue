@@ -50,6 +50,7 @@ const modulesByRole: Record<Role, ModuleAccess[]> = {
     { label: 'Materias', description: 'Gestioná materias, correlatividades y docentes.', icon: BookOpen, to: { name: 'admin-subjects' } },
     { label: 'Cursadas', description: 'Gestioná la oferta de cursadas.', icon: ClipboardList, to: { name: 'admin-courses' } },
     { label: 'Períodos', description: 'Gestioná períodos de inscripción.', icon: FileText, to: { name: 'admin-periods' } },
+    { label: 'Mesas de examen', description: 'Gestioná mesas, tribunales y resultados.', icon: ClipboardList, to: { name: 'admin-exams' } },
     { label: 'Horarios', description: 'Consultá el horario institucional publicado.', icon: CalendarDays, to: { name: 'schedules' } },
     { label: 'Mi perfil', description: 'Revisá y actualizá tus datos personales.', icon: UserRound, to: { name: 'profile' } },
   ],
@@ -59,6 +60,7 @@ const modulesByRole: Record<Role, ModuleAccess[]> = {
     { label: 'Cursadas', description: 'Consultá y gestioná tus cursadas docentes.', icon: BookOpen, to: { name: 'teacher-courses' } },
     { label: 'Calificaciones', description: 'Cargá y consultá las calificaciones de tus cursadas.', icon: ClipboardList, to: { name: 'teacher-courses', query: { seccion: 'calificaciones' } } },
     { label: 'Trayectorias', description: 'Consultá los resúmenes académicos de tus cursadas.', icon: GraduationCap, to: { name: 'teacher-courses', query: { seccion: 'resumen' } } },
+    { label: 'Mis mesas', description: 'Cargá resultados de las mesas donde integrás tribunal.', icon: ClipboardList, to: { name: 'teacher-exams' } },
   ],
 }
 

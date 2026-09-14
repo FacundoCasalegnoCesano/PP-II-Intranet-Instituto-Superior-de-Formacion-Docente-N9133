@@ -5,6 +5,8 @@ import type { AuthSession, Role } from '@/core/auth/contracts'
 import { sessionStorage } from '@/core/storage/sessionStorage'
 import AppShell from '@/layouts/AppShell.vue'
 import CareerCatalogView from '@/modules/careerCatalog/views/CareerCatalogView.vue'
+import AdminExamsView from '@/modules/examManagement/views/AdminExamsView.vue'
+import TeacherExamsView from '@/modules/examManagement/views/TeacherExamsView.vue'
 import { createAppRouter } from './index'
 
 vi.mock('@/modules/schedules/views/SchedulesView.vue', () => ({
@@ -189,5 +191,26 @@ describe('navigation guards', () => {
 
       expect(router.currentRoute.value.name).toBe('home')
     }
+  })
+
+  it('registers protected exam table routes for administrative and teacher roles', async () => {
+    const router = createAppRouter()
+    expect(router.getRoutes().find((route) => route.name === 'admin-exam-detail')).toMatchObject({
+      path: '/app/administracion/mesas/:id',
+      meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] },
+    })
+    expect(router.getRoutes().find((route) => route.name === 'teacher-exam-detail')).toMatchObject({
+      path: '/app/docente/mesas/:id',
+      meta: { requiresSession: true, allowedRoles: ['PROFESOR'] },
+    })
+    expect(router.getRoutes().find((route) => route.name === 'admin-exam-detail')?.components?.default?.render).toEqual(expect.any(Function))
+    expect(router.getRoutes().find((route) => route.name === 'teacher-exam-detail')?.components?.default?.render).toEqual(expect.any(Function))
+    expect(AdminExamsView).toBeDefined()
+    expect(TeacherExamsView).toBeDefined()
+
+    sessionStorage.save({ ...session('PROFESOR'), roles: ['PROFESOR'], role: 'PROFESOR', user: { ...user, rol: 'PROFESOR' } })
+    await router.push('/app/administracion/mesas')
+    await router.isReady()
+    expect(router.currentRoute.value.name).toBe('home')
   })
 })

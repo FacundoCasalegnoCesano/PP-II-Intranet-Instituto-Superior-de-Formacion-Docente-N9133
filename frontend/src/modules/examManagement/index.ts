@@ -1,0 +1,6 @@
+export { default as AdminExamsView } from './views/AdminExamsView.vue'
+export { default as TeacherExamsView } from './views/TeacherExamsView.vue'
+export { default as ExamResultPanel } from './components/ExamResultPanel.vue'
+export { default as ExamTribunalEditor } from './components/ExamTribunalEditor.vue'
+export * from './api/examsApi'
+export * from './types/exams'
