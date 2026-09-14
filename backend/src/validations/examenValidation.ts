@@ -61,9 +61,7 @@ export const updateExamenSchema = Joi.object({
     'number.min': 'El llamado debe ser mayor o igual a 1',
     'number.max': 'El llamado no puede ser mayor a 3'
   }),
-  estadoMesa: Joi.string().valid('ABIERTA', 'EN_PROCESO', 'FINALIZADA').messages({
-    'any.only': "El estado de la mesa debe ser 'ABIERTA', 'EN_PROCESO' o 'FINALIZADA'"
-  }),
+  expectedVersion: Joi.number().integer().min(0),
   folioExamen: Joi.string().max(255).allow('', null),
   libroExamen: Joi.string().max(255).allow('', null)
 }).min(1).messages({
@@ -96,7 +94,8 @@ export const tribunalSchema = Joi.object({
     .default('VOCAL')
     .messages({
       'any.only': 'El rol del tribunal debe ser PRESIDENTE, VOCAL o SUPLENTE'
-    })
+    }),
+  expectedVersion: Joi.number().integer().min(0)
 });
 
 export const inscripcionExamenSchema = Joi.object({
@@ -115,7 +114,8 @@ export const inscripcionExamenSchema = Joi.object({
     .default('REGULAR')
     .messages({
       'any.only': "La condición debe ser 'REGULAR' o 'LIBRE'"
-    })
+    }),
+  expectedVersion: Joi.number().integer().min(0)
 });
 
 export const notaExamenSchema = Joi.object({
@@ -130,7 +130,6 @@ export const notaExamenSchema = Joi.object({
       'number.min': 'El ID del alumno debe ser mayor a 0'
     }),
   nota: Joi.number()
-    .required()
     .integer()
     .min(0)
     .max(10)
@@ -140,5 +139,45 @@ export const notaExamenSchema = Joi.object({
       'number.integer': 'La nota debe ser un número entero',
       'number.min': 'La nota mínima es 0',
       'number.max': 'La nota máxima es 10'
-    })
+    }),
+  ausente: Joi.boolean(),
+  expectedVersion: Joi.number().integer().min(0)
+}).custom((value, helpers) => {
+  const hasNota = value.nota !== undefined;
+  const hasAusente = Object.prototype.hasOwnProperty.call(value, 'ausente');
+  const absenceSelected = hasAusente && value.ausente === true;
+  if (hasNota === hasAusente || (hasAusente && !absenceSelected)) {
+    return helpers.error('any.invalid', {
+      message: hasNota && hasAusente
+        ? 'La carga debe enviar nota o ausente, pero no ambos'
+        : 'Debe enviar una nota o marcar ausente'
+    });
+  }
+  return value;
+}).messages({
+  'any.invalid': '{{#message}}'
+});
+
+export const cerrarExamenSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).required()
+});
+
+export const reabrirExamenSchema = Joi.object({
+  motivo: Joi.string().trim().min(1).max(2000).required(),
+  expectedVersion: Joi.number().integer().min(0).required()
+});
+
+export const listExamenSchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  materiaId: Joi.number().integer().min(1),
+  carreraId: Joi.number().integer().min(1),
+  fechaDesde: Joi.date().iso(),
+  fechaHasta: Joi.date().iso(),
+  cicloLectivo: Joi.number().integer().min(2000).max(2100),
+  estadoMesa: Joi.string().valid('ABIERTA', 'EN_PROCESO', 'FINALIZADA')
+});
+
+export const expectedVersionQuerySchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0)
 });

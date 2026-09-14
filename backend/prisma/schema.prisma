@@ -88,6 +88,12 @@ enum EstadoMesa {
   FINALIZADA
 }
 
+enum AccionResultadoMesa {
+  CIERRE
+  REAPERTURA
+  CORRECCION
+}
+
 enum CondicionExamen {
   REGULAR
   LIBRE
@@ -118,7 +124,7 @@ model Sesion {
   token              String    @unique @db.VarChar(500)
   refreshTokenHash   String?   @map("refresh_token_hash") @db.VarChar(255)
   refreshTokenExpira DateTime? @map("refresh_token_expira")
-  familiaId          String    @map("familia_id") @db.VarChar(36) @default(uuid())
+  familiaId          String    @default(uuid()) @map("familia_id") @db.VarChar(36)
   usuarioId          Int       @map("usuario_id")
   creadaEn           DateTime  @default(now()) @map("creada_en")
   expiraEn           DateTime  @map("expira_en")
@@ -165,7 +171,7 @@ model Usuario {
   fechaNacimiento    DateTime  @db.Date
   telefono           String    @db.VarChar(20) // string: admite +54, 0 iniciales
   passwordHash       String    @db.VarChar(255)
-  cuil               String?   @db.VarChar(11) @unique // 11 dígitos: no entra en Int (2.1B máx)
+  cuil               String?   @unique @db.VarChar(11) // 11 dígitos: no entra en Int (2.1B máx)
   activo             Boolean   @default(true)
   /// Roles del usuario separados por coma: "ALUMNO", "PROFESOR,ADMINISTRATIVO"
   rol                String    @db.VarChar(255)
@@ -176,14 +182,15 @@ model Usuario {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  alumno               Alumno?
-  sesiones             Sesion[]
-  passwordResetTokens  PasswordResetToken[]
-  inscripcionesCarrera InscripcionCarrera[]
-  cursadasDocente      Cursada[]         @relation("DocenteCursada")
-  profesorMaterias     ProfesorMateria[]
-  mesasTribunal        MesaTribunal[]
-  documentosHorariosPublicados DocumentoHorario[] @relation("DocumentoHorarioPublicador")
+  alumno                       Alumno?
+  sesiones                     Sesion[]
+  passwordResetTokens          PasswordResetToken[]
+  inscripcionesCarrera         InscripcionCarrera[]
+  cursadasDocente              Cursada[]                @relation("DocenteCursada")
+  profesorMaterias             ProfesorMateria[]
+  mesasTribunal                MesaTribunal[]
+  auditoriasResultados         MesaResultadoAuditoria[]
+  documentosHorariosPublicados DocumentoHorario[]       @relation("DocumentoHorarioPublicador")
 
   @@map("Usuario")
 }
@@ -225,32 +232,32 @@ model Carrera {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  materias       Materia[]
-  inscripciones  InscripcionCarrera[]
-  planesEstudio  PlanEstudio[]
+  materias      Materia[]
+  inscripciones InscripcionCarrera[]
+  planesEstudio PlanEstudio[]
 
   @@map("carreras")
 }
 
 model Materia {
-  id                  Int                    @id @default(autoincrement())
-  nombre              String                 @db.VarChar(255)
-  descripcion         String?                @db.Text
-  cargaHoraria        Int                    @map("carga_horaria")
-  horasCatedra        String?                @map("horas_catedra") @db.VarChar(50)
-  tipoEspacio         TipoEspacioCurricular  @map("tipo_espacio") @default(MATERIA)
-  modalidad           ModalidadMateria?      @default(PRESENCIAL)
-  periodo             PeriodoMateria?        @default(ANUAL)
-  regimen             RegimenEvaluacion?     @default(REGULAR_PRESENCIAL_SIN_PROMOCION)
-  notaMinima          Float?                 @map("nota_minima") @default(6)
-  asistenciaRequerida Float?                 @map("asistencia_requerida") @default(75)
-  tpRequeridos        Float?                 @map("tp_requeridos") @default(75)
-  esPromocionable     Boolean                @map("es_promocionable") @default(false)
-  notaPromocion       Float?                 @map("nota_promocion") @default(8)
-  aniosRegularidad    Int?                   @map("anios_regularidad") @default(3)
-  activo              Boolean                @default(true)
-  createdAt           DateTime               @default(now()) @map("created_at")
-  updatedAt           DateTime               @updatedAt @map("updated_at")
+  id                  Int                   @id @default(autoincrement())
+  nombre              String                @db.VarChar(255)
+  descripcion         String?               @db.Text
+  cargaHoraria        Int                   @map("carga_horaria")
+  horasCatedra        String?               @map("horas_catedra") @db.VarChar(50)
+  tipoEspacio         TipoEspacioCurricular @default(MATERIA) @map("tipo_espacio")
+  modalidad           ModalidadMateria?     @default(PRESENCIAL)
+  periodo             PeriodoMateria?       @default(ANUAL)
+  regimen             RegimenEvaluacion?    @default(REGULAR_PRESENCIAL_SIN_PROMOCION)
+  notaMinima          Float?                @default(6) @map("nota_minima")
+  asistenciaRequerida Float?                @default(75) @map("asistencia_requerida")
+  tpRequeridos        Float?                @default(75) @map("tp_requeridos")
+  esPromocionable     Boolean               @default(false) @map("es_promocionable")
+  notaPromocion       Float?                @default(8) @map("nota_promocion")
+  aniosRegularidad    Int?                  @default(3) @map("anios_regularidad")
+  activo              Boolean               @default(true)
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
 
   carreraId Int     @map("carrera_id")
   carrera   Carrera @relation(fields: [carreraId], references: [id])
@@ -267,12 +274,12 @@ model Materia {
   correlatividadesRequeridas Correlatividad[] @relation("MateriaRequerida")
   correlatividadesOrigen     Correlatividad[] @relation("MateriaOrigen")
 
-  inscripciones    InscripcionMateria[]
-  cursadas         Cursada[]
-  mesas            Mesa[]
-  profesorMaterias ProfesorMateria[]
-  homologaciones   Homologacion[]
-  librosDeTemas    LibroDeTema[]
+  inscripciones         InscripcionMateria[]
+  cursadas              Cursada[]
+  mesas                 Mesa[]
+  profesorMaterias      ProfesorMateria[]
+  homologaciones        Homologacion[]
+  librosDeTemas         LibroDeTema[]
   periodosHabilitadores PeriodoMateriaHabilitada[]
 
   @@unique([carreraId, nombre], map: "materias_carrera_nombre_unique")
@@ -391,16 +398,16 @@ model InscripcionCarrera {
 }
 
 model InscripcionMateria {
-  id                Int                      @id @default(autoincrement())
-  alumnoId          Int                      @map("alumno_id")
-  materiaId         Int                      @map("materia_id")
-  fechaInscripcion  DateTime                 @default(now()) @map("fecha_inscripcion")
-  fechaBaja         DateTime?                @map("fecha_baja")
-  cicloLectivo      Int                      @map("ciclo_lectivo")
-  modalidadElegida  ModalidadMateria         @map("modalidad_elegida") @default(PRESENCIAL)
-  estado            EstadoInscripcionMateria @default(ACTIVA)
-  createdAt         DateTime                 @default(now()) @map("created_at")
-  updatedAt         DateTime                 @updatedAt @map("updated_at")
+  id               Int                      @id @default(autoincrement())
+  alumnoId         Int                      @map("alumno_id")
+  materiaId        Int                      @map("materia_id")
+  fechaInscripcion DateTime                 @default(now()) @map("fecha_inscripcion")
+  fechaBaja        DateTime?                @map("fecha_baja")
+  cicloLectivo     Int                      @map("ciclo_lectivo")
+  modalidadElegida ModalidadMateria         @default(PRESENCIAL) @map("modalidad_elegida")
+  estado           EstadoInscripcionMateria @default(ACTIVA)
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
 
   alumno  Alumno  @relation(fields: [alumnoId], references: [idAlumno])
   materia Materia @relation(fields: [materiaId], references: [id])
@@ -463,8 +470,8 @@ model DocumentoHorario {
   publicadorId   Int      @map("publicador_id")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  publicador          Usuario             @relation("DocumentoHorarioPublicador", fields: [publicadorId], references: [idUsuario])
-  publicacionVigente  PublicacionHorario?
+  publicador         Usuario             @relation("DocumentoHorarioPublicador", fields: [publicadorId], references: [idUsuario])
+  publicacionVigente PublicacionHorario?
 
   @@unique([cicloLectivo, sha256])
   @@index([cicloLectivo, createdAt])
@@ -502,22 +509,22 @@ model Asistencia {
 }
 
 model Calificacion {
-  id               Int              @id @default(autoincrement())
-  cursadaId        Int              @map("cursada_id")
-  alumnoId         Int              @map("alumno_id")
-  tipoCalificacion TipoCalificacion @map("tipo_calificacion")
+  id                Int              @id @default(autoincrement())
+  cursadaId         Int              @map("cursada_id")
+  alumnoId          Int              @map("alumno_id")
+  tipoCalificacion  TipoCalificacion @map("tipo_calificacion")
   /// Número de instancia: Parcial 1, Parcial 2, TP 3, etc.
-  numero           Int              @default(1)
-  nota             Float
-  fechaEvaluacion  DateTime?        @map("fecha_evaluacion") @db.Date
-  fechaRegistro    DateTime         @default(now()) @map("fecha_registro")
-  parcialOriginalId Int?            @unique(map: "calificaciones_parcial_original_id_key") @map("parcial_original_id")
-  observacion      String?          @db.Text
-  createdAt        DateTime         @default(now()) @map("created_at")
-  updatedAt        DateTime         @updatedAt @map("updated_at")
+  numero            Int              @default(1)
+  nota              Float
+  fechaEvaluacion   DateTime?        @map("fecha_evaluacion") @db.Date
+  fechaRegistro     DateTime         @default(now()) @map("fecha_registro")
+  parcialOriginalId Int?             @unique(map: "calificaciones_parcial_original_id_key") @map("parcial_original_id")
+  observacion       String?          @db.Text
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
 
-  cursada Cursada @relation(fields: [cursadaId], references: [id])
-  alumno  Alumno  @relation(fields: [alumnoId], references: [idAlumno])
+  cursada         Cursada       @relation(fields: [cursadaId], references: [id])
+  alumno          Alumno        @relation(fields: [alumnoId], references: [idAlumno])
   parcialOriginal Calificacion? @relation("RecuperatorioParcial", fields: [parcialOriginalId], references: [id], onDelete: Restrict)
   recuperatorio   Calificacion? @relation("RecuperatorioParcial")
 
@@ -528,22 +535,28 @@ model Calificacion {
 /// Mesa de examen. folioExamen/libroExamen son del acta de la mesa
 /// (iguales para todos los alumnos anotados), no de cada inscripción.
 model Mesa {
-  id           Int        @id @default(autoincrement())
-  materiaId    Int        @map("materia_id")
-  fecha        DateTime
-  tipoExamen   TipoExamen @map("tipo_examen")
-  llamado      Int        @default(1)
-  estadoMesa   EstadoMesa @map("estado_mesa") @default(ABIERTA)
-  folioExamen  String?    @map("folio_examen") @db.VarChar(255)
-  libroExamen  String?    @map("libro_examen") @db.VarChar(255)
-  activo       Boolean    @default(true)
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
+  id               Int        @id @default(autoincrement())
+  materiaId        Int        @map("materia_id")
+  fecha            DateTime
+  tipoExamen       TipoExamen @map("tipo_examen")
+  llamado          Int        @default(1)
+  estadoMesa       EstadoMesa @default(ABIERTA) @map("estado_mesa")
+  version          Int        @default(0)
+  publicadaEn      DateTime?  @map("publicada_en")
+  reabiertaEn      DateTime?  @map("reabierta_en")
+  reabiertaPor     Int?       @map("reabierta_por")
+  motivoReapertura String?    @map("motivo_reapertura") @db.Text
+  folioExamen      String?    @map("folio_examen") @db.VarChar(255)
+  libroExamen      String?    @map("libro_examen") @db.VarChar(255)
+  activo           Boolean    @default(true)
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
 
-  materia       Materia             @relation(fields: [materiaId], references: [id])
-  tribunales    MesaTribunal[]
-  inscripciones InscripcionExamen[]
+  materia               Materia                  @relation(fields: [materiaId], references: [id])
+  tribunales            MesaTribunal[]
+  inscripciones         InscripcionExamen[]
   periodosHabilitadores PeriodoMesaHabilitada[]
+  auditoriasResultados  MesaResultadoAuditoria[]
 
   @@map("mesas")
 }
@@ -552,7 +565,7 @@ model MesaTribunal {
   id          Int         @id @default(autoincrement())
   mesaId      Int         @map("mesa_id")
   profesorId  Int         @map("profesor_id")
-  rolTribunal RolTribunal @map("rol_tribunal") @default(VOCAL)
+  rolTribunal RolTribunal @default(VOCAL) @map("rol_tribunal")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
@@ -572,25 +585,51 @@ model InscripcionExamen {
   notaFinal        Float?          @map("nota_final")
   condicion        CondicionExamen @default(REGULAR)
   aprobado         Boolean?        @default(false)
+  notaBorrador     Float?          @map("nota_borrador")
+  ausenteBorrador  Boolean         @default(false) @map("ausente_borrador")
+  ausentePublicado Boolean         @default(false) @map("ausente_publicado")
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
-  mesa   Mesa   @relation(fields: [mesaId], references: [id])
-  alumno Alumno @relation(fields: [alumnoId], references: [idAlumno])
+  mesa                 Mesa                     @relation(fields: [mesaId], references: [id])
+  alumno               Alumno                   @relation(fields: [alumnoId], references: [idAlumno])
+  auditoriasResultados MesaResultadoAuditoria[]
 
   @@unique([mesaId, alumnoId])
   @@map("inscripciones_examenes")
 }
 
+model MesaResultadoAuditoria {
+  id              Int                 @id @default(autoincrement())
+  mesaId          Int                 @map("mesa_id")
+  inscripcionId   Int?                @map("inscripcion_id")
+  actorId         Int                 @map("actor_id")
+  accion          AccionResultadoMesa
+  motivo          String?             @db.Text
+  notaAnterior    Float?              @map("nota_anterior")
+  notaNueva       Float?              @map("nota_nueva")
+  ausenteAnterior Boolean?            @map("ausente_anterior")
+  ausenteNuevo    Boolean?            @map("ausente_nuevo")
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  mesa        Mesa               @relation(fields: [mesaId], references: [id])
+  inscripcion InscripcionExamen? @relation(fields: [inscripcionId], references: [id])
+  actor       Usuario            @relation(fields: [actorId], references: [idUsuario])
+
+  @@index([mesaId, createdAt])
+  @@index([inscripcionId])
+  @@map("mesas_resultados_auditoria")
+}
+
 model ProfesorMateria {
-  id               Int       @id @default(autoincrement())
-  profesorId       Int       @map("profesor_id")
-  materiaId        Int       @map("materia_id")
-  fechaAsignacion  DateTime  @default(now()) @map("fecha_asignacion")
-  fechaBaja        DateTime? @map("fecha_baja")
-  activo           Boolean   @default(true)
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id              Int       @id @default(autoincrement())
+  profesorId      Int       @map("profesor_id")
+  materiaId       Int       @map("materia_id")
+  fechaAsignacion DateTime  @default(now()) @map("fecha_asignacion")
+  fechaBaja       DateTime? @map("fecha_baja")
+  activo          Boolean   @default(true)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   profesor Usuario @relation(fields: [profesorId], references: [idUsuario])
   materia  Materia @relation(fields: [materiaId], references: [id])
@@ -663,9 +702,9 @@ model PeriodoInscripcion {
 /// Materias que un período de inscripción habilita (selección explícita
 /// del administrativo por carrera/año).
 model PeriodoMateriaHabilitada {
-  id                   Int                 @id @default(autoincrement())
-  periodoInscripcionId Int                 @map("periodo_inscripcion_id")
-  materiaId            Int                 @map("materia_id")
+  id                   Int @id @default(autoincrement())
+  periodoInscripcionId Int @map("periodo_inscripcion_id")
+  materiaId            Int @map("materia_id")
 
   periodoInscripcion PeriodoInscripcion @relation(fields: [periodoInscripcionId], references: [id], onDelete: Cascade)
   materia            Materia            @relation(fields: [materiaId], references: [id])
@@ -677,9 +716,9 @@ model PeriodoMateriaHabilitada {
 /// Mesas de examen que un período de inscripción habilita (selección
 /// explícita del administrativo al abrir el llamado).
 model PeriodoMesaHabilitada {
-  id                   Int                 @id @default(autoincrement())
-  periodoInscripcionId Int                 @map("periodo_inscripcion_id")
-  mesaId               Int                 @map("mesa_id")
+  id                   Int @id @default(autoincrement())
+  periodoInscripcionId Int @map("periodo_inscripcion_id")
+  mesaId               Int @map("mesa_id")
 
   periodoInscripcion PeriodoInscripcion @relation(fields: [periodoInscripcionId], references: [id], onDelete: Cascade)
   mesa               Mesa               @relation(fields: [mesaId], references: [id])

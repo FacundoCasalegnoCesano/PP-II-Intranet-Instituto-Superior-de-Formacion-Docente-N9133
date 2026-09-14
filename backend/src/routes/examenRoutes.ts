@@ -7,7 +7,11 @@ import {
   updateExamenSchema,
   tribunalSchema,
   inscripcionExamenSchema,
-  notaExamenSchema
+  notaExamenSchema,
+  cerrarExamenSchema,
+  reabrirExamenSchema,
+  listExamenSchema,
+  expectedVersionQuerySchema
 } from '../validations/examenValidation.js';
 import { ROLES } from '../constants/roles.js';
 
@@ -24,6 +28,7 @@ router.post('/',
 
 router.get('/',
   roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(listExamenSchema, 'query'),
   examenController.listExamenes
 );
 
@@ -57,6 +62,7 @@ router.post('/tribunales',
 
 router.delete('/tribunales/:id',
   roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(expectedVersionQuerySchema, 'query'),
   examenController.removeTribunal
 );
 
@@ -88,6 +94,18 @@ router.post('/:examenId/calificacion',
   roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
   validationMiddleware(notaExamenSchema),
   examenController.registrarNota
+);
+
+router.post('/:examenId/cerrar',
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
+  validationMiddleware(cerrarExamenSchema),
+  examenController.cerrarMesa
+);
+
+router.post('/:examenId/reabrir',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(reabrirExamenSchema),
+  examenController.reabrirMesa
 );
 
 export default router;

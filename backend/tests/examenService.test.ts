@@ -38,7 +38,20 @@ test('permite inscribirse a una mesa con regularidad vigente de una cursada ante
   replaceMethod(
     examenRepository,
     'inscribirAlumno',
-    async () => ({ mesaId: 3, alumnoId: 42, condicion: 'REGULAR' }) as any
+    async () => ({
+      id: 12,
+      mesaId: 3,
+      condicion: 'REGULAR',
+      fechaInscripcion: new Date('2026-09-11T12:00:00.000Z'),
+      fechaBaja: null,
+      version: 4,
+      mesa: {
+        estadoMesa: 'ABIERTA',
+        publicadaEn: null,
+        fecha: new Date('2026-12-01T12:00:00.000Z'),
+        materia: { id: 7, nombre: 'Didáctica', notaMinima: 6 }
+      }
+    }) as any
   );
 
   const estadoService = estadoAcademicoService as typeof estadoAcademicoService & {
@@ -61,7 +74,20 @@ test('permite inscribirse a una mesa con regularidad vigente de una cursada ante
     { id: 1, rol: ROLES.ADMINISTRATIVO }
   );
 
-  assert.deepEqual(result, { mesaId: 3, alumnoId: 42, condicion: 'REGULAR' });
+  assert.deepEqual(result, {
+    id: 12,
+    mesaId: 3,
+    condicion: 'REGULAR',
+    fechaInscripcion: new Date('2026-09-11T12:00:00.000Z'),
+    fechaBaja: null,
+    materia: { id: 7, nombre: 'Didáctica' },
+    fecha: new Date('2026-12-01T12:00:00.000Z'),
+    estadoResultado: 'PENDIENTE',
+    nota: null,
+    aprobado: null,
+    notaMinima: 6,
+    version: 4
+  });
 });
 
 test('rechaza la inscripción regular cuando la regularidad está vencida', async () => {

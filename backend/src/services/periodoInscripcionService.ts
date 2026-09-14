@@ -2,7 +2,54 @@ import periodoInscripcionRepository from '../repositories/periodoInscripcionRepo
 import materiaRepository from '../repositories/materiaRepository.js';
 import { ROLES } from '../constants/roles.js';
 import { prisma } from '../config/prisma.js';
-import type { PeriodoInscripcionCreateData, PeriodoInscripcionUpdateData } from '../repositories/periodoInscripcionRepository.js';
+import type {
+  PeriodoInscripcionCreateData,
+  PeriodoInscripcionListadoRecord,
+  PeriodoInscripcionUpdateData
+} from '../repositories/periodoInscripcionRepository.js';
+
+export type PeriodoEstado = 'DESACTIVADO' | 'PROGRAMADO' | 'ABIERTO' | 'FINALIZADO';
+
+export interface PeriodoInscripcionListadoDTO {
+  id: number;
+  tipo: string;
+  cicloLectivo: number;
+  fechaInicio: Date;
+  fechaFin: Date;
+  descripcion: string | null;
+  activo: boolean;
+  cantidadMaterias: number;
+  cantidadMesas: number;
+  estado: PeriodoEstado;
+}
+
+export function calcularEstadoPeriodo(
+  periodo: Pick<PeriodoInscripcionListadoRecord, 'activo' | 'fechaInicio' | 'fechaFin'>,
+  ahora: Date = new Date()
+): PeriodoEstado {
+  if (!periodo.activo) return 'DESACTIVADO';
+  if (ahora < periodo.fechaInicio) return 'PROGRAMADO';
+  if (ahora <= periodo.fechaFin) return 'ABIERTO';
+  return 'FINALIZADO';
+}
+
+function toPeriodoInscripcionListadoDTO(
+  periodo: PeriodoInscripcionListadoRecord,
+  ahora: Date
+): PeriodoInscripcionListadoDTO {
+  return {
+    id: periodo.id,
+    tipo: periodo.tipo,
+    cicloLectivo: periodo.cicloLectivo,
+    fechaInicio: periodo.fechaInicio,
+    fechaFin: periodo.fechaFin,
+    descripcion: periodo.descripcion,
+    activo: periodo.activo,
+    cantidadMaterias: periodo._count.materias,
+    cantidadMesas: periodo._count.mesas,
+    estado: calcularEstadoPeriodo(periodo, ahora)
+  };
+}
 
 class PeriodoInscripcionService {
   async crearPeriodo(data: PeriodoInscripcionCreateData, currentUser: any) {
@@ -77,8 +124,15 @@ class PeriodoInscripcionService {
     return periodo;
   }
 
-  async listPeriodos(filters: { tipo?: string; activo?: boolean; cicloLectivo?: number; page?: number; limit?: number } = {}) {
-    return await periodoInscripcionRepository.findAll(filters);
+  async listPeriodos(
+    filters: { tipo?: string; activo?: boolean; cicloLectivo?: number; page?: number; limit?: number } = {},
+    ahora: Date = new Date()
+  ) {
+    const resultado = await periodoInscripcionRepository.findAll(filters);
+    return {
+      ...resultado,
+      data: resultado.data.map(periodo => toPeriodoInscripcionListadoDTO(periodo, ahora))
+    };
   }
 
   async listPeriodosActivos(tipo: string): Promise<any[]> {
