@@ -2,6 +2,7 @@ import { apiClient } from '@/core/api/client'
 import type { PaginationMeta, PaginatedResult } from '@/core/api/contracts'
 import type {
   AdminUserDetail,
+  AdminExam,
   AlumnoProfile,
   Career,
   CourseOffering,
@@ -18,6 +19,7 @@ export interface CareerListFilters { search?: string; activo?: boolean; page?: n
 export interface SubjectListFilters { search?: string; carreraId?: number; tipoEspacio?: string; activo?: boolean; page?: number; limit?: number }
 export interface CourseListFilters { anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean; page?: number; limit?: number }
 export interface PeriodListFilters { tipo?: 'MATERIA' | 'EXAMEN'; activo?: boolean; cicloLectivo?: number; page?: number; limit?: number }
+export interface ExamListFilters { materiaId?: number; fechaDesde?: string; fechaHasta?: string; page?: number; limit?: number }
 
 function query(params: Record<string, unknown>): string {
   const search = new URLSearchParams()
@@ -79,6 +81,7 @@ export const adminApi = {
   deactivateCourse(id: number): Promise<void> { return apiClient.delete(`/cursadas/${id}`) },
   listPeriods(filters: PeriodListFilters = {}): Promise<PaginatedResult<EnrollmentPeriod>> { return apiClient.getPaginated(`/periodos-inscripcion${query(filters)}`) },
   getPeriod(id: number): Promise<EnrollmentPeriod> { return apiClient.get(`/periodos-inscripcion/${id}`) },
+  listExams(filters: ExamListFilters = {}): Promise<PaginatedResult<AdminExam>> { return apiClient.getPaginated(`/examenes${query(filters)}`) },
   createPeriod(payload: Record<string, unknown>): Promise<EnrollmentPeriod> { return apiClient.post('/periodos-inscripcion', payload) },
   updatePeriod(id: number, payload: Record<string, unknown>): Promise<EnrollmentPeriod> { return apiClient.put(`/periodos-inscripcion/${id}`, payload) },
   deactivatePeriod(id: number): Promise<void> { return apiClient.delete(`/periodos-inscripcion/${id}`) },
