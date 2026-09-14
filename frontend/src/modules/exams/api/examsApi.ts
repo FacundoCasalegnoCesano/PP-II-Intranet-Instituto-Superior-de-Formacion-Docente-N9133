@@ -14,10 +14,10 @@ export function fetchMyExamEnrollments(userId: number, client: Pick<ExamClient, 
   return client.get<ExamEnrollment[]>(`/examenes/alumno/${userId}/inscripciones`)
 }
 
-export function enrollInExam(examenId: number, condicion: ExamCondition, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamEnrollment> {
-  return client.post<ExamEnrollment>(`/examenes/${examenId}/inscribir`, { condicion })
+export function enrollInExam(examenId: number, condicion: ExamCondition, expectedVersion?: number, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamEnrollment> {
+  return client.post<ExamEnrollment>(`/examenes/${examenId}/inscribir`, { condicion, ...(expectedVersion === undefined ? {} : { expectedVersion }) })
 }
 
-export function withdrawFromExam(examenId: number, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamEnrollment> {
-  return client.post<ExamEnrollment>(`/examenes/${examenId}/desinscribir`, {})
+export function withdrawFromExam(examenId: number, expectedVersion?: number, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamEnrollment> {
+  return client.post<ExamEnrollment>(`/examenes/${examenId}/desinscribir`, expectedVersion === undefined ? {} : { expectedVersion })
 }

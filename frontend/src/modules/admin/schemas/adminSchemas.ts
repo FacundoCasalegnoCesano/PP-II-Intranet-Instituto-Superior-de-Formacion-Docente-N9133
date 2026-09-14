@@ -56,6 +56,8 @@ export const subjectSchema = z.object({
 
 export const courseSchema = z.object({ materiaId: z.coerce.number().int().min(1), anioLectivo: z.coerce.number().int().min(2000).max(2100), periodo: z.string().min(1), docenteId: z.coerce.number().int().min(1).nullable().optional() })
 
-export const periodSchema = z.object({ tipo: z.literal('MATERIA'), cicloLectivo: z.coerce.number().int().min(2000).max(2100), fechaInicio: z.string().min(1), fechaFin: z.string().min(1), materiasIds: z.array(z.coerce.number().int().min(1)).min(1, 'Seleccioná al menos una materia.'), descripcion: z.string().max(255).optional() }).superRefine((value, ctx) => {
+export const periodSchema = z.object({ tipo: z.enum(['MATERIA', 'EXAMEN']), cicloLectivo: z.coerce.number().int().min(2000).max(2100), fechaInicio: z.string().min(1), fechaFin: z.string().min(1), materiasIds: z.array(z.coerce.number().int().min(1)), mesasIds: z.array(z.coerce.number().int().min(1)), descripcion: z.string().max(255).optional() }).superRefine((value, ctx) => {
   if (new Date(value.fechaFin) <= new Date(value.fechaInicio)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['fechaFin'], message: 'La fecha final debe ser posterior.' })
+  if (value.tipo === 'MATERIA' && value.materiasIds.length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['materiasIds'], message: 'Seleccioná al menos una materia.' })
+  if (value.tipo === 'EXAMEN' && value.mesasIds.length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mesasIds'], message: 'Seleccioná al menos una mesa de examen.' })
 })

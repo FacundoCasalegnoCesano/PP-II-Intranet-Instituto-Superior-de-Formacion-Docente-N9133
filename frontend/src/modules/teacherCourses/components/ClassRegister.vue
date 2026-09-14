@@ -264,8 +264,8 @@ watch(() => props.classes, value => {
 
     <form class="mt-5 rounded-lg border border-[var(--color-border)] bg-white p-4 sm:p-5" :aria-busy="saving || loadingDetail" @submit.prevent="save">
       <div class="flex flex-wrap items-end gap-4">
-        <label class="block min-w-48 flex-1 text-sm font-semibold" for="class-date">Fecha de clase<input id="class-date" v-model="selectedDate" type="date" required :disabled="!editable || saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="openDate(selectedDate)" /></label>
-        <label class="block min-w-64 flex-[2] text-sm font-semibold" for="class-topic">Tema desarrollado<input id="class-topic" v-model="topic" type="text" required :disabled="!editable || saving" :aria-invalid="validationError && !topic.trim() ? 'true' : undefined" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" /></label>
+        <label class="block w-full min-w-0 text-sm font-semibold sm:w-auto sm:min-w-48 sm:flex-1" for="class-date">Fecha de clase<input id="class-date" v-model="selectedDate" type="date" required :disabled="!editable || saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="openDate(selectedDate)" /></label>
+        <label class="block w-full min-w-0 text-sm font-semibold sm:w-auto sm:min-w-64 sm:flex-[2]" for="class-topic">Tema desarrollado<input id="class-topic" v-model="topic" type="text" required :disabled="!editable || saving" :aria-invalid="validationError && !topic.trim() ? 'true' : undefined" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" /></label>
         <button v-if="editable" type="button" class="min-h-11 rounded-md border border-[var(--color-brand)] px-4 font-semibold text-[var(--color-brand)]" :disabled="saving" @click="startNewClass">Nueva fecha</button>
       </div>
 
@@ -275,17 +275,29 @@ watch(() => props.classes, value => {
       <p v-if="successMessage" class="mt-4 text-sm text-[var(--color-graphite)]" role="status" aria-live="polite">{{ successMessage }}</p>
 
       <p v-if="!students.length" class="mt-5 rounded-lg border border-dashed border-[var(--color-border)] p-4 text-[var(--color-graphite)]" role="status">No hay alumnos inscriptos</p>
-      <div v-else-if="rows.length" class="mt-5 grid gap-4 lg:grid-cols-2">
-        <fieldset v-for="row in rows" :key="row.alumnoId" :disabled="!editable || saving" class="rounded-lg border border-[var(--color-border)] p-4">
-          <legend class="px-1 font-semibold">{{ row.apellidoNombre }} · DNI {{ row.dni }}</legend>
-          <div class="mt-2 flex flex-wrap gap-4">
-            <label class="inline-flex min-h-11 items-center gap-2"><input type="radio" :name="`attendance-${row.alumnoId}`" :checked="row.presente" @change="updatePresence(row, true)" />Presente</label>
-            <label class="inline-flex min-h-11 items-center gap-2"><input type="radio" :name="`attendance-${row.alumnoId}`" :checked="!row.presente" @change="updatePresence(row, false)" />Ausente</label>
-            <label v-if="!row.presente" class="inline-flex min-h-11 items-center gap-2"><input v-model="row.justificado" type="checkbox" />Ausencia justificada</label>
-          </div>
-          <label class="mt-3 block text-sm font-semibold" :for="`attendance-note-${row.alumnoId}`">Observación<textarea :id="`attendance-note-${row.alumnoId}`" v-model="row.observacion" rows="2" class="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2 font-normal" /></label>
-          <p class="mt-2 text-sm text-[var(--color-graphite)]" role="status">Asistencia: {{ row.presente ? 'Presente' : row.justificado ? 'Ausente, justificada' : 'Ausente, sin justificar' }}</p>
-        </fieldset>
+      <div v-else-if="rows.length" class="mt-5 overflow-hidden rounded-lg border border-[var(--color-border)]">
+        <div aria-hidden="true" class="hidden grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)] gap-4 border-b border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3 text-sm font-semibold md:grid">
+          <span>Alumno</span><span>Asistencia</span><span>Observación</span>
+        </div>
+        <ul aria-label="Asistencia de alumnos" class="divide-y divide-[var(--color-border)]">
+          <li v-for="row in rows" :key="row.alumnoId" class="p-4">
+            <fieldset :disabled="!editable || saving" class="min-w-0">
+              <legend class="sr-only">{{ row.apellidoNombre }}</legend>
+              <div class="grid items-start gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)] md:gap-4">
+                <p aria-hidden="true" class="min-w-0 break-words font-semibold md:pt-2.5">{{ row.apellidoNombre }}</p>
+                <div class="min-w-0">
+                  <div class="flex flex-wrap gap-x-4">
+                    <label class="inline-flex min-h-11 items-center gap-2"><input type="radio" :name="`attendance-${row.alumnoId}`" :checked="row.presente" class="accent-[var(--color-brand)]" @change="updatePresence(row, true)" />Presente</label>
+                    <label class="inline-flex min-h-11 items-center gap-2"><input type="radio" :name="`attendance-${row.alumnoId}`" :checked="!row.presente" class="accent-[var(--color-brand)]" @change="updatePresence(row, false)" />Ausente</label>
+                    <label v-if="!row.presente" class="inline-flex min-h-11 items-center gap-2"><input v-model="row.justificado" type="checkbox" class="accent-[var(--color-brand)]" />Ausencia justificada</label>
+                  </div>
+                  <p class="text-sm text-[var(--color-graphite)]" role="status">Asistencia: {{ row.presente ? 'Presente' : row.justificado ? 'Ausente, justificada' : 'Ausente, sin justificar' }}</p>
+                </div>
+                <label class="block min-w-0 text-sm font-semibold" :for="`attendance-note-${row.alumnoId}`"><span class="md:sr-only">Observación</span><textarea :id="`attendance-note-${row.alumnoId}`" v-model="row.observacion" rows="2" class="mt-1 block w-full rounded-md border border-[var(--color-border)] px-3 py-2 font-normal md:mt-0" /></label>
+              </div>
+            </fieldset>
+          </li>
+        </ul>
       </div>
 
       <button v-if="editable && students.length" type="submit" class="mt-5 min-h-11 rounded-md bg-[var(--color-brand)] px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55" :disabled="saving">{{ saving ? 'Guardando…' : 'Guardar clase' }}</button>

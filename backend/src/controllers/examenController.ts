@@ -54,14 +54,16 @@ class ExamenController {
   async listExamenes(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const filters: any = {
-        page: req.query.page ? parseInt(req.query.page as string) : 1,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : 20
+        page: req.query.page ?? 1,
+        limit: req.query.limit ?? 20,
+        materiaId: req.query.materiaId,
+        carreraId: req.query.carreraId,
+        fechaDesde: req.query.fechaDesde,
+        fechaHasta: req.query.fechaHasta,
+        cicloLectivo: req.query.cicloLectivo,
+        estadoMesa: req.query.estadoMesa
       };
-      
-      if (req.query.materiaId) filters.materiaId = parseInt(req.query.materiaId as string);
-      if (req.query.fechaDesde) filters.fechaDesde = req.query.fechaDesde as string;
-      if (req.query.fechaHasta) filters.fechaHasta = req.query.fechaHasta as string;
-      
+
       const result = await examenService.listExamenes(filters, req.user!);
       
       res.json({
@@ -187,7 +189,8 @@ class ExamenController {
       }
 
       const currentUser = req.user!;
-      await examenService.removeTribunal(id, currentUser);
+      const expectedVersion = req.query.expectedVersion as unknown as number | undefined;
+      await examenService.removeTribunal(id, currentUser, expectedVersion);
       
       res.json({
         success: true,
@@ -219,7 +222,7 @@ class ExamenController {
         return;
       }
 
-      const { alumnoId, condicion } = req.body;
+      const { alumnoId, condicion, expectedVersion } = req.body;
       const currentUser = req.user!;
 
       // Si es alumno, usar su propio ID
@@ -240,7 +243,8 @@ class ExamenController {
         examenId,
         finalAlumnoId,
         condicion || 'REGULAR',
-        currentUser
+        currentUser,
+        expectedVersion
       );
       
       res.status(201).json({
@@ -273,7 +277,7 @@ class ExamenController {
         return;
       }
 
-      const { alumnoId } = req.body;
+      const { alumnoId, expectedVersion } = req.body;
       const currentUser = req.user!;
 
       let finalAlumnoId = alumnoId;
@@ -289,7 +293,7 @@ class ExamenController {
         return;
       }
 
-      const result = await examenService.desinscribirAlumno(examenId, finalAlumnoId, currentUser);
+      const result = await examenService.desinscribirAlumno(examenId, finalAlumnoId, currentUser, expectedVersion);
       
       res.json({
         success: true,
@@ -385,10 +389,10 @@ class ExamenController {
         return;
       }
 
-      const { alumnoId, nota } = req.body;
+      const { alumnoId, nota, ausente, expectedVersion } = req.body;
       const currentUser = req.user!;
 
-      if (!alumnoId || nota === undefined) {
+      if (!alumnoId || (!ausente && nota === undefined)) {
         res.status(400).json({
           success: false,
           message: 'Alumno ID y nota son requeridos'
@@ -396,13 +400,45 @@ class ExamenController {
         return;
       }
 
-      const result = await examenService.registrarNota(examenId, alumnoId, nota, currentUser);
+      const result = await examenService.registrarNota(
+        examenId,
+        alumnoId,
+        ausente ? null : nota,
+        currentUser,
+        Boolean(ausente),
+        expectedVersion
+      );
       
       res.json({
         success: true,
         message: 'Nota registrada exitosamente',
         data: result
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async cerrarMesa(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const examenId = Number(req.params.examenId);
+      const result = await examenService.cerrarMesa(examenId, req.user!, req.body.expectedVersion);
+      res.json({ success: true, message: 'Mesa cerrada y resultados publicados', data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async reabrirMesa(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const examenId = Number(req.params.examenId);
+      const result = await examenService.reabrirMesa(
+        examenId,
+        req.user!,
+        req.body.motivo,
+        req.body.expectedVersion
+      );
+      res.json({ success: true, message: 'Mesa reabierta para revisión', data: result });
     } catch (error) {
       next(error);
     }

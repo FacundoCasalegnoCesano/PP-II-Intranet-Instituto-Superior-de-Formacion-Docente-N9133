@@ -112,9 +112,24 @@ export interface EnrollmentPeriod {
   fechaInicio: string
   fechaFin: string
   materias?: Array<Subject | { materia: Subject; materiaId: number }>
-  mesas?: unknown[]
+  mesas?: Array<{ id?: number; mesaId: number; mesa?: AdminExam }>
   descripcion?: string | null
   activo: boolean
+  cantidadMaterias: number
+  cantidadMesas: number
+  estado: PeriodStatus
+}
+
+export type PeriodStatus = 'DESACTIVADO' | 'PROGRAMADO' | 'ABIERTO' | 'FINALIZADO'
+
+export interface AdminExam {
+  id: number
+  materia: Pick<Subject, 'id' | 'nombre'>
+  fecha: string
+  tipoExamen: string
+  llamado: number
+  tribunales?: unknown[]
+  _count?: { inscripciones: number }
 }
 
 export type AdminPageResult<T> = PaginatedResult<T>

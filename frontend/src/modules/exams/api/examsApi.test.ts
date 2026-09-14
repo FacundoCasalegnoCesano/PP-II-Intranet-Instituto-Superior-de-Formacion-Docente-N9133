@@ -9,13 +9,13 @@ describe('exam API', () => {
 
     await fetchAvailableExams(client)
     await fetchMyExamEnrollments(13, client)
-    await enrollInExam(9, 'LIBRE', client)
-    await withdrawFromExam(9, client)
+    await enrollInExam(9, 'LIBRE', 4, client)
+    await withdrawFromExam(9, 4, client)
 
     expect(get).toHaveBeenNthCalledWith(1, '/examenes/disponibles')
     expect(get).toHaveBeenNthCalledWith(2, '/examenes/alumno/13/inscripciones')
-    expect(post).toHaveBeenNthCalledWith(1, '/examenes/9/inscribir', { condicion: 'LIBRE' })
-    expect(post).toHaveBeenNthCalledWith(2, '/examenes/9/desinscribir', {})
+    expect(post).toHaveBeenNthCalledWith(1, '/examenes/9/inscribir', { condicion: 'LIBRE', expectedVersion: 4 })
+    expect(post).toHaveBeenNthCalledWith(2, '/examenes/9/desinscribir', { expectedVersion: 4 })
     expect(JSON.stringify(post.mock.calls)).not.toContain('alumnoId')
   })
 })

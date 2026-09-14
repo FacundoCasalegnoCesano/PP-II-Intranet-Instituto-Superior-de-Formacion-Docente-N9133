@@ -97,6 +97,21 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Mi perfil' })).toBeVisible()
   })
 
+  it('shows the exam table entry for administrative and teacher roles', () => {
+    for (const role of ['ADMINISTRATIVO', 'PROFESOR'] as const) {
+      authState.activeRole = role
+      render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+      expect(screen.getByRole('link', { name: role === 'ADMINISTRATIVO' ? 'Mesas de examen' : 'Mis mesas' })).toBeVisible()
+    }
+  })
+
+  it.each(['admin-exams', 'admin-exam-detail', 'admin-exam-edit'] as const)('marks administrative exam navigation active for %s', (routeName) => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    routeState.name = routeName
+    render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+    expect(screen.getByRole('link', { name: 'Mesas de examen' })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('offers one teacher navigation entry on desktop and mobile', async () => {
     authState.activeRole = 'PROFESOR'
     const user = userEvent.setup()

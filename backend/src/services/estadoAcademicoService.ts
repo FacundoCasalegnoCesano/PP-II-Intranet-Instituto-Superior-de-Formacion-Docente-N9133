@@ -489,7 +489,7 @@ class EstadoAcademicoService {
   ): Promise<Set<number>> {
     const aprobadas = new Set<number>();
     const examenes = await prisma.inscripcionExamen.findMany({
-      where: { alumnoId: idAlumno, aprobado: true },
+      where: { alumnoId: idAlumno, aprobado: true, fechaBaja: null },
       include: { mesa: { select: { materiaId: true } } }
     });
     for (const examen of examenes) aprobadas.add(examen.mesa.materiaId);
@@ -537,7 +537,7 @@ class EstadoAcademicoService {
     const definitivas = new Map<number, Definitiva>();
 
     const examenes = await prisma.inscripcionExamen.findMany({
-      where: { alumnoId: idAlumno, aprobado: true, notaFinal: { not: null } },
+      where: { alumnoId: idAlumno, aprobado: true, notaFinal: { not: null }, fechaBaja: null },
       include: { mesa: { include: { materia: { select: { id: true, nombre: true, carreraId: true } } } } },
       orderBy: { updatedAt: 'desc' }
     });

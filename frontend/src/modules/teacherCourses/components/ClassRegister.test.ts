@@ -219,7 +219,8 @@ describe('ClassRegister', () => {
     await waitFor(() => expect(screen.getByRole('group', { name: /Alumno dado de baja/ })).toBeInTheDocument())
 
     const historicalGroup = screen.getByRole('group', { name: /Alumno dado de baja/ })
-    expect(historicalGroup).toHaveTextContent('DNI 30999888')
+    expect(historicalGroup).not.toHaveTextContent('DNI')
+    expect(historicalGroup).not.toHaveTextContent('30999888')
     expect(screen.queryByRole('group', { name: /Alumno activo actual/ })).not.toBeInTheDocument()
     expect(screen.getAllByRole('group')).toHaveLength(1)
   })

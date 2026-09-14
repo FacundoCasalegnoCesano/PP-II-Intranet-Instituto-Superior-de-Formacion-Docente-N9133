@@ -1,5 +1,5 @@
 import { prisma } from '../config/prisma.js';
-import { normalizePagination, paginated, type PaginationInput } from '../utils/pagination.js';
+import { normalizePagination, paginated, type PaginatedResult, type PaginationInput } from '../utils/pagination.js';
 
 export interface PeriodoInscripcionCreateData {
   tipo: string;
@@ -20,6 +20,20 @@ export interface PeriodoInscripcionUpdateData {
   mesasIds?: number[];
   descripcion?: string | null;
   activo?: boolean;
+}
+
+export interface PeriodoInscripcionListadoRecord {
+  id: number;
+  tipo: string;
+  cicloLectivo: number;
+  fechaInicio: Date;
+  fechaFin: Date;
+  descripcion: string | null;
+  activo: boolean;
+  _count: {
+    materias: number;
+    mesas: number;
+  };
 }
 
 class PeriodoInscripcionRepository {
@@ -111,7 +125,7 @@ class PeriodoInscripcionRepository {
     });
   }
 
-  async findAll(filters: { tipo?: string; activo?: boolean; cicloLectivo?: number } & PaginationInput = {}) {
+  async findAll(filters: { tipo?: string; activo?: boolean; cicloLectivo?: number } & PaginationInput = {}): Promise<PaginatedResult<PeriodoInscripcionListadoRecord>> {
     const where: any = {};
     if (filters.tipo) where.tipo = filters.tipo as any;
     if (filters.activo !== undefined) where.activo = filters.activo;
@@ -122,9 +136,10 @@ class PeriodoInscripcionRepository {
       where,
       skip,
       take: limit,
-      orderBy: [{ fechaInicio: 'desc' }, { id: 'desc' }]
+      orderBy: [{ fechaInicio: 'desc' }, { id: 'desc' }],
+      include: { _count: { select: { materias: true, mesas: true } } }
     }), prisma.periodoInscripcion.count({ where })]);
-    return paginated(data, total, page, limit);
+    return paginated(data as unknown as PeriodoInscripcionListadoRecord[], total, page, limit);
   }
 
   async findActivosByTipo(tipo: string): Promise<any[]> {

@@ -871,12 +871,19 @@ paths:
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
-        - { name: limit, in: query, schema: { type: integer, default: 10 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
         - { name: materiaId, in: query, schema: { type: integer } }
+        - { name: carreraId, in: query, schema: { type: integer } }
         - { name: fechaDesde, in: query, schema: { type: string, format: date } }
         - { name: fechaHasta, in: query, schema: { type: string, format: date } }
+        - { name: cicloLectivo, in: query, schema: { type: integer } }
+        - { name: estadoMesa, in: query, schema: { $ref: '#/components/schemas/EstadoMesa' } }
       responses:
-        '200': { $ref: '#/components/responses/PaginatedOK' }
+        '200':
+          description: Mesas paginadas con filtros aplicados en backend
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MesasResponse' }
     post:
       tags: [Exámenes]
       summary: Crear examen (solo admin)
@@ -919,7 +926,11 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Detalle de la mesa
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MesaDetailResponse' }
     put:
       tags: [Exámenes]
       summary: Actualizar examen (solo admin)
@@ -962,6 +973,7 @@ paths:
       x-roles: [ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: expectedVersion, in: query, required: false, schema: { type: integer, minimum: 0 } }
       responses:
         '200': { $ref: '#/components/responses/OK' }
 
@@ -1009,7 +1021,11 @@ paths:
       parameters:
         - { name: examenId, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { $ref: '#/components/responses/OK' }
+        '200':
+          description: Inscriptos y resultados de carga o publicación
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InscriptosResultadoResponse' }
 
   /examenes/alumno/{alumnoId}/inscripciones:
     get:
@@ -1037,6 +1053,38 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CalificacionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /examenes/{examenId}/cerrar:
+    post:
+      tags: [Exámenes]
+      summary: Cerrar y publicar resultados de una mesa
+      description: Revalida tribunal completo e inscriptos dentro de una transacción. Sólo administrativo o presidente.
+      x-roles: [ADMINISTRATIVO, PROFESOR]
+      parameters:
+        - { name: examenId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CierreMesaRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /examenes/{examenId}/reabrir:
+    post:
+      tags: [Exámenes]
+      summary: Reabrir una mesa para corregir resultados
+      description: Sólo administrativo; conserva el snapshot publicado y exige motivo.
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: examenId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReaperturaMesaRequest' }
       responses:
         '200': { $ref: '#/components/responses/OK' }
 
@@ -2428,10 +2476,13 @@ components:
       properties:
         id: { type: integer }
         mesaId: { type: integer }
-        alumnoId: { type: integer, description: Identificador interno Alumno.idAlumno en respuestas persistidas. }
         condicion: { type: string, enum: [REGULAR, LIBRE] }
         fechaInscripcion: { type: string, format: date-time }
         fechaBaja: { type: string, format: date-time, nullable: true }
+        estadoResultado: { type: string, enum: [PENDIENTE, EN_REVISION, AUSENTE, CALIFICADO] }
+        nota: { type: number, nullable: true, minimum: 0, maximum: 10 }
+        aprobado: { type: boolean, nullable: true }
+        notaMinima: { type: number }
         mesa: { type: object, properties: { id: { type: integer }, fecha: { type: string, format: date-time }, materia: { $ref: '#/components/schemas/Subject' } } }
     InscripcionExamenMutationResponse:
       allOf:
@@ -2576,9 +2627,10 @@ components:
       enum: [ABIERTA, EN_PROCESO, FINALIZADA]
     MesaDisponibleAlumno:
       type: object
-      required: [id, materia, fecha, tipoExamen, llamado, tribunal, condicion, inscripto]
+      required: [id, materia, fecha, tipoExamen, llamado, tribunal, condicion, inscripto, version]
       properties:
         id: { type: integer, minimum: 1 }
+        version: { type: integer, minimum: 0 }
         materia:
           type: object
           required: [id, nombre, carrera]
@@ -2605,6 +2657,145 @@ components:
               rolTribunal: { type: string, enum: [PRESIDENTE, VOCAL, SUPLENTE] }
         condicion: { type: string, enum: [REGULAR, LIBRE] }
         inscripto: { type: boolean }
+    Pagination:
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+    MesaListItem:
+      type: object
+      required: [id, materia, fecha, tipoExamen, llamado, estadoMesa, version, tribunales, _count]
+      properties:
+        id: { type: integer }
+        materia:
+          type: object
+          required: [id, nombre, carrera]
+          properties:
+            id: { type: integer }
+            nombre: { type: string }
+            carrera: { type: object, required: [id, nombre], properties: { id: { type: integer }, nombre: { type: string } } }
+        fecha: { type: string, format: date-time }
+        tipoExamen: { $ref: '#/components/schemas/TipoExamen' }
+        llamado: { type: integer }
+        estadoMesa: { $ref: '#/components/schemas/EstadoMesa' }
+        version: { type: integer }
+        publicadaEn: { type: string, format: date-time, nullable: true }
+        tribunales: { type: array, items: { type: object, additionalProperties: true } }
+        _count: { type: object, properties: { inscripciones: { type: integer } } }
+    MesasResponse:
+      type: object
+      required: [success, data, pagination]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/MesaListItem' } }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    MesaDetailResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { $ref: '#/components/schemas/MesaDetail' }
+    AlumnoResultadoPublico:
+      type: object
+      required: [idUsuario, apellidoNombre, email, dni]
+      properties:
+        idUsuario: { type: integer }
+        apellidoNombre: { type: string }
+        email: { type: string, format: email }
+        dni: { type: integer }
+      additionalProperties: false
+    MesaDetailCarrera:
+      type: object
+      required: [id, nombre]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+      additionalProperties: false
+    MesaDetailMateria:
+      type: object
+      required: [id, nombre, notaMinima, carrera]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        notaMinima: { type: number }
+        carrera: { $ref: '#/components/schemas/MesaDetailCarrera' }
+      additionalProperties: false
+    MesaTribunalPublico:
+      type: object
+      required: [id, profesorId, apellidoNombre, rolTribunal]
+      properties:
+        id: { type: integer }
+        profesorId: { type: integer }
+        apellidoNombre: { type: string }
+        rolTribunal: { type: string, enum: [PRESIDENTE, VOCAL, SUPLENTE] }
+      additionalProperties: false
+    InscriptoResultado:
+      type: object
+      required: [id, mesaId, condicion, resultado, nota, aprobado, notaMinima, ausente]
+      properties:
+        id: { type: integer }
+        mesaId: { type: integer }
+        alumno: { $ref: '#/components/schemas/AlumnoResultadoPublico' }
+        condicion: { type: string, enum: [REGULAR, LIBRE] }
+        resultado: { type: string, enum: [PENDIENTE, AUSENTE, CALIFICADO] }
+        nota: { type: number, nullable: true, minimum: 0, maximum: 10 }
+        aprobado: { type: boolean, nullable: true }
+        notaMinima: { type: number }
+        ausente: { type: boolean }
+      additionalProperties: false
+    InscriptoResultadoAlumno:
+      type: object
+      required: [id, mesaId, condicion, estadoResultado, nota, aprobado, notaMinima]
+      properties:
+        id: { type: integer }
+        mesaId: { type: integer }
+        condicion: { type: string, enum: [REGULAR, LIBRE] }
+        estadoResultado: { type: string, enum: [PENDIENTE, EN_REVISION, AUSENTE, CALIFICADO] }
+        nota: { type: number, nullable: true, minimum: 0, maximum: 10 }
+        aprobado: { type: boolean, nullable: true }
+        notaMinima: { type: number }
+      additionalProperties: false
+    MesaDetail:
+      type: object
+      required: [id, materiaId, fecha, tipoExamen, llamado, estadoMesa, version, publicadaEn, tribunales, inscripciones]
+      properties:
+        id: { type: integer }
+        materiaId: { type: integer }
+        fecha: { type: string, format: date-time }
+        tipoExamen: { $ref: '#/components/schemas/TipoExamen' }
+        llamado: { type: integer }
+        estadoMesa: { $ref: '#/components/schemas/EstadoMesa' }
+        version: { type: integer }
+        publicadaEn: { type: string, format: date-time, nullable: true }
+        reabiertaEn: { type: string, format: date-time, nullable: true }
+        motivoReapertura: { type: string, nullable: true }
+        folioExamen: { type: string, nullable: true }
+        libroExamen: { type: string, nullable: true }
+        activo: { type: boolean }
+        materia: { $ref: '#/components/schemas/MesaDetailMateria' }
+        carrera:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/MesaDetailCarrera'
+        tribunales:
+          type: array
+          items: { $ref: '#/components/schemas/MesaTribunalPublico' }
+        inscripciones:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/InscriptoResultado'
+              - $ref: '#/components/schemas/InscriptoResultadoAlumno'
+      additionalProperties: false
+    InscriptosResultadoResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data: { type: array, items: { $ref: '#/components/schemas/InscriptoResultado' } }
     ExamenCreateRequest:
       type: object
       required: [materiaId, fecha, tipoExamen]
@@ -2617,15 +2808,14 @@ components:
         libroExamen: { type: string, maxLength: 255, nullable: true }
     ExamenUpdateRequest:
       type: object
+      minProperties: 1
       properties:
-        materiaId: { type: integer }
         fecha: { type: string, format: date-time }
         tipoExamen: { $ref: '#/components/schemas/TipoExamen' }
         llamado: { type: integer }
         folioExamen: { type: string, maxLength: 255, nullable: true }
         libroExamen: { type: string, maxLength: 255, nullable: true }
-        estadoMesa: { $ref: '#/components/schemas/EstadoMesa' }
-        activo: { type: boolean }
+        expectedVersion: { type: integer, minimum: 0 }
     TribunalRequest:
       type: object
       required: [mesaId, profesorId]
@@ -2633,21 +2823,48 @@ components:
         mesaId: { type: integer, description: Identificador de la mesa de examen. }
         profesorId: { type: integer }
         rolTribunal: { type: string, enum: [PRESIDENTE, VOCAL, SUPLENTE], default: VOCAL }
+        expectedVersion: { type: integer, minimum: 0 }
     InscripcionExamenRequest:
       type: object
       properties:
         alumnoId: { type: integer, description: Solo para ADMINISTRATIVO; es Usuario.idUsuario y ALUMNO debe omitirlo. }
         condicion: { type: string, enum: [REGULAR, LIBRE], default: REGULAR }
+        expectedVersion: { type: integer, minimum: 0 }
     DesinscripcionExamenRequest:
       type: object
       properties:
         alumnoId: { type: integer, description: Solo para ADMINISTRATIVO; es Usuario.idUsuario y ALUMNO debe omitirlo. }
+        expectedVersion: { type: integer, minimum: 0 }
     CalificacionRequest:
       type: object
-      required: [alumnoId, nota]
+      oneOf:
+        - type: object
+          required: [alumnoId, nota]
+          properties:
+            alumnoId: { type: integer }
+            nota: { type: number, minimum: 0, maximum: 10 }
+            expectedVersion: { type: integer, minimum: 0 }
+          not:
+            required: [ausente]
+        - type: object
+          required: [alumnoId, ausente]
+          properties:
+            alumnoId: { type: integer }
+            ausente: { type: boolean, enum: [true], description: Marca ausencia sin nota. }
+            expectedVersion: { type: integer, minimum: 0 }
+          not:
+            required: [nota]
+    CierreMesaRequest:
+      type: object
+      required: [expectedVersion]
       properties:
-        alumnoId: { type: integer }
-        nota: { type: number, minimum: 1, maximum: 10 }
+        expectedVersion: { type: integer, minimum: 0 }
+    ReaperturaMesaRequest:
+      type: object
+      required: [motivo, expectedVersion]
+      properties:
+        motivo: { type: string, minLength: 1, maxLength: 2000 }
+        expectedVersion: { type: integer, minimum: 0 }
 
     # -------- Horarios --------
     DiaSemana:
