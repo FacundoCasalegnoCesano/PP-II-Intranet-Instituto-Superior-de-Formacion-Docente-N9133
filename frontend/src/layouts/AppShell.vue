@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { BookOpen, CalendarDays, ChevronDown, ClipboardList, Home, LibraryBig, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
-import AppButton from '@/ui/AppButton.vue'
+import AppBackButton from '@/ui/AppBackButton.vue'
 import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 
 const route = useRoute()
@@ -101,7 +101,7 @@ async function logout(): Promise<void> {
           </div>
         </div>
       </header>
-      <main class="p-4 sm:p-7"><slot /></main>
+      <main class="p-4 sm:p-7"><AppBackButton /><slot /></main>
     </div>
 
     <div v-if="drawerOpen" role="dialog" aria-modal="true" aria-label="Navegación" class="fixed inset-0 z-40 lg:hidden">
