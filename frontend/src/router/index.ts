@@ -22,9 +22,12 @@ import CareerCatalogView from '@/modules/careerCatalog/views/CareerCatalogView.v
 import TeacherCoursesView from '@/modules/teacherCourses/views/TeacherCoursesView.vue'
 import AdminExamsView from '@/modules/examManagement/views/AdminExamsView.vue'
 import TeacherExamsView from '@/modules/examManagement/views/TeacherExamsView.vue'
+import PresentationView from '@/modules/public/views/PresentationView.vue'
+import PrivacyView from '@/modules/public/views/PrivacyView.vue'
 
 export type RouteMeta = {
   guest?: boolean
+  public?: boolean
   requiresSession?: boolean
   roleSelection?: boolean
   allowedRoles?: Role[]
@@ -101,6 +104,8 @@ export function createAppRouter() {
     routes: [
       { path: '/', redirect: '/login' },
       { path: '/login', name: 'login', component: LoginView, meta: { guest: true } },
+      { path: '/presentacion', name: 'presentation', component: PresentationView, meta: { public: true } },
+      { path: '/privacidad', name: 'privacy', component: PrivacyView, meta: { public: true } },
       { path: '/recuperar-contrasena', name: 'password-forgot', component: ForgotPasswordView, meta: { guest: true } },
       {
         path: '/restablecer-contrasena',
@@ -182,7 +187,7 @@ export function createAppRouter() {
     }
 
     if (auth.status === 'role_pending') {
-      return meta.roleSelection ? true : { name: 'role-selection', query: { redirect: to.fullPath } }
+      return meta.roleSelection || meta.public ? true : { name: 'role-selection', query: { redirect: to.fullPath } }
     }
 
     if (meta.guest) return { name: 'home' }
