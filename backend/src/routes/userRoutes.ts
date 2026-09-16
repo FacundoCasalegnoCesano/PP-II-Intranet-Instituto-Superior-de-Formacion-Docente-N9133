@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import UserController from '../controllers/userController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
-import { updateUserSchema, updateOwnUserSchema, listUsersSchema, changeRoleSchema, toggleActiveSchema } from '../validations/userValidation.js';
+import { updateUserSchema, updateOwnUserSchema, listUsersSchema, changeRoleSchema, toggleActiveSchema, adminPasswordResetSchema } from '../validations/userValidation.js';
 import { ROLES } from '../constants/roles.js';
 
 const router = Router();
@@ -39,6 +39,12 @@ router.put('/:id/activate',
 router.delete('/:id',
   roleCheck(ROLES.ADMINISTRATIVO),
   userController.deleteUser
+);
+
+router.post('/:id/password-reset',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(adminPasswordResetSchema, 'body', { stripUnknown: false }),
+  userController.resetPassword
 );
 
 // Middleware para verificar permisos

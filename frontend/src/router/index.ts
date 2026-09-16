@@ -11,6 +11,7 @@ import HomeView from '@/modules/home/views/HomeView.vue'
 import ProfileView from '@/modules/profile/views/ProfileView.vue'
 import AdminUsersView from '@/modules/admin/views/AdminUsersView.vue'
 import AdminCareersView from '@/modules/admin/views/AdminCareersView.vue'
+import CareerEnrollmentsView from '@/modules/admin/views/CareerEnrollmentsView.vue'
 import AdminSubjectsView from '@/modules/admin/views/AdminSubjectsView.vue'
 import AdminCoursesView from '@/modules/admin/views/AdminCoursesView.vue'
 import AdminPeriodsView from '@/modules/admin/views/AdminPeriodsView.vue'
@@ -22,9 +23,13 @@ import CareerCatalogView from '@/modules/careerCatalog/views/CareerCatalogView.v
 import TeacherCoursesView from '@/modules/teacherCourses/views/TeacherCoursesView.vue'
 import AdminExamsView from '@/modules/examManagement/views/AdminExamsView.vue'
 import TeacherExamsView from '@/modules/examManagement/views/TeacherExamsView.vue'
+import AdminHomologationsView from '@/modules/homologations/views/AdminHomologationsView.vue'
+import PresentationView from '@/modules/public/views/PresentationView.vue'
+import PrivacyView from '@/modules/public/views/PrivacyView.vue'
 
 export type RouteMeta = {
   guest?: boolean
+  public?: boolean
   requiresSession?: boolean
   roleSelection?: boolean
   allowedRoles?: Role[]
@@ -82,6 +87,7 @@ const AdminCareersPage = defineComponent({ name: 'AdminCareersPage', render: () 
 const AdminSubjectsPage = defineComponent({ name: 'AdminSubjectsPage', render: () => h(AppShell, null, { default: () => h(AdminSubjectsView) }) })
 const AdminCoursesPage = defineComponent({ name: 'AdminCoursesPage', render: () => h(AppShell, null, { default: () => h(AdminCoursesView) }) })
 const AdminPeriodsPage = defineComponent({ name: 'AdminPeriodsPage', render: () => h(AppShell, null, { default: () => h(AdminPeriodsView) }) })
+const AdminCareerEnrollmentsPage = defineComponent({ name: 'AdminCareerEnrollmentsPage', render: () => h(AppShell, null, { default: () => h(CareerEnrollmentsView) }) })
 const SchedulesPage = defineComponent({ name: 'SchedulesPage', render: () => h(AppShell, null, { default: () => h(SchedulesView) }) })
 const AcademicRecordPage = defineComponent({ name: 'AcademicRecordPage', render: () => h(AppShell, null, { default: () => h(AcademicRecordView) }) })
 const SubjectEnrollmentsPage = defineComponent({ name: 'SubjectEnrollmentsPage', render: () => h(AppShell, null, { default: () => h(SubjectEnrollmentsView) }) })
@@ -90,6 +96,7 @@ const CareerCatalogPage = defineComponent({ name: 'CareerCatalogPage', render: (
 const TeacherCoursesPage = defineComponent({ name: 'TeacherCoursesPage', render: () => h(AppShell, null, { default: () => h(TeacherCoursesView) }) })
 const AdminExamsPage = defineComponent({ name: 'AdminExamsPage', render: () => h(AppShell, null, { default: () => h(AdminExamsView) }) })
 const TeacherExamsPage = defineComponent({ name: 'TeacherExamsPage', render: () => h(AppShell, null, { default: () => h(TeacherExamsView) }) })
+const AdminHomologationsPage = defineComponent({ name: 'AdminHomologationsPage', render: () => h(AppShell, null, { default: () => h(AdminHomologationsView) }) })
 
 function routeMeta(route: RouteLocationNormalized): RouteMeta {
   return route.meta as RouteMeta
@@ -101,6 +108,8 @@ export function createAppRouter() {
     routes: [
       { path: '/', redirect: '/login' },
       { path: '/login', name: 'login', component: LoginView, meta: { guest: true } },
+      { path: '/presentacion', name: 'presentation', component: PresentationView, meta: { public: true } },
+      { path: '/privacidad', name: 'privacy', component: PrivacyView, meta: { public: true } },
       { path: '/recuperar-contrasena', name: 'password-forgot', component: ForgotPasswordView, meta: { guest: true } },
       {
         path: '/restablecer-contrasena',
@@ -144,6 +153,7 @@ export function createAppRouter() {
       { path: '/app/administracion/usuarios/:id', name: 'admin-user-detail', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios/:id/editar', name: 'admin-user-edit', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/carreras', name: 'admin-careers', component: AdminCareersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/inscripciones-carreras', name: 'admin-career-enrollments', component: AdminCareerEnrollmentsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/carreras/nueva', name: 'admin-career-create', component: AdminCareersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/carreras/:id', name: 'admin-career-detail', component: AdminCareersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/carreras/:id/editar', name: 'admin-career-edit', component: AdminCareersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
@@ -163,6 +173,9 @@ export function createAppRouter() {
       { path: '/app/administracion/mesas/nueva', name: 'admin-exam-new', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/homologaciones', name: 'admin-homologations', component: AdminHomologationsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/homologaciones/nueva', name: 'admin-homologation-create', component: AdminHomologationsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/homologaciones/:id', name: 'admin-homologation-detail', component: AdminHomologationsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       {
         path: '/app/perfil',
         name: 'profile',
@@ -182,7 +195,7 @@ export function createAppRouter() {
     }
 
     if (auth.status === 'role_pending') {
-      return meta.roleSelection ? true : { name: 'role-selection', query: { redirect: to.fullPath } }
+      return meta.roleSelection || meta.public ? true : { name: 'role-selection', query: { redirect: to.fullPath } }
     }
 
     if (meta.guest) return { name: 'home' }

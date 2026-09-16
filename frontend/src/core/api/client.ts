@@ -1,6 +1,6 @@
 import type { SessionTokens } from '@/core/auth/contracts'
 import { SessionStorage, sessionStorage } from '@/core/storage/sessionStorage'
-import type { ApiEnvelope, ApiErrorPayload, PaginatedResult } from './contracts'
+import type { ApiEnvelope, ApiErrorPayload, ApiResponse, PaginatedResult } from './contracts'
 import { ApiError, apiErrorFromPayload, normalizeApiError } from './errors'
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body' | 'headers'> {
@@ -36,6 +36,19 @@ function isApiEnvelope(value: unknown): value is ApiEnvelope<unknown> {
     && typeof value.success === 'boolean'
 }
 
+function isPaginationMeta(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+
+  const pagination = value as Record<string, unknown>
+  const hasValidRequiredFields = ['page', 'limit', 'total', 'totalPages']
+    .every((field) => typeof pagination[field] === 'number' && Number.isFinite(pagination[field]))
+
+  if (!hasValidRequiredFields) return false
+
+  return ['hasNextPage', 'hasPreviousPage']
+    .every((field) => !(field in pagination) || typeof pagination[field] === 'boolean')
+}
+
 function errorFromStatus(status: number, statusText: string): ApiError {
   return new ApiError(statusText || 'La solicitud no pudo completarse', status, 'HTTP_ERROR')
 }
@@ -69,6 +82,10 @@ export class ApiClient {
     return this.request<T>(path, { ...options, method: 'POST', body })
   }
 
+  postWithMessage<T>(path: string, body?: unknown, options: Omit<ApiRequestOptions, 'method' | 'body'> = {}): Promise<ApiResponse<T>> {
+    return this.requestWithMessage<T>(path, { ...options, method: 'POST', body })
+  }
+
   put<T>(path: string, body?: unknown, options: Omit<ApiRequestOptions, 'method' | 'body'> = {}): Promise<T> {
     return this.request<T>(path, { ...options, method: 'PUT', body })
   }
@@ -83,6 +100,10 @@ export class ApiClient {
 
   request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
     return this.requestOnce<T>(path, options, false)
+  }
+
+  requestWithMessage<T>(path: string, options: ApiRequestOptions = {}): Promise<ApiResponse<T>> {
+    return this.requestWithMessageOnce<T>(path, options, false)
   }
 
   setSessionInvalidationHandler(handler: (() => void) | undefined): void {
@@ -105,6 +126,22 @@ export class ApiClient {
 
     try {
       return await this.unwrap<T>(response, options.preservePagination)
+    } catch (error) {
+      const normalized = normalizeApiError(error)
+      if (normalized.status === 401 && useAuth) this.invalidateSession()
+      throw normalized
+    }
+  }
+
+  private async requestWithMessageOnce<T>(path: string, options: ApiRequestOptions, retried: boolean): Promise<ApiResponse<T>> {
+    const useAuth = options.auth ?? !isPublicAuthPath(path)
+    const response = await this.send(path, options, useAuth)
+    if (response.status === 401 && useAuth && !retried) {
+      try { await this.refreshSession() } catch (error) { throw normalizeApiError(error) }
+      return this.requestWithMessageOnce<T>(path, options, true)
+    }
+    try {
+      return await this.unwrapWithMessage<T>(response, options.preservePagination)
     } catch (error) {
       const normalized = normalizeApiError(error)
       if (normalized.status === 401 && useAuth) this.invalidateSession()
@@ -227,10 +264,34 @@ export class ApiClient {
     }
 
     if (!payload.success) throw apiErrorFromPayload(response.status, payload as ApiErrorPayload)
-    if (preservePagination && 'pagination' in payload && payload.pagination) {
-      return { data: Array.isArray(payload.data) ? payload.data : [], pagination: payload.pagination } as T
+    if (preservePagination) {
+      if (!Array.isArray(payload.data) || !('pagination' in payload) || !isPaginationMeta(payload.pagination)) {
+        throw new ApiError('El servidor devolvió una respuesta paginada inválida', response.status, 'INVALID_RESPONSE')
+      }
+      return { data: payload.data, pagination: payload.pagination } as T
     }
     return ('data' in payload ? payload.data : undefined) as T
+  }
+
+  private async unwrapWithMessage<T>(response: Response, preservePagination = false): Promise<ApiResponse<T>> {
+    const text = await response.text()
+    let payload: unknown
+    try { payload = JSON.parse(text) } catch { throw new ApiError('El servidor devolvió una respuesta inválida', response.status, 'INVALID_RESPONSE') }
+    if (!isApiEnvelope(payload)) throw new ApiError('El servidor devolvió una respuesta inválida', response.status, 'INVALID_RESPONSE')
+    if (!response.ok) {
+      if (!payload.success) throw apiErrorFromPayload(response.status, payload as ApiErrorPayload)
+      throw errorFromStatus(response.status, response.statusText)
+    }
+    if (!payload.success) throw apiErrorFromPayload(response.status, payload as ApiErrorPayload)
+    const data = preservePagination
+      ? (() => {
+        if (!Array.isArray(payload.data) || !('pagination' in payload) || !isPaginationMeta(payload.pagination)) {
+          throw new ApiError('El servidor devolvió una respuesta paginada inválida', response.status, 'INVALID_RESPONSE')
+        }
+        return { data: payload.data, pagination: payload.pagination }
+      })()
+      : ('data' in payload ? payload.data : undefined)
+    return { data: data as T, message: payload.message }
   }
 
   private url(path: string): string {

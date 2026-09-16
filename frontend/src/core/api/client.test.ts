@@ -112,6 +112,39 @@ describe('ApiClient', () => {
     expect(fetcher.mock.calls[1]?.[1]?.method).toBe('DELETE')
   })
 
+  it('keeps active careers from the backend paginated envelope', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      success: true,
+      data: [
+        { id: 3, nombre: 'Profesorado de Inicial', duracionAnios: 4, activo: true },
+        { id: 4, nombre: 'Profesorado de Primaria', duracionAnios: 4, activo: true },
+      ],
+      pagination: { page: 1, limit: 100, total: 2, totalPages: 1 },
+    }))
+    const { api } = client(fetcher)
+
+    await expect(api.getPaginated('/carreras?activo=true&page=1&limit=100')).resolves.toMatchObject({
+      data: expect.arrayContaining([
+        expect.objectContaining({ id: 3, activo: true }),
+        expect.objectContaining({ id: 4, activo: true }),
+      ]),
+      pagination: { page: 1, limit: 100, total: 2, totalPages: 1 },
+    })
+  })
+
+  it('rejects a paginated response whose data is not an array instead of showing an empty catalog', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      success: true,
+      data: { data: [{ id: 3, nombre: 'Profesorado de Inicial', duracionAnios: 4, activo: true }] },
+      pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
+    }))
+    const { api } = client(fetcher)
+
+    await expect(api.getPaginated('/carreras?activo=true&page=1&limit=100')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    })
+  })
+
   it('refreshes once after a 401 and retries the original request with rotated tokens', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ success: false, message: 'Token expirado' }, 401))

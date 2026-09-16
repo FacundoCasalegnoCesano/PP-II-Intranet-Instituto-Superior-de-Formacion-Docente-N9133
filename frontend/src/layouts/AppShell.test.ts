@@ -97,12 +97,49 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Mi perfil' })).toBeVisible()
   })
 
+  it('shows the standard back button for the administrative career enrollments page', () => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    routeState.name = 'admin-career-enrollments'
+    render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+
+    expect(screen.getByRole('button', { name: 'Volver' })).toBeVisible()
+  })
+
   it('shows the exam table entry for administrative and teacher roles', () => {
     for (const role of ['ADMINISTRATIVO', 'PROFESOR'] as const) {
       authState.activeRole = role
       render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
       expect(screen.getByRole('link', { name: role === 'ADMINISTRATIVO' ? 'Mesas de examen' : 'Mis mesas' })).toBeVisible()
     }
+  })
+
+  it('shows Homologaciones in the administrative desktop and mobile navigation', async () => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    const user = userEvent.setup()
+    const RouterLink = defineComponent({
+      inheritAttrs: false,
+      props: { to: { type: Object, required: true } },
+      setup: (props, { attrs, slots }) => () => h('a', { ...attrs, href: '#', 'data-route-name': (props.to as { name: string }).name }, slots.default?.()),
+    })
+    render(AppShell, { global: { stubs: { RouterLink } } })
+
+    expect(screen.getByRole('link', { name: 'Homologaciones' })).toHaveAttribute('data-route-name', 'admin-homologations')
+    await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
+    expect(screen.getAllByRole('link', { name: 'Homologaciones' })).toHaveLength(2)
+  })
+
+  it.each(['admin-homologations', 'admin-homologation-create', 'admin-homologation-detail'] as const)('marks Homologaciones active for route %s only', (routeName) => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    routeState.name = routeName
+    const RouterLink = defineComponent({
+      inheritAttrs: false,
+      props: { to: { type: Object, required: true } },
+      setup: (_, { attrs, slots }) => () => h('a', { ...attrs, href: '#' }, slots.default?.()),
+    })
+    render(AppShell, { global: { stubs: { RouterLink } } })
+
+    expect(screen.getByRole('link', { name: 'Homologaciones' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Usuarios' })).not.toHaveAttribute('aria-current', 'page')
   })
 
   it.each(['admin-exams', 'admin-exam-detail', 'admin-exam-edit'] as const)('marks administrative exam navigation active for %s', (routeName) => {

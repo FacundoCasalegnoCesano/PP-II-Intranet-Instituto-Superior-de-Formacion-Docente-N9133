@@ -2,7 +2,10 @@ import Joi from 'joi';
 
 export const listarHomologacionesSchema = Joi.object({
   estado: Joi.string().valid('PENDIENTE', 'APROBADA', 'RECHAZADA'),
-  alumnoId: Joi.number().integer().min(1),
+  tipo: Joi.string().valid('TOTAL', 'PARCIAL'),
+  search: Joi.string().trim().max(100).allow(''),
+  carreraId: Joi.number().integer().min(1),
+  materiaId: Joi.number().integer().min(1),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20)
 });
@@ -39,15 +42,23 @@ export const crearHomologacionSchema = Joi.object({
     .integer()
     .min(0)
     .max(10)
-    .required()
+    .optional()
+    .allow(null)
     .messages({
-      'any.required': 'La calificación es requerida',
       'number.base': 'La calificación debe ser un número',
       'number.integer': 'La calificación debe ser un número entero',
       'number.min': 'La calificación mínima es 0',
       'number.max': 'La calificación máxima es 10'
     }),
   observacion: Joi.string().max(2000).allow('', null)
+}).custom((value, helpers) => {
+  if (value.tipoHomologacion === 'TOTAL' && value.calificacion == null) {
+    return helpers.error('homologacion.totalCalificacion');
+  }
+  if (value.tipoHomologacion === 'PARCIAL') value.calificacion = null;
+  return value;
+}).messages({
+  'homologacion.totalCalificacion': 'La nota de la institución anterior es requerida para una homologación total.'
 });
 
 export const resolverHomologacionSchema = Joi.object({

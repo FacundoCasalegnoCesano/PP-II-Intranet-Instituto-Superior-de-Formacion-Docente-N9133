@@ -56,7 +56,9 @@ class CarreraController {
       };
       
       if (req.query.search) filters.search = req.query.search as string;
-      if (req.query.activo !== undefined) filters.activo = req.query.activo === 'true';
+      const activoQuery: unknown = req.query.activo;
+      if (typeof activoQuery === 'boolean') filters.activo = activoQuery;
+      else if (typeof activoQuery === 'string') filters.activo = activoQuery === 'true';
       
       const result = await carreraService.listCarreras(filters);
       

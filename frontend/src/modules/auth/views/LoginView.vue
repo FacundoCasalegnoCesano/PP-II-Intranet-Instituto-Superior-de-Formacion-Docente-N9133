@@ -49,6 +49,10 @@ const submit = handleSubmit(async (values) => {
         <p v-if="formError" role="alert" class="rounded-md border border-[#edb8b8] bg-[#fff4f4] p-3 text-sm text-[#8b151b]">{{ formError }}</p>
         <AppButton type="submit" :loading="isSubmitting" class="w-full">Ingresar</AppButton>
       </form>
+      <nav class="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-label="Información institucional">
+        <RouterLink :to="{ name: 'presentation' }" class="font-semibold text-[var(--color-brand)] hover:underline">Conocé el instituto</RouterLink>
+        <RouterLink :to="{ name: 'privacy' }" class="font-semibold text-[var(--color-brand)] hover:underline">Privacidad</RouterLink>
+      </nav>
     </div>
   </AuthLayout>
 </template>

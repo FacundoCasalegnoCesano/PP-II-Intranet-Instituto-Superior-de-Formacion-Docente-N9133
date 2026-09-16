@@ -5,8 +5,8 @@ import { validationMiddleware } from '../middleware/validation.js';
 import {
   crearHomologacionSchema,
   resolverHomologacionSchema,
-  notaComplementariaSchema
-  , listarHomologacionesSchema
+  notaComplementariaSchema,
+  listarHomologacionesSchema
 } from '../validations/homologacionValidation.js';
 import { ROLES } from '../constants/roles.js';
 
@@ -32,6 +32,12 @@ router.get('/',
   roleCheck(ROLES.ADMINISTRATIVO),
   validationMiddleware(listarHomologacionesSchema, 'query'),
   homologacionController.listar
+);
+
+// Admin: detalle de una solicitud (después de las rutas con nombre)
+router.get('/:id',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  homologacionController.obtener
 );
 
 // Admin: cargar nota complementaria

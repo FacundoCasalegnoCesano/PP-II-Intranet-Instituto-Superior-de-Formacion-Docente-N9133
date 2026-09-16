@@ -4,11 +4,13 @@ import { afterEach, test } from 'node:test';
 import estadoAcademicoService from '../src/services/estadoAcademicoService.js';
 import cursadaRepository from '../src/repositories/cursadaRepository.js';
 import materiaRepository from '../src/repositories/materiaRepository.js';
+import carreraRepository from '../src/repositories/carreraRepository.js';
 import calificacionRepository from '../src/repositories/calificacionRepository.js';
 import asistenciaRepository from '../src/repositories/asistenciaRepository.js';
 import alumnoRepository from '../src/repositories/alumnoRepository.js';
 import { prisma } from '../src/config/prisma.js';
 import { ROLES } from '../src/constants/roles.js';
+import { evaluarCorrelatividades } from '../src/domain/academico/correlatividades.js';
 
 type Overrides = Record<string, unknown>;
 
@@ -80,6 +82,40 @@ async function resumen(options: {
   return resultado.alumnos[0];
 }
 
+async function trayectoriaConHomologaciones(homologaciones: Array<Overrides>) {
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 101 }) as any);
+  replaceMethod(carreraRepository, 'getPlanEstudio', async () => ({
+    id: 1,
+    nombre: 'Carrera de prueba',
+    activo: true,
+    duracionAnios: 4,
+    materias: [materia({ id: 3, carreraId: 1, cursoId: null, curso: null })]
+  }) as any);
+  replaceMethod(prisma.inscripcionMateria, 'findMany', async () => []);
+  replaceMethod(prisma.inscripcionExamen, 'findMany', async () => []);
+  replaceMethod(prisma.homologacion, 'findMany', async () => homologaciones as any);
+
+  return estadoAcademicoService.getTrayectoriaIntegral(
+    104,
+    1,
+    { id: 1, rol: ROLES.ADMINISTRATIVO }
+  );
+}
+
+function homologacionAcademica(overrides: Overrides = {}) {
+  return {
+    id: 1,
+    materiaId: 3,
+    tipoHomologacion: 'TOTAL',
+    estado: 'APROBADA',
+    calificacion: 8,
+    notaExamenHomologacion: null,
+    fechaHomologacion: new Date('2026-09-15T12:00:00.000Z'),
+    materia: { id: 3, nombre: 'Materia homologada', carreraId: 1 },
+    ...overrides
+  };
+}
+
 afterEach(() => {
   while (restorations.length > 0) restorations.pop()?.();
 });
@@ -110,6 +146,133 @@ test('un recuperatorio menor reemplaza el parcial y un recuperatorio sin vinculo
 
   assert.deepEqual(fila.parcialesEfectivos, [
     { numero: 1, notaOriginal: 8, notaEfectiva: 5, recuperado: true }
+  ]);
+});
+
+test('usa la nota anterior de una total aprobada como definitiva', async () => {
+  const resultado = await trayectoriaConHomologaciones([
+    homologacionAcademica({ tipoHomologacion: 'TOTAL', calificacion: 8 })
+  ]);
+
+  assert.deepEqual(resultado.materias[0].definitiva, {
+    via: 'HOMOLOGACION',
+    nota: 8,
+    fecha: new Date('2026-09-15T12:00:00.000Z')
+  });
+});
+
+test('usa el complementario copiado de una parcial aprobada como definitiva', async () => {
+  const resultado = await trayectoriaConHomologaciones([
+    homologacionAcademica({
+      tipoHomologacion: 'PARCIAL',
+      calificacion: 7,
+      notaExamenHomologacion: 7
+    })
+  ]);
+
+  assert.equal(resultado.materias[0].definitiva?.via, 'HOMOLOGACION');
+  assert.equal(resultado.materias[0].definitiva?.nota, 7);
+});
+
+test('ignora pendientes y rechazadas en trayectoria promedio y correlatividades', async () => {
+  let trayectoriaWhere: any;
+  const rows = [
+    homologacionAcademica({ estado: 'PENDIENTE', calificacion: 9 }),
+    homologacionAcademica({ estado: 'RECHAZADA', calificacion: 10 }),
+    homologacionAcademica({ estado: 'APROBADA', calificacion: null })
+  ];
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 101 }) as any);
+  replaceMethod(carreraRepository, 'getPlanEstudio', async () => ({
+    id: 1,
+    nombre: 'Carrera de prueba',
+    activo: true,
+    duracionAnios: 4,
+    materias: [materia({ id: 3, carreraId: 1, cursoId: null, curso: null })]
+  }) as any);
+  replaceMethod(prisma.inscripcionMateria, 'findMany', async () => []);
+  replaceMethod(prisma.inscripcionExamen, 'findMany', async () => []);
+  replaceMethod(prisma.homologacion, 'findMany', async (args: any) => {
+    trayectoriaWhere = args.where;
+    return rows.filter(row => row.estado === args.where.estado &&
+      (args.where.calificacion ? row.calificacion !== null : true)) as any;
+  });
+
+  const trayectoria = await estadoAcademicoService.getTrayectoriaIntegral(
+    104,
+    1,
+    { id: 1, rol: ROLES.ADMINISTRATIVO }
+  );
+
+  assert.deepEqual(trayectoriaWhere, {
+    alumnoId: 101,
+    estado: 'APROBADA',
+    calificacion: { not: null },
+    materia: { carreraId: 1 }
+  });
+  assert.equal(trayectoria.materias[0].estado, 'PENDIENTE');
+  assert.equal(trayectoria.materias[0].homologacion, null);
+  assert.equal(trayectoria.promedioGeneral, null);
+
+  const aprobadasWhere: any[] = [];
+  replaceMethod(prisma.inscripcionExamen, 'findMany', async () => []);
+  replaceMethod(prisma.homologacion, 'findMany', async (args: any) => {
+    aprobadasWhere.push(args.where);
+    return rows.filter(row => row.estado === args.where.estado && row.calificacion !== null) as any;
+  });
+  const aprobadas = await estadoAcademicoService.getMateriasAprobadasSet(101, new Map());
+
+  assert.deepEqual(aprobadas, new Set());
+  assert.deepEqual(aprobadasWhere[0], {
+    alumnoId: 101,
+    estado: 'APROBADA',
+    calificacion: { not: null }
+  });
+});
+
+test('la decisión de correlatividad exige una homologación aprobada con nota definitiva', async () => {
+  let rows: Array<{ estado: string; materiaId: number; calificacion: number | null }> = [];
+  replaceMethod(prisma.inscripcionExamen, 'findMany', async () => []);
+  replaceMethod(prisma.homologacion, 'findMany', async (args: any) => rows
+    .filter(row => row.estado === args.where.estado &&
+      (args.where.calificacion ? row.calificacion !== null : true)) as any);
+
+  const correlatividades = [{
+    materiaRequeridaId: 30,
+    materiaRequerida: { id: 30, nombre: 'Materia requerida' },
+    aplicaCursado: true,
+    aplicaRendir: true
+  }];
+  const casos = [
+    { fila: { estado: 'PENDIENTE', materiaId: 30, calificacion: 8 }, cumple: false },
+    { fila: { estado: 'RECHAZADA', materiaId: 30, calificacion: 9 }, cumple: false },
+    { fila: { estado: 'APROBADA', materiaId: 30, calificacion: null }, cumple: false },
+    { fila: { estado: 'APROBADA', materiaId: 30, calificacion: 7 }, cumple: true }
+  ];
+
+  for (const caso of casos) {
+    rows = [caso.fila];
+    const materiasCumplidas = await estadoAcademicoService.getMateriasAprobadasSet(101, new Map());
+    const decision = evaluarCorrelatividades({
+      modo: 'RENDIR',
+      correlatividades,
+      materiasCumplidas
+    });
+
+    assert.equal(decision.cumple, caso.cumple, caso.fila.estado + ' / ' + caso.fila.calificacion);
+  }
+});
+
+test('mantiene intactos parciales efectivos y recuperatorios vinculados', async () => {
+  const fila = await resumen({
+    calificaciones: [
+      { id: 1, alumnoId: 4, tipoCalificacion: 'PARCIAL', numero: 1, nota: 6 },
+      { id: 2, alumnoId: 4, tipoCalificacion: 'RECUPERATORIO', numero: 1, nota: 8, parcialOriginalId: 1 }
+    ],
+    asistencias: asistencia(4, 4)
+  });
+
+  assert.deepEqual(fila.parcialesEfectivos, [
+    { numero: 1, notaOriginal: 6, notaEfectiva: 8, recuperado: true }
   ]);
 });
 

@@ -33,7 +33,9 @@ class InscripcionCarreraController {
       
       res.status(201).json({
         success: true,
-        message: 'Alumno inscripto a la carrera exitosamente',
+        message: inscripcion.reactivada
+          ? 'Inscripción a la carrera reactivada exitosamente'
+          : 'Alumno inscripto a la carrera exitosamente',
         data: inscripcion
       });
     } catch (error) {

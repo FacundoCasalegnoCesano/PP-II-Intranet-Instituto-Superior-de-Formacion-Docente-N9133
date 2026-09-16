@@ -132,4 +132,27 @@ export interface AdminExam {
   _count?: { inscripciones: number }
 }
 
+export interface ActiveStudent {
+  idUsuario: number
+  apellidoNombre: string
+  dni: string | number
+  email: string
+  activo: boolean
+  rol: string
+}
+
+export interface CareerEnrollment {
+  id: number
+  usuario: Pick<ActiveStudent, 'idUsuario' | 'apellidoNombre' | 'dni' | 'email'>
+  cicloLectivo: number
+  fechaInscripcion: string
+  activo: boolean
+}
+
+export interface CareerEnrollmentWritePayload {
+  alumnoId: number
+  carreraId: number
+  cicloLectivo: number
+}
+
 export type AdminPageResult<T> = PaginatedResult<T>

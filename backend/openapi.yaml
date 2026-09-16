@@ -269,6 +269,30 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
 
+  /users/{id}/password-reset:
+    post:
+      tags: [Usuarios]
+      summary: Asignar una nueva contraseña a otro usuario (solo admin)
+      description: "Actualiza la contraseña del usuario objetivo, revoca sus sesiones y anula sus recuperaciones pendientes. Se permite sobre cuentas inactivas; la cuenta seguirá sin poder iniciar sesión hasta ser reactivada. El administrador no puede aplicarlo sobre sí mismo."
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPasswordResetRequest' }
+      responses:
+        '200':
+          description: Contraseña restablecida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /users/{id}/role:
     put:
       tags: [Usuarios]
@@ -1670,36 +1694,50 @@ paths:
       tags: [Homologaciones]
       summary: Solicitudes propias
       x-roles: [ALUMNO]
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      responses: { '200': { $ref: '#/components/responses/HomologacionOwnListOK' } }
   /homologaciones:
     get:
       tags: [Homologaciones]
       summary: Listar solicitudes
       x-roles: [ADMINISTRATIVO]
-      parameters: [{ name: estado, in: query, schema: { type: string, enum: [PENDIENTE, APROBADA, RECHAZADA] } }, { $ref: '#/components/parameters/Page' }, { $ref: '#/components/parameters/Limit' }]
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: estado, in: query, schema: { type: string, enum: [PENDIENTE, APROBADA, RECHAZADA] } }
+        - { name: tipo, in: query, schema: { type: string, enum: [TOTAL, PARCIAL] } }
+        - { name: carreraId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: materiaId, in: query, schema: { type: integer, minimum: 1 } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses: { '200': { $ref: '#/components/responses/HomologacionListOK' } }
     post:
       tags: [Homologaciones]
       summary: Crear solicitud
       x-roles: [ADMINISTRATIVO]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HomologacionRequest' } } } }
-      responses: { '201': { $ref: '#/components/responses/OK' } }
+      responses: { '201': { $ref: '#/components/responses/HomologacionCreated' } }
+  /homologaciones/{id}:
+    get:
+      tags: [Homologaciones]
+      summary: Obtener detalle de una solicitud
+      x-roles: [ADMINISTRATIVO]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }]
+      responses: { '200': { $ref: '#/components/responses/HomologacionOK' }, '404': { $ref: '#/components/responses/NotFound' } }
   /homologaciones/{id}/nota-complementaria:
     post:
       tags: [Homologaciones]
       summary: Registrar nota complementaria
       x-roles: [ADMINISTRATIVO]
       parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [notaExamenHomologacion], properties: { notaExamenHomologacion: { type: number, minimum: 0, maximum: 10 } } } } } }
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NotaComplementariaRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/HomologacionOK' } }
   /homologaciones/{id}/resolver:
     post:
       tags: [Homologaciones]
       summary: Aprobar o rechazar solicitud
       x-roles: [ADMINISTRATIVO]
       parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [accion], properties: { accion: { type: string, enum: [APROBAR, RECHAZAR] } } } } } }
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ResolverHomologacionRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/HomologacionOK' } }
 
   # ========================= HORARIOS PUBLICADOS =========================
   /horarios-publicados/anios:
@@ -1871,6 +1909,26 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/SuccessResponse' }
+    HomologacionOK:
+      description: Homologación administrativa envuelta en { success, data }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/HomologacionResponse' }
+    HomologacionCreated:
+      description: Homologación creada y envuelta en { success, message, data }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/HomologacionResponse' }
+    HomologacionListOK:
+      description: Homologaciones paginadas envueltas en { success, data, pagination }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/HomologacionListResponse' }
+    HomologacionOwnListOK:
+      description: Solicitudes propias envueltas en { success, data }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/HomologacionOwnListResponse' }
 
   schemas:
     # -------- Envoltorios de respuesta --------
@@ -2145,6 +2203,12 @@ components:
       properties:
         currentPassword: { type: string }
         newPassword: { type: string, minLength: 8 }
+    AdminPasswordResetRequest:
+      type: object
+      additionalProperties: false
+      required: [newPassword]
+      properties:
+        newPassword: { type: string, format: password, minLength: 8, maxLength: 50, description: "Requiere mayúscula, minúscula, número y carácter especial" }
     ForgotPasswordRequest:
       type: object
       required: [email]
@@ -3153,10 +3217,99 @@ components:
 
     HomologacionRequest:
       type: object
+      description: La nota de institución anterior es obligatoria para TOTAL; PARCIAL inicia con calificacion null.
+      oneOf:
+        - $ref: '#/components/schemas/HomologacionTotalRequest'
+        - $ref: '#/components/schemas/HomologacionParcialRequest'
+    HomologacionTotalRequest:
+      type: object
       required: [alumnoId, materiaId, tipoHomologacion, calificacion]
       properties:
-        alumnoId: { type: integer, minimum: 1 }
+        alumnoId: { type: integer, minimum: 1, description: Usuario.idUsuario público }
         materiaId: { type: integer, minimum: 1 }
-        tipoHomologacion: { type: string, enum: [TOTAL, PARCIAL] }
-        calificacion: { type: number, minimum: 0, maximum: 10 }
+        tipoHomologacion: { type: string, enum: [TOTAL] }
+        calificacion: { type: integer, minimum: 0, maximum: 10 }
         observacion: { type: string, maxLength: 2000, nullable: true }
+      additionalProperties: false
+    HomologacionParcialRequest:
+      type: object
+      required: [alumnoId, materiaId, tipoHomologacion]
+      properties:
+        alumnoId: { type: integer, minimum: 1, description: Usuario.idUsuario público }
+        materiaId: { type: integer, minimum: 1 }
+        tipoHomologacion: { type: string, enum: [PARCIAL] }
+        observacion: { type: string, maxLength: 2000, nullable: true }
+      additionalProperties: false
+    NotaComplementariaRequest:
+      type: object
+      required: [notaExamenHomologacion]
+      properties:
+        notaExamenHomologacion: { type: integer, minimum: 0, maximum: 10 }
+      additionalProperties: false
+    ResolverHomologacionRequest:
+      type: object
+      required: [accion]
+      properties:
+        accion: { type: string, enum: [APROBAR, RECHAZAR] }
+      additionalProperties: false
+    HomologacionDto:
+      type: object
+      required: [id, alumno, materia, tipo, estado, calificacion, notaComplementaria, observacion, fecha, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        alumno:
+          type: object
+          required: [idUsuario, apellidoNombre, dni, email]
+          properties:
+            idUsuario: { type: integer, description: Usuario.idUsuario público; no es Alumno.idAlumno }
+            apellidoNombre: { type: string }
+            dni: { type: string }
+            email: { type: string, format: email }
+          additionalProperties: false
+        materia:
+          type: object
+          required: [id, nombre, notaMinima, carrera]
+          properties:
+            id: { type: integer }
+            nombre: { type: string }
+            notaMinima: { type: number }
+            carrera:
+              type: object
+              required: [id, nombre]
+              properties:
+                id: { type: integer }
+                nombre: { type: string }
+              additionalProperties: false
+          additionalProperties: false
+        tipo: { type: string, enum: [TOTAL, PARCIAL] }
+        estado: { type: string, enum: [PENDIENTE, APROBADA, RECHAZADA] }
+        calificacion: { type: number, minimum: 0, maximum: 10, nullable: true }
+        notaComplementaria: { type: number, minimum: 0, maximum: 10, nullable: true }
+        observacion: { type: string, nullable: true }
+        fecha: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    HomologacionResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        message: { type: string, nullable: true }
+        data: { $ref: '#/components/schemas/HomologacionDto' }
+      additionalProperties: false
+    HomologacionListResponse:
+      type: object
+      required: [success, data, pagination]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { type: array, items: { $ref: '#/components/schemas/HomologacionDto' } }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+      additionalProperties: false
+    HomologacionOwnListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { type: array, items: { $ref: '#/components/schemas/HomologacionDto' } }
+      additionalProperties: false

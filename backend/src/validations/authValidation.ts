@@ -1,5 +1,16 @@
 import Joi from 'joi';
 
+export const passwordPolicy = Joi.string()
+  .min(8)
+  .max(50)
+  .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/)
+  .messages({
+    'string.empty': 'La contraseña es requerida',
+    'string.min': 'La contraseña debe tener al menos 8 caracteres',
+    'string.max': 'La contraseña no puede exceder 50 caracteres',
+    'string.pattern.base': 'La contraseña debe tener al menos una mayúscula, una minúscula, un número y un carácter especial'
+  });
+
 export const registerSchema = Joi.object({
   apellidoNombre: Joi.string()
     .required()

@@ -1,5 +1,7 @@
 import { prisma } from '../config/prisma.js';
+import type { Prisma } from '@prisma/client';
 import { normalizePagination, paginated, type PaginationInput } from '../utils/pagination.js';
+import { AppError } from '../utils/AppError.js';
 
 export interface InscripcionCarreraCreateData {
   usuarioId: number;
@@ -8,7 +10,9 @@ export interface InscripcionCarreraCreateData {
 }
 
 export interface InscripcionCarreraUpdateData {
-  fechaBaja?: Date;
+  fechaBaja?: Date | null;
+  fechaInscripcion?: Date;
+  cicloLectivo?: number;
   activo?: boolean;
 }
 
@@ -100,6 +104,74 @@ class InscripcionCarreraRepository {
         carreraId,
         activo: true
       }
+    });
+  }
+
+  async findByUsuarioAndCarreraIncludingBaja(usuarioId: number, carreraId: number): Promise<any> {
+    return await prisma.inscripcionCarrera.findFirst({
+      where: { usuarioId, carreraId },
+      orderBy: { fechaInscripcion: 'desc' }
+    });
+  }
+
+  async inscribirAtomic(data: InscripcionCarreraCreateData): Promise<any> {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$queryRaw<Array<{ idUsuario: number }>>`
+        SELECT idUsuario FROM Usuario WHERE idUsuario = ${data.usuarioId} FOR UPDATE
+      `;
+
+      const existing = await tx.inscripcionCarrera.findFirst({
+        where: { usuarioId: data.usuarioId, carreraId: data.carreraId, activo: true }
+      });
+      if (existing) {
+        throw new AppError(400, 'El alumno ya está inscripto en esta carrera');
+      }
+
+      const count = await tx.inscripcionCarrera.count({
+        where: { usuarioId: data.usuarioId, activo: true }
+      });
+      if (count >= 2) {
+        throw new AppError(400, 'El alumno ya está inscripto en 2 carreras (máximo permitido)');
+      }
+
+      const previous = await tx.inscripcionCarrera.findFirst({
+        where: { usuarioId: data.usuarioId, carreraId: data.carreraId },
+        orderBy: { fechaInscripcion: 'desc' }
+      });
+      if (previous) {
+        const reactivated = await tx.inscripcionCarrera.update({
+          where: { id: previous.id },
+          data: {
+            activo: true,
+            fechaBaja: null,
+            fechaInscripcion: new Date(),
+            cicloLectivo: data.cicloLectivo
+          },
+          include: { carrera: true }
+        });
+        return { ...reactivated, reactivada: true };
+      }
+
+      return await tx.inscripcionCarrera.create({
+        data: {
+          usuarioId: data.usuarioId,
+          carreraId: data.carreraId,
+          cicloLectivo: data.cicloLectivo,
+          fechaInscripcion: new Date(),
+          activo: true
+        },
+        include: {
+          usuario: {
+            select: {
+              idUsuario: true,
+              apellidoNombre: true,
+              email: true,
+              dni: true
+            }
+          },
+          carrera: true
+        }
+      });
     });
   }
 

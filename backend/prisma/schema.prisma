@@ -643,7 +643,7 @@ model Homologacion {
   alumnoId               Int                @map("alumno_id")
   materiaId              Int                @map("materia_id")
   tipoHomologacion       TipoHomologacion   @map("tipo_homologacion")
-  calificacion           Float
+  calificacion           Float?
   fechaHomologacion      DateTime           @default(now()) @map("fecha_homologacion")
   notaExamenHomologacion Float?             @map("nota_examen_homologacion")
   estado                 EstadoHomologacion @default(PENDIENTE)

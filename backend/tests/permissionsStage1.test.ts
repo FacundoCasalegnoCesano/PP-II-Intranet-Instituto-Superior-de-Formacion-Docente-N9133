@@ -6,6 +6,9 @@ import userRepository from '../src/repositories/userRepository.js';
 import inscripcionCarreraService from '../src/services/inscripcionCarreraService.js';
 import carreraService from '../src/services/carreraService.js';
 import carreraRepository from '../src/repositories/carreraRepository.js';
+import carreraController from '../src/controllers/carreraController.js';
+import { validationMiddleware } from '../src/middleware/validation.js';
+import { listCarrerasSchema } from '../src/validations/carreraValidation.js';
 import cursadaService from '../src/services/cursadaService.js';
 import cursadaRepository from '../src/repositories/cursadaRepository.js';
 import examenService from '../src/services/examenService.js';
@@ -109,6 +112,25 @@ test('el catálogo de carreras fuerza solo carreras activas', async () => {
   await carreraService.listCatalogo({ page: 2, limit: 5, search: 'Inicial' });
 
   assert.deepEqual(received, { page: 2, limit: 5, search: 'Inicial', activo: true });
+});
+
+test('el listado de carreras conserva activo=true después de la conversión Joi del query', async () => {
+  let received: unknown;
+  replaceMethod(carreraService, 'listCarreras', async (filters: unknown) => {
+    received = filters;
+    return { data: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } };
+  });
+
+  const req = { query: { activo: 'true' } } as any;
+  const res = { json: () => undefined } as any;
+  const next = (error?: unknown) => {
+    if (error) throw error;
+  };
+
+  validationMiddleware(listCarrerasSchema, 'query')(req, res, next);
+  await carreraController.listCarreras(req, res, next);
+
+  assert.deepEqual(received, { page: 1, limit: 20, activo: true });
 });
 
 test('el profesor obtiene cursadas propias por docente directo o asignación activa', async () => {

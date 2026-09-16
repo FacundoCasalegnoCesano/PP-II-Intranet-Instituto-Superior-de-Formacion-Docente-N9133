@@ -36,10 +36,12 @@ const studentModules = [
 const administratorModules = [
   ['Usuarios', 'Administrá cuentas, roles y estados de acceso.', 'admin-users'],
   ['Carreras', 'Gestioná carreras y planes de estudio.', 'admin-careers'],
+  ['Inscripciones a carreras', 'Inscribí alumnos, consultá la nómina y gestioná bajas.', 'admin-career-enrollments'],
   ['Materias', 'Gestioná materias, correlatividades y docentes.', 'admin-subjects'],
   ['Cursadas', 'Gestioná la oferta de cursadas.', 'admin-courses'],
   ['Períodos', 'Gestioná períodos de inscripción.', 'admin-periods'],
   ['Mesas de examen', 'Gestioná mesas, tribunales y resultados.', 'admin-exams'],
+  ['Homologaciones', 'Registrá y resolvé homologaciones totales o parciales.', 'admin-homologations'],
   ['Horarios', 'Consultá el horario institucional publicado.', 'schedules'],
   ['Mi perfil', 'Revisá y actualizá tus datos personales.', 'profile'],
 ] as const
@@ -73,13 +75,14 @@ const exclusiveContentByRole = {
     ],
   },
   ADMINISTRATIVO: {
-    labels: ['Usuarios', 'Carreras', 'Materias', 'Períodos', 'Mesas de examen'],
+    labels: ['Usuarios', 'Carreras', 'Materias', 'Períodos', 'Mesas de examen', 'Homologaciones'],
     descriptions: [
       'Administrá cuentas, roles y estados de acceso.',
       'Gestioná carreras y planes de estudio.',
       'Gestioná materias, correlatividades y docentes.',
       'Gestioná la oferta de cursadas.',
       'Gestioná períodos de inscripción.',
+      'Registrá y resolvé homologaciones totales o parciales.',
     ],
   },
   PROFESOR: {
