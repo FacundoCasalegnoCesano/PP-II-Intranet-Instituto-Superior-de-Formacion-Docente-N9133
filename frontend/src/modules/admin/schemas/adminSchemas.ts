@@ -36,6 +36,27 @@ export const adminUserCreateSchema = adminUserFields.extend({
 
 export const careerSchema = z.object({ nombre: z.string().trim().min(1, 'El nombre es requerido.').max(255), duracionAnios: z.coerce.number().int().min(1).max(10) })
 
+export const careerEnrollmentSchema = z.object({
+  alumnoId: z.coerce.number().int().min(1, 'Seleccioná un alumno.'),
+  carreraId: z.coerce.number().int().min(1, 'Seleccioná una carrera.'),
+  cicloLectivo: z.coerce.number().int().min(2000, 'Ingresá un ciclo lectivo válido.').max(2100),
+})
+
+export const adminPasswordResetSchema = z.object({
+  newPassword: z.string()
+    .min(8, 'La contraseña debe tener al menos 8 caracteres.')
+    .max(50, 'La contraseña no puede superar los 50 caracteres.')
+    .regex(/[A-Z]/, 'La contraseña debe incluir al menos una mayúscula.')
+    .regex(/[a-z]/, 'La contraseña debe incluir al menos una minúscula.')
+    .regex(/\d/, 'La contraseña debe incluir al menos un número.')
+    .regex(/[^A-Za-z0-9]/, 'La contraseña debe incluir al menos un carácter especial.'),
+  passwordConfirm: z.string(),
+}).superRefine((value, ctx) => {
+  if (value.newPassword !== value.passwordConfirm) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['passwordConfirm'], message: 'Las contraseñas no coinciden.' })
+  }
+})
+
 const prerequisiteIdsSchema = z.array(z.coerce.number().int().min(1)).superRefine((ids, ctx) => {
   if (new Set(ids).size !== ids.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'No podés repetir una correlatividad.' })
 })

@@ -100,6 +100,26 @@ class UserController {
     }
   }
 
+  async resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const idParam = req.params.id as string;
+      if (!/^[1-9]\d*$/.test(idParam)) {
+        res.status(400).json({ success: false, message: 'ID de usuario inválido' });
+        return;
+      }
+      const userId = Number(idParam);
+      if (!Number.isSafeInteger(userId)) {
+        res.status(400).json({ success: false, message: 'ID de usuario inválido' });
+        return;
+      }
+
+      const result = await userService.adminResetPassword(userId, req.body.newPassword, req.user!);
+      res.json({ success: true, message: result.message });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Activar/Desactivar usuario
   async toggleUserActive(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

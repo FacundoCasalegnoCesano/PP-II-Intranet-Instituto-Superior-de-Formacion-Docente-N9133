@@ -8,10 +8,13 @@ import AdminUsersView from './AdminUsersView.vue'
 const mocks = vi.hoisted(() => ({
   listUsers: vi.fn(),
   getUser: vi.fn(),
+  resetUserPassword: vi.fn(),
 }))
 
 vi.mock('../api/adminApi', () => ({ adminApi: mocks }))
 vi.mock('@/ui/feedback', () => ({ useFeedback: () => ({ success: vi.fn(), error: vi.fn() }) }))
+const authState = vi.hoisted(() => ({ user: { idUsuario: 99 } }))
+vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authState }))
 
 const user = {
   idUsuario: 42,
@@ -50,6 +53,7 @@ async function renderUsers() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  authState.user.idUsuario = 99
 })
 
 describe('AdminUsersView', () => {
@@ -81,5 +85,45 @@ describe('AdminUsersView', () => {
     expect(await screen.findByRole('heading', { name: 'Roles asignados' })).toBeVisible()
     expect(view.container.querySelector('#roles-asignados')).toBeInTheDocument()
     expect(mocks.getUser).toHaveBeenCalledWith(42)
+  })
+
+  it('shows the password action inside Modificar datos for another user', async () => {
+    mocks.getUser.mockResolvedValue(user)
+    const router = createUsersRouter()
+    await router.push('/app/administracion/usuarios/42/editar')
+    await router.isReady()
+    render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
+    await screen.findByRole('heading', { name: 'Editar cuenta' })
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Asignar nueva contraseña' }))
+    const dialog = screen.getByRole('dialog', { name: 'Asignar nueva contraseña' })
+    expect(dialog).toBeVisible()
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: 'Asignar contraseña' }))
+    expect(await within(dialog).findByText('La contraseña debe tener al menos 8 caracteres.')).toBeVisible()
+  })
+
+  it('does not show the password action in the neutral detail or Modificar roles modes', async () => {
+    mocks.getUser.mockResolvedValue(user)
+    const router = createUsersRouter()
+    await router.push('/app/administracion/usuarios/42')
+    await router.isReady()
+    render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
+    await screen.findByRole('heading', { name: 'Ana Administrativa' })
+    expect(screen.queryByRole('button', { name: 'Asignar nueva contraseña' })).toBeNull()
+
+    await router.push('/app/administracion/usuarios/42#roles-asignados')
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Roles asignados' })).toBeVisible())
+    expect(screen.queryByRole('button', { name: 'Asignar nueva contraseña' })).toBeNull()
+  })
+
+  it('does not show the password action for the authenticated user', async () => {
+    authState.user.idUsuario = 42
+    mocks.getUser.mockResolvedValue(user)
+    const router = createUsersRouter()
+    await router.push('/app/administracion/usuarios/42/editar')
+    await router.isReady()
+    render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
+    await screen.findByRole('heading', { name: 'Editar cuenta' })
+    expect(screen.queryByRole('button', { name: 'Asignar nueva contraseña' })).toBeNull()
+    authState.user.idUsuario = 99
   })
 })

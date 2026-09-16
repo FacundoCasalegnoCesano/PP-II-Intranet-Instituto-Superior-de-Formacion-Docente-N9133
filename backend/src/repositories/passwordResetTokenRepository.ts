@@ -104,6 +104,29 @@ class PasswordResetTokenRepository {
       return { usuarioId: token.usuarioId };
     });
   }
+
+  async resetPasswordForUser(usuarioId: number, newPasswordHash: string, now = new Date()) {
+    return prisma.$transaction(async (tx) => {
+      // Mantener el mismo orden que consumeAndReset: tokens -> usuario -> sesiones.
+      // Asi se evita que los dos recorridos inviertan los locks bajo concurrencia.
+      await tx.passwordResetToken.updateMany({
+        where: { usuarioId, usedAt: null },
+        data: { usedAt: now }
+      });
+
+      await tx.usuario.update({
+        where: { idUsuario: usuarioId },
+        data: { passwordHash: newPasswordHash }
+      });
+
+      await tx.sesion.updateMany({
+        where: { usuarioId, revocadaEn: null },
+        data: { revocadaEn: now, cerradaEn: now }
+      });
+
+      return { usuarioId };
+    });
+  }
 }
 
 export default new PasswordResetTokenRepository();

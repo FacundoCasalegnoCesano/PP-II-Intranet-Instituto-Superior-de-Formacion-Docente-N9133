@@ -12,6 +12,9 @@ import type {
   SubjectWritePayload,
   SubjectYearGroup,
   TeachingAssignment,
+  ActiveStudent,
+  CareerEnrollment,
+  CareerEnrollmentWritePayload,
 } from '../types/admin'
 
 export interface AdminUserListFilters { search?: string; rol?: string; activo?: boolean; page?: number; limit?: number }
@@ -20,6 +23,7 @@ export interface SubjectListFilters { search?: string; carreraId?: number; tipoE
 export interface CourseListFilters { anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean; page?: number; limit?: number }
 export interface PeriodListFilters { tipo?: 'MATERIA' | 'EXAMEN'; activo?: boolean; cicloLectivo?: number; page?: number; limit?: number }
 export interface ExamListFilters { materiaId?: number; fechaDesde?: string; fechaHasta?: string; page?: number; limit?: number }
+export interface CareerEnrollmentListFilters { page?: number; limit?: number }
 
 function query(params: Record<string, unknown>): string {
   const search = new URLSearchParams()
@@ -31,6 +35,61 @@ function query(params: Record<string, unknown>): string {
 }
 
 function paginated<T>(result: PaginatedResult<T>): PaginatedResult<T> { return result }
+
+const CAREER_PAGE_LIMIT = 20
+
+function listCareers(filters: CareerListFilters = {}): Promise<PaginatedResult<Career>> {
+  return apiClient.getPaginated(`/carreras${query(filters)}`)
+}
+
+function hasCoherentCareerPagination(
+  pagination: PaginationMeta,
+  expectedPage: number,
+  expectedTotal?: number,
+  expectedLimit = CAREER_PAGE_LIMIT,
+  expectedTotalPages?: number,
+): boolean {
+  return pagination.page === expectedPage &&
+    Number.isInteger(pagination.limit) && pagination.limit === expectedLimit &&
+    Number.isInteger(pagination.total) && pagination.total >= 0 &&
+    Number.isInteger(pagination.totalPages) &&
+    pagination.totalPages === (pagination.total === 0 ? 0 : Math.ceil(pagination.total / pagination.limit)) &&
+    (expectedTotal === undefined || pagination.total === expectedTotal) &&
+    (expectedTotalPages === undefined || pagination.totalPages === expectedTotalPages)
+}
+
+async function listActiveCareers(): Promise<PaginatedResult<Career>> {
+  const firstPage = await listCareers({ activo: true, page: 1, limit: CAREER_PAGE_LIMIT })
+  if (!hasCoherentCareerPagination(firstPage.pagination, 1)) {
+    throw new Error('No pudimos cargar las carreras.')
+  }
+
+  const careersById = new Map<number, Career>()
+  for (const career of firstPage.data) careersById.set(career.id, career)
+
+  const { total, totalPages } = firstPage.pagination
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextPage = await listCareers({ activo: true, page, limit: CAREER_PAGE_LIMIT })
+    if (!hasCoherentCareerPagination(nextPage.pagination, page, total, CAREER_PAGE_LIMIT, totalPages)) {
+      throw new Error('No pudimos cargar las carreras.')
+    }
+    for (const career of nextPage.data) careersById.set(career.id, career)
+  }
+
+  const data = [...careersById.values()]
+  if (careersById.size !== total) {
+    throw new Error('No pudimos cargar las carreras.')
+  }
+  return {
+    data,
+    pagination: {
+      page: 1,
+      limit: Math.max(CAREER_PAGE_LIMIT, data.length),
+      total,
+      totalPages: data.length ? 1 : 0,
+    },
+  }
+}
 
 export const adminApi = {
   listUsers(filters: AdminUserListFilters = {}): Promise<PaginatedResult<AdminUserDetail>> {
@@ -49,8 +108,22 @@ export const adminApi = {
     return apiClient.put(`/users/${id}/role`, { rol, ...(alumno ? { alumno } : {}) })
   },
   removeUserRole(id: number, rol: string): Promise<AdminUserDetail> { return apiClient.delete(`/users/${id}/role/${encodeURIComponent(rol)}`) },
+  resetUserPassword(id: number, newPassword: string): Promise<void> {
+    return apiClient.post(`/users/${id}/password-reset`, { newPassword })
+  },
 
-  listCareers(filters: CareerListFilters = {}): Promise<PaginatedResult<Career>> { return apiClient.getPaginated(`/carreras${query(filters)}`) },
+  listCareers,
+  listActiveStudents(search?: string, filters: { limit?: number } = {}): Promise<PaginatedResult<ActiveStudent>> {
+    return apiClient.getPaginated(`/alumnos${query({ search, activo: true, limit: filters.limit ?? 50 })}`)
+  },
+  listActiveCareers,
+  listCareerEnrollments(carreraId: number, filters: CareerEnrollmentListFilters = {}): Promise<PaginatedResult<CareerEnrollment>> {
+    return apiClient.getPaginated(`/inscripciones-carreras/carrera/${carreraId}/inscriptos${query(filters)}`)
+  },
+  enrollInCareer(payload: CareerEnrollmentWritePayload) {
+    return apiClient.postWithMessage<CareerEnrollment & { reactivada?: boolean }>('/inscripciones-carreras', payload)
+  },
+  removeCareerEnrollment(id: number): Promise<void> { return apiClient.delete(`/inscripciones-carreras/${id}`) },
   getCareer(id: number): Promise<Career> { return apiClient.get(`/carreras/${id}`) },
   getCareerPlan(id: number): Promise<Career> { return apiClient.get(`/carreras/${id}/plan-estudio`) },
   createCareer(payload: Pick<Career, 'nombre' | 'duracionAnios'>): Promise<Career> { return apiClient.post('/carreras', payload) },

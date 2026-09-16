@@ -6,6 +6,8 @@ import { prisma } from '../config/prisma.js';
 import { toPublicUser } from '../utils/publicUser.js';
 import { AppError } from '../utils/AppError.js';
 import { encryptBackupCodes, generateBackupCodes } from '../utils/backupCodes.js';
+import passwordResetTokenRepository from '../repositories/passwordResetTokenRepository.js';
+import { passwordPolicy } from '../validations/authValidation.js';
 
 interface AlumnoProfileInput {
   domicilio: string;
@@ -140,6 +142,30 @@ class UserService {
       roles,
       alumno: updatedAlumno
     };
+  }
+
+  async adminResetPassword(id: number, newPassword: string, currentUser: CurrentUser) {
+    if (currentUser?.rol !== ROLES.ADMINISTRATIVO) {
+      throw new AppError(403, 'Solo los administradores pueden restablecer contraseñas');
+    }
+    if (currentUser.id === id) {
+      throw new AppError(403, 'No puedes restablecer tu propia contraseña desde esta función');
+    }
+
+    const { error } = passwordPolicy.required().validate(newPassword);
+    if (error) {
+      throw new AppError(400, 'La nueva contraseña no cumple la política vigente');
+    }
+
+    const user = await userRepository.findById(id);
+    if (!user) {
+      throw new AppError(404, 'Usuario no encontrado');
+    }
+
+    const newPasswordHash = await hashPassword(newPassword);
+    await passwordResetTokenRepository.resetPasswordForUser(id, newPasswordHash);
+
+    return { message: 'Contraseña restablecida exitosamente' };
   }
 
   // ✅ NUEVO MÉTODO: Cambiar rol de usuario

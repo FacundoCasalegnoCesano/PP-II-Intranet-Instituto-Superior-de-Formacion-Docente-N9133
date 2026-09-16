@@ -1,4 +1,9 @@
 import Joi from 'joi';
+import { passwordPolicy } from './authValidation.js';
+
+export const adminPasswordResetSchema = Joi.object({
+  newPassword: passwordPolicy.required()
+}).unknown(false);
 
 const alumnoUpdateSchema = Joi.object({
   domicilio: Joi.string().max(255),
