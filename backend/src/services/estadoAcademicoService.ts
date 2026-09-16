@@ -164,7 +164,7 @@ class EstadoAcademicoService {
         orderBy: { updatedAt: 'desc' }
       }),
       prisma.homologacion.findMany({
-        where: { alumnoId: idAlumno, estado: 'APROBADA', materia: { carreraId } },
+        where: { alumnoId: idAlumno, estado: 'APROBADA', calificacion: { not: null }, materia: { carreraId } },
         include: { materia: true },
         orderBy: { updatedAt: 'desc' }
       })
@@ -495,7 +495,7 @@ class EstadoAcademicoService {
     for (const examen of examenes) aprobadas.add(examen.mesa.materiaId);
 
     const homologaciones = await prisma.homologacion.findMany({
-      where: { alumnoId: idAlumno, estado: 'APROBADA' },
+      where: { alumnoId: idAlumno, estado: 'APROBADA', calificacion: { not: null } },
       select: { materiaId: true }
     });
     for (const homologacion of homologaciones) aprobadas.add(homologacion.materiaId);
@@ -555,10 +555,11 @@ class EstadoAcademicoService {
     }
 
     const homologaciones = await prisma.homologacion.findMany({
-      where: { alumnoId: idAlumno, estado: 'APROBADA' },
+      where: { alumnoId: idAlumno, estado: 'APROBADA', calificacion: { not: null } },
       include: { materia: { select: { id: true, nombre: true, carreraId: true } } }
     });
     for (const homologacion of homologaciones) {
+      if (homologacion.calificacion === null) continue;
       const materia = homologacion.materia;
       this.agregarDefinitiva(definitivas, {
         materiaId: materia.id,
