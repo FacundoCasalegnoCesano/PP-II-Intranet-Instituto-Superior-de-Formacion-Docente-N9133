@@ -15,6 +15,9 @@ class InscripcionCarreraService {
     if (!alumno) {
       throw new AppError(404, 'Alumno no encontrado');
     }
+    if (alumno.activo === false) {
+      throw new AppError(400, 'El alumno está inactivo');
+    }
 
     // Verificar que el usuario tenga el rol de alumno (puede tener roles múltiples)
     const rolesAlumno = (alumno.rol ?? '').split(',').map((rol: string) => rol.trim());
@@ -24,29 +27,14 @@ class InscripcionCarreraService {
 
     // Verificar que la carrera existe
     const carrera = await carreraRepository.findById(data.carreraId);
-    if (!carrera) {
+    if (!carrera || !carrera.activo) {
       throw new AppError(404, 'Carrera no encontrada');
     }
 
     // Si no se indica ciclo lectivo, se usa el año en curso
     data.cicloLectivo = data.cicloLectivo ?? new Date().getFullYear();
 
-    // Verificar que no esté ya inscripto
-    const existing = await inscripcionCarreraRepository.findByUsuarioAndCarrera(
-      data.usuarioId,
-      data.carreraId
-    );
-    if (existing) {
-      throw new AppError(400, 'El alumno ya está inscripto en esta carrera');
-    }
-
-    // Verificar que el alumno no tenga más de 2 carreras (RFIMC1)
-    const count = await inscripcionCarreraRepository.countByUsuario(data.usuarioId);
-    if (count >= 2) {
-      throw new AppError(400, 'El alumno ya está inscripto en 2 carreras (máximo permitido)');
-    }
-
-    return await inscripcionCarreraRepository.create(data);
+    return await inscripcionCarreraRepository.inscribirAtomic(data);
   }
 
   async darBaja(id: number, currentUser: any) {
