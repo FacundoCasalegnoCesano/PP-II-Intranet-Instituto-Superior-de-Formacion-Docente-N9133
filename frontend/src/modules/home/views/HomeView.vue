@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
-import { BookOpen, CalendarDays, ClipboardList, FileText, GraduationCap, UserRound, Users } from 'lucide-vue-next'
+import { BadgeCheck, BookOpen, CalendarDays, ClipboardList, FileText, GraduationCap, UserRound, Users } from 'lucide-vue-next'
 import type { Role } from '@/core/auth/contracts'
 import { useAuthStore } from '@/stores/authStore'
 import ModuleAccessCard from '../components/ModuleAccessCard.vue'
@@ -47,10 +47,12 @@ const modulesByRole: Record<Role, ModuleAccess[]> = {
   ADMINISTRATIVO: [
     { label: 'Usuarios', description: 'Administrá cuentas, roles y estados de acceso.', icon: Users, to: { name: 'admin-users' } },
     { label: 'Carreras', description: 'Gestioná carreras y planes de estudio.', icon: GraduationCap, to: { name: 'admin-careers' } },
+    { label: 'Inscripciones a carreras', description: 'Inscribí alumnos, consultá la nómina y gestioná bajas.', icon: ClipboardList, to: { name: 'admin-career-enrollments' } },
     { label: 'Materias', description: 'Gestioná materias, correlatividades y docentes.', icon: BookOpen, to: { name: 'admin-subjects' } },
     { label: 'Cursadas', description: 'Gestioná la oferta de cursadas.', icon: ClipboardList, to: { name: 'admin-courses' } },
     { label: 'Períodos', description: 'Gestioná períodos de inscripción.', icon: FileText, to: { name: 'admin-periods' } },
     { label: 'Mesas de examen', description: 'Gestioná mesas, tribunales y resultados.', icon: ClipboardList, to: { name: 'admin-exams' } },
+    { label: 'Homologaciones', description: 'Registrá y resolvé homologaciones totales o parciales.', icon: BadgeCheck, to: { name: 'admin-homologations' } },
     { label: 'Horarios', description: 'Consultá el horario institucional publicado.', icon: CalendarDays, to: { name: 'schedules' } },
     { label: 'Mi perfil', description: 'Revisá y actualizá tus datos personales.', icon: UserRound, to: { name: 'profile' } },
   ],

@@ -5,6 +5,11 @@ export interface ApiSuccess<T> {
   pagination?: PaginationMeta
 }
 
+export interface ApiResponse<T> {
+  data: T
+  message?: string
+}
+
 export interface ApiFailure {
   success: false
   message: string

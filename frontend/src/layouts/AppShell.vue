@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { BookOpen, CalendarDays, ChevronDown, ClipboardList, Home, LibraryBig, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
+import { BadgeCheck, BookOpen, CalendarDays, ChevronDown, ClipboardList, Home, LibraryBig, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AppBackButton from '@/ui/AppBackButton.vue'
@@ -27,10 +27,12 @@ const studentNavItems = [
 const adminNavItems = [
   { name: 'admin-users', label: 'Usuarios', icon: ShieldCheck },
   { name: 'admin-careers', label: 'Carreras', icon: BookOpen },
+  { name: 'admin-career-enrollments', label: 'Inscripciones a carreras', icon: ClipboardList },
   { name: 'admin-subjects', label: 'Materias', icon: BookOpen },
   { name: 'admin-courses', label: 'Cursadas', icon: BookOpen },
   { name: 'admin-periods', label: 'Períodos', icon: BookOpen },
   { name: 'admin-exams', label: 'Mesas de examen', icon: ClipboardList },
+  { name: 'admin-homologations', label: 'Homologaciones', icon: BadgeCheck },
 ] as const
 const teacherNavItems = [
   { name: 'teacher-courses', label: 'Mis cursadas', icon: BookOpen },
@@ -48,6 +50,7 @@ function isNavItemActive(name: string): boolean {
   if (name === 'teacher-courses') return typeof route.name === 'string' && route.name.startsWith('teacher-course')
   if (name === 'teacher-exams') return typeof route.name === 'string' && route.name.startsWith('teacher-exam')
   if (name === 'admin-exams') return typeof route.name === 'string' && route.name.startsWith('admin-exam')
+  if (name === 'admin-homologations') return typeof route.name === 'string' && route.name.startsWith('admin-homologation')
   return route.name === name
 }
 

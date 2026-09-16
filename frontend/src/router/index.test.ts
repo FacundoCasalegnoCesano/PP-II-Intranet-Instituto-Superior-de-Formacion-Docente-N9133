@@ -5,8 +5,10 @@ import type { AuthSession, Role } from '@/core/auth/contracts'
 import { sessionStorage } from '@/core/storage/sessionStorage'
 import AppShell from '@/layouts/AppShell.vue'
 import CareerCatalogView from '@/modules/careerCatalog/views/CareerCatalogView.vue'
+import CareerEnrollmentsView from '@/modules/admin/views/CareerEnrollmentsView.vue'
 import AdminExamsView from '@/modules/examManagement/views/AdminExamsView.vue'
 import TeacherExamsView from '@/modules/examManagement/views/TeacherExamsView.vue'
+import AdminHomologationsView from '@/modules/homologations/views/AdminHomologationsView.vue'
 import { createAppRouter } from './index'
 
 vi.mock('@/modules/schedules/views/SchedulesView.vue', () => ({
@@ -193,6 +195,50 @@ describe('navigation guards', () => {
     }
   })
 
+  it('registers the homologation list, create and detail routes inside the AppShell', async () => {
+    const router = createAppRouter()
+    const routes = router.getRoutes()
+
+    for (const [name, path] of [
+      ['admin-homologations', '/app/administracion/homologaciones'],
+      ['admin-homologation-create', '/app/administracion/homologaciones/nueva'],
+      ['admin-homologation-detail', '/app/administracion/homologaciones/:id'],
+    ] as const) {
+      const route = routes.find((candidate) => candidate.name === name)
+      const page = route?.components?.default as Component & { render?: () => VNode }
+      const shell = page.render?.() as VNode & { type?: unknown; children?: { default?: () => VNode } }
+
+      expect(route).toMatchObject({ path, name, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } })
+      expect(shell.type).toBe(AppShell)
+      expect(shell.children?.default?.()?.type).toBe(AdminHomologationsView)
+    }
+
+    sessionStorage.save({ ...session('ADMINISTRATIVO'), roles: ['ADMINISTRATIVO'], role: 'ADMINISTRATIVO', user: { ...user, rol: 'ADMINISTRATIVO' } })
+    await router.push('/app/administracion/homologaciones/nueva')
+    expect(router.currentRoute.value.name).toBe('admin-homologation-create')
+    await router.push('/app/administracion/homologaciones/42')
+    expect(router.currentRoute.value.name).toBe('admin-homologation-detail')
+  })
+
+  it.each(['/app/administracion/homologaciones', '/app/administracion/homologaciones/nueva', '/app/administracion/homologaciones/42'])('allows only an active ADMINISTRATIVO role to open %s', async (path) => {
+    for (const role of ['ALUMNO', 'PROFESOR'] as const) {
+      sessionStorage.save({ ...session(role, [role]), user: { ...user, rol: role } })
+      const unauthorizedRouter = createAppRouter()
+      await unauthorizedRouter.push(path)
+      expect(unauthorizedRouter.currentRoute.value.name).toBe('home')
+    }
+
+    sessionStorage.save({ ...session('ALUMNO', ['ALUMNO', 'ADMINISTRATIVO']), user: { ...user, rol: 'ALUMNO' } })
+    const studentActiveRouter = createAppRouter()
+    await studentActiveRouter.push(path)
+    expect(studentActiveRouter.currentRoute.value.name).toBe('home')
+
+    sessionStorage.save({ ...session('ADMINISTRATIVO', ['ALUMNO', 'ADMINISTRATIVO']), user: { ...user, rol: 'ADMINISTRATIVO' } })
+    const adminActiveRouter = createAppRouter()
+    await adminActiveRouter.push(path)
+    expect(adminActiveRouter.currentRoute.value.name).toBe(path.endsWith('/nueva') ? 'admin-homologation-create' : path.endsWith('/42') ? 'admin-homologation-detail' : 'admin-homologations')
+  })
+
   it('registers protected exam table routes for administrative and teacher roles', async () => {
     const router = createAppRouter()
     expect(router.getRoutes().find((route) => route.name === 'admin-exam-detail')).toMatchObject({
@@ -212,5 +258,19 @@ describe('navigation guards', () => {
     await router.push('/app/administracion/mesas')
     await router.isReady()
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('registers career enrollments inside the authenticated AppShell', () => {
+    const router = createAppRouter()
+    const enrollments = router.getRoutes().find((route) => route.name === 'admin-career-enrollments')
+    const page = enrollments?.components?.default as Component & { render?: () => VNode }
+    const shell = page.render?.() as VNode & { type?: unknown; children?: { default?: () => VNode } }
+
+    expect(enrollments).toMatchObject({
+      path: '/app/administracion/inscripciones-carreras',
+      meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] },
+    })
+    expect(shell.type).toBe(AppShell)
+    expect(shell.children?.default?.()?.type).toBe(CareerEnrollmentsView)
   })
 })

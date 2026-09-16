@@ -3,13 +3,24 @@ import { ArrowLeft } from 'lucide-vue-next'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import type { Role } from '@/core/auth/contracts'
 import { useAuthStore } from '@/stores/authStore'
+import { homologationReturnToQuery } from '@/modules/homologations/presentation'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
+function queryValue(key: string): string | undefined {
+  const rawValue = route.query[key]
+  const value = Array.isArray(rawValue) ? rawValue[0] : rawValue
+  return typeof value === 'string' ? value : undefined
+}
+
 function fallbackDestination(): RouteLocationRaw {
   const name = String(route.name ?? '')
+  if (name === 'admin-homologation-create' || name === 'admin-homologation-detail') {
+    const query = homologationReturnToQuery(queryValue('returnTo'))
+    return { name: 'admin-homologations', ...(Object.keys(query).length ? { query } : {}) }
+  }
   if (name.startsWith('teacher-course-')) {
     return { name: 'teacher-courses', query: { anioLectivo: route.query.anioLectivo } }
   }
