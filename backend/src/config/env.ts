@@ -25,12 +25,10 @@ export interface Config {
   jwtExpire: string;
   jwtRefreshExpire: string;
   
-  // Email (SMTP)
-  smtpHost: string;
-  smtpPort: number;
-  smtpSecure: boolean;
-  smtpUser: string;
-  smtpPass: string;
+  // Email (Gmail API)
+  gmailClientId: string;
+  gmailClientSecret: string;
+  gmailRefreshToken: string;
   emailFrom: string;
   horariosStorageDir: string;
   
@@ -56,15 +54,11 @@ const config: Config = {
   jwtExpire: process.env.JWT_EXPIRE || '7d',
   jwtRefreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
   
-  // Email (SMTP)
-  smtpHost: process.env.SMTP_HOST || '',
-  smtpPort: parseInt(process.env.SMTP_PORT || '587'),
-  smtpSecure: process.env.SMTP_SECURE
-    ? process.env.SMTP_SECURE.toLowerCase() === 'true'
-    : parseInt(process.env.SMTP_PORT || '587') === 465,
-  smtpUser: process.env.SMTP_USER || '',
-  smtpPass: process.env.SMTP_PASS || '',
-  emailFrom: process.env.EMAIL_FROM || 'Instituto <noreply@instituto.edu.ar>',
+  // Email (Gmail API). Se valida únicamente al intentar enviar.
+  gmailClientId: process.env.GMAIL_CLIENT_ID || '',
+  gmailClientSecret: process.env.GMAIL_CLIENT_SECRET || '',
+  gmailRefreshToken: process.env.GMAIL_REFRESH_TOKEN || '',
+  emailFrom: process.env.EMAIL_FROM || '',
   // No se sirve como estático: queda fuera de cualquier webroot público.
   horariosStorageDir: path.resolve(process.env.HORARIOS_STORAGE_DIR || path.join(__dirname, '../../storage/horarios-publicados')),
   
@@ -76,10 +70,6 @@ const config: Config = {
 // Validar variables críticas
 if (!config.jwtSecret) {
   throw new Error('JWT_SECRET no está definido en las variables de entorno');
-}
-
-if (config.nodeEnv === 'production' && (!config.smtpHost || !config.smtpPort || !config.smtpUser || !config.smtpPass || !config.emailFrom)) {
-  throw new Error('La configuración SMTP es obligatoria en producción');
 }
 
 export default config;

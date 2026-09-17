@@ -415,7 +415,7 @@ class AuthService {
         name: error instanceof Error ? error.name : 'UnknownError',
         code: typeof (error as { code?: unknown })?.code === 'string'
           ? (error as { code: string }).code
-          : 'SMTP_ERROR'
+          : 'EMAIL_DELIVERY_ERROR'
       });
     }
 

@@ -137,7 +137,7 @@ test('forgot password respeta el intervalo mínimo por usuario', async () => {
   }
 });
 
-test('forgot password elimina el token si falla la entrega SMTP', async () => {
+test('forgot password elimina el token si falla la entrega de correo', async () => {
   let deletedHash = '';
   const restoreUser = replaceMethod(userRepository as any, 'findByEmail', async () => ({
     idUsuario: 21,

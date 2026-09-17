@@ -15,11 +15,9 @@ const validAdminEnvironment = {
 test('produccion confia solamente en el primer proxy de Railway', async () => {
   process.env.NODE_ENV = 'production';
   process.env.JWT_SECRET = 'test-jwt-secret-with-enough-entropy';
-  process.env.SMTP_HOST = 'smtp.example.test';
-  process.env.SMTP_PORT = '587';
-  process.env.SMTP_SECURE = 'false';
-  process.env.SMTP_USER = 'test@example.test';
-  process.env.SMTP_PASS = 'test-smtp-password';
+  process.env.GMAIL_CLIENT_ID = 'test-client-id';
+  process.env.GMAIL_CLIENT_SECRET = 'test-client-secret';
+  process.env.GMAIL_REFRESH_TOKEN = 'test-refresh-token';
   process.env.EMAIL_FROM = 'Instituto <test@example.test>';
 
   const { app } = await import('../src/app.js');
