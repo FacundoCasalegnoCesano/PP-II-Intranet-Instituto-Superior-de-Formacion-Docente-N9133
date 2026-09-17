@@ -1,45 +1,11 @@
-import nodemailer from 'nodemailer';
+import type nodemailer from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import config from '../config/env.js';
-
-let transporter: nodemailer.Transporter | null = null;
-
-export interface SmtpTransportOptions {
-  host: string;
-  port: number;
-  secure: boolean;
-  auth: {
-    user: string;
-    pass: string;
-  };
-}
 
 export interface PasswordResetEmail {
   html: string;
   text: string;
 }
-
-export const getSmtpTransportOptions = (): SmtpTransportOptions => ({
-  host: config.smtpHost,
-  port: config.smtpPort,
-  secure: config.smtpSecure,
-  auth: {
-    user: config.smtpUser,
-    pass: config.smtpPass
-  }
-});
-
-const createTransporter = (): nodemailer.Transporter => {
-  if (transporter) return transporter;
-
-  const options = getSmtpTransportOptions();
-  if (!options.host || !options.port || !options.auth.user || !options.auth.pass) {
-    throw new Error('SMTP no está configurado');
-  }
-
-  transporter = nodemailer.createTransport(options);
-  console.log(`📧 [${config.nodeEnv.toUpperCase()}] SMTP configurado: ${options.host}:${options.port}`);
-  return transporter;
-};
 
 export const escapeHtml = (value: string): string => value
   .replace(/&/g, '&amp;')
@@ -55,21 +21,105 @@ interface EmailOptions {
   text: string;
 }
 
+const GMAIL_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
+const REQUEST_TIMEOUT_MS = 10_000;
+
+const assertConfigured = (): void => {
+  if (!config.gmailClientId || !config.gmailClientSecret || !config.gmailRefreshToken || !config.emailFrom) {
+    throw new Error('GMAIL_API_NOT_CONFIGURED');
+  }
+};
+
+const encodeForm = (values: Record<string, string>): string => new URLSearchParams(values).toString();
+
+const readJson = async (response: Response): Promise<unknown> => {
+  const body = await response.text();
+  if (!response.ok) throw new Error('GMAIL_API_ERROR');
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    throw new Error('GMAIL_API_INVALID_RESPONSE');
+  }
+};
+
+const fetchJson = async (url: string, init: RequestInit): Promise<unknown> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    return await readJson(response);
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const getAccessToken = async (): Promise<string> => {
+  assertConfigured();
+  const result = await fetchJson(GMAIL_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: encodeForm({
+      client_id: config.gmailClientId,
+      client_secret: config.gmailClientSecret,
+      refresh_token: config.gmailRefreshToken,
+      grant_type: 'refresh_token'
+    })
+  });
+  if (!result || typeof result !== 'object' || typeof (result as { access_token?: unknown }).access_token !== 'string'
+    || !(result as { access_token: string }).access_token.trim()) {
+    throw new Error('GMAIL_API_INVALID_RESPONSE');
+  }
+  return (result as { access_token: string }).access_token;
+};
+
+const rejectHeaderInjection = (value: string): void => {
+  if (/[\r\n]/.test(value)) throw new Error('INVALID_EMAIL_HEADER');
+};
+
+const buildRawMessage = async ({ to, subject, html, text }: EmailOptions): Promise<string> => {
+  rejectHeaderInjection(config.emailFrom);
+  rejectHeaderInjection(to);
+  rejectHeaderInjection(subject);
+  const rawMessage = await new MailComposer({
+    from: config.emailFrom,
+    to,
+    subject,
+    text,
+    html,
+    disableFileAccess: true,
+    disableUrlAccess: true
+  })
+    .compile()
+    .build();
+  return rawMessage.toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+};
+
 export const sendEmail = async ({ to, subject, html, text }: EmailOptions): Promise<nodemailer.SentMessageInfo> => {
   try {
-    const mailTransporter = createTransporter();
-    return await mailTransporter.sendMail({
-      from: config.emailFrom,
-      to,
-      subject,
-      html,
-      text
+    const accessToken = await getAccessToken();
+    const result = await fetchJson(GMAIL_SEND_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ raw: await buildRawMessage({ to, subject, html, text }) })
     });
+    if (!result || typeof result !== 'object' || typeof (result as { id?: unknown }).id !== 'string'
+      || !(result as { id: string }).id.trim()) {
+      throw new Error('GMAIL_API_INVALID_RESPONSE');
+    }
+    return { accepted: [to], rejected: [], messageId: (result as { id: string }).id };
   } catch (error) {
-    const errorCode = typeof (error as { code?: unknown })?.code === 'string'
-      ? (error as { code: string }).code
-      : 'SMTP_ERROR';
-    console.error('Email delivery failed', { errorCode });
+    console.error('Email delivery failed', {
+      code: error instanceof Error && /^(GMAIL_API_|INVALID_EMAIL_HEADER)/.test(error.message)
+        ? error.message
+        : 'EMAIL_DELIVERY_ERROR'
+    });
     throw new Error('No se pudo enviar el correo');
   }
 };
