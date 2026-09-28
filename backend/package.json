@@ -17,7 +17,8 @@
     "create:admin": "node dist/scripts/createAdmin.js",
     "create:admin:dev": "tsx src/scripts/createAdmin.ts",
     "admin:reset-password": "tsx src/scripts/resetAdminPassword.ts",
-    "admin:list": "tsx src/scripts/listAdmins.ts"
+    "admin:list": "tsx src/scripts/listAdmins.ts",
+    "demo:seed": "npm run build && node dist/scripts/seedInstitutionalDemo.js"
   },
   "engines": {
     "node": "22.x"
