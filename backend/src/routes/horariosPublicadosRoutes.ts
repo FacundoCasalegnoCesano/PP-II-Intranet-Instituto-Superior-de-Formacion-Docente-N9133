@@ -5,7 +5,7 @@ import { ROLES } from '../constants/roles.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
 import { AppError } from '../utils/AppError.js';
-import { cicloLectivoQuerySchema, idDocumentoSchema, publicarHorarioSchema } from '../validations/horarioPublicadoValidation.js';
+import { cicloLectivoQuerySchema, horarioScopeQuerySchema, idDocumentoSchema, publicarHorarioSchema } from '../validations/horarioPublicadoValidation.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
@@ -29,9 +29,10 @@ const cargarArchivo = (req: any, res: any, next: any): void => {
 
 router.use(authMiddleware);
 
+router.get('/opciones', validationMiddleware(cicloLectivoQuerySchema, 'query'), horarioPublicadoController.opciones);
 router.get('/anios', horarioPublicadoController.listarAnios);
-router.get('/actual', validationMiddleware(cicloLectivoQuerySchema, 'query'), horarioPublicadoController.obtenerActual);
-router.get('/historial', roleCheck(ROLES.ADMINISTRATIVO), validationMiddleware(publicarHorarioSchema, 'query'), horarioPublicadoController.historial);
+router.get('/actual', validationMiddleware(horarioScopeQuerySchema, 'query'), horarioPublicadoController.obtenerActual);
+router.get('/historial', roleCheck(ROLES.ADMINISTRATIVO), validationMiddleware(horarioScopeQuerySchema, 'query'), horarioPublicadoController.historial);
 router.post('/', roleCheck(ROLES.ADMINISTRATIVO), cargarArchivo, validationMiddleware(publicarHorarioSchema), horarioPublicadoController.publicar);
 router.post('/:id/publicar', roleCheck(ROLES.ADMINISTRATIVO), validationMiddleware(idDocumentoSchema, 'params'), horarioPublicadoController.restaurar);
 router.get('/:id/archivo', validationMiddleware(idDocumentoSchema, 'params'), horarioPublicadoController.descargarArchivo);

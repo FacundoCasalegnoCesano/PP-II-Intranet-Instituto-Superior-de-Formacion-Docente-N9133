@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import config from '../config/env.js';
 import { ROLES } from '../constants/roles.js';
-import horarioPublicadoRepository, { type DocumentoHorarioCreateData } from '../repositories/horarioPublicadoRepository.js';
+import horarioPublicadoRepository, { type DocumentoHorarioCreateData, type HorarioScope } from '../repositories/horarioPublicadoRepository.js';
 import { AppError } from '../utils/AppError.js';
 
 export const MAX_ARCHIVO_HORARIO_BYTES = 10 * 1024 * 1024;
@@ -55,6 +55,9 @@ function aDocumentoPublico(documento: any) {
     cicloLectivo: documento.cicloLectivo,
     titulo: documento.titulo,
     nombreOriginal: documento.nombreOriginal,
+    carreraId: documento.carreraId ?? null,
+    cursoAnio: documento.cursoAnio ?? null,
+    carrera: documento.carrera ?? null,
     tamanio: documento.tamanio,
     fechaPublicacion: documento.createdAt,
     vigente: Boolean(documento.publicacionVigente),
@@ -74,6 +77,29 @@ export class HorarioPublicadoService {
     private readonly almacenamiento: Almacenamiento = fs,
     private readonly storageDir: string = config.horariosStorageDir
   ) {}
+
+  private scope(scope?: HorarioScope): HorarioScope {
+    const carreraId = scope?.carreraId ?? null;
+    const cursoAnio = scope?.cursoAnio ?? null;
+    if ((carreraId === null) !== (cursoAnio === null)) throw new AppError(400, 'carreraId y cursoAnio deben enviarse juntos');
+    return { carreraId, cursoAnio };
+  }
+
+  private async validarAmbito(cicloLectivo: number, scope: HorarioScope, usuario: UsuarioActual): Promise<void> {
+    if (scope.carreraId === null) return;
+    if (!Number.isInteger(scope.cursoAnio) || scope.cursoAnio! < 1) throw new AppError(400, 'El año de curso debe ser positivo');
+    const carrera = await this.repository.buscarCarrera(scope.carreraId!);
+    if (!carrera || !carrera.activo || scope.cursoAnio! > carrera.duracionAnios) throw new AppError(400, 'El año de curso no pertenece a la carrera');
+    if (usuario.rol !== ROLES.ADMINISTRATIVO && !(await this.repository.carreraElegible(cicloLectivo, scope.carreraId!, usuario))) {
+      throw new AppError(403, 'No tienes permisos para consultar esta carrera');
+    }
+  }
+
+  async listarOpciones(cicloLectivo: number, usuario: UsuarioActual) {
+    const carreras = await this.repository.listarCarrerasElegibles(cicloLectivo, usuario);
+    const generalDisponible = Boolean(await this.repository.buscarVigentePorAmbito(cicloLectivo, {}));
+    return { carreras, generalDisponible };
+  }
 
   private exigirAdministrativo(usuario: UsuarioActual): void {
     if (usuario.rol !== ROLES.ADMINISTRATIVO) {
@@ -105,14 +131,25 @@ export class HorarioPublicadoService {
     }
   }
 
-  async listarAnios() {
-    return (await this.repository.listarAnios()).map(({ cicloLectivo }) => cicloLectivo);
+  async listarAnios(usuario: UsuarioActual) {
+    const filas = await this.repository.listarAnios();
+    const visibles: number[] = [];
+    for (const fila of filas) {
+      if (fila.carreraId == null || usuario.rol === ROLES.ADMINISTRATIVO || await this.repository.carreraElegible(fila.cicloLectivo, fila.carreraId, usuario)) {
+        visibles.push(fila.cicloLectivo);
+      }
+    }
+    return [...new Set(visibles)];
   }
 
-  async obtenerActual(cicloLectivo?: number) {
+  async obtenerActual(cicloLectivo: number | undefined, requestedScope: HorarioScope | undefined, usuario: UsuarioActual) {
+    const scope = this.scope(requestedScope);
+    if (scope.carreraId !== null) await this.validarAmbito(cicloLectivo ?? new Date().getFullYear(), scope, usuario);
     const publicacion = cicloLectivo === undefined
-      ? (await this.repository.buscarVigentePorCiclo(new Date().getFullYear())) ?? await this.repository.buscarUltimaVigente()
-      : await this.repository.buscarVigentePorCiclo(cicloLectivo);
+      ? scope.carreraId === null
+        ? (await this.repository.buscarVigentePorAmbito(new Date().getFullYear(), scope)) ?? await this.repository.buscarUltimaVigentePorAmbito(scope)
+        : await this.repository.buscarVigentePorAmbito(new Date().getFullYear(), scope)
+      : await this.repository.buscarVigentePorAmbito(cicloLectivo, scope);
 
     if (!publicacion) {
       throw new AppError(404, 'No hay un horario publicado para el ciclo lectivo solicitado');
@@ -120,15 +157,20 @@ export class HorarioPublicadoService {
     return aDocumentoPublico(publicacion.documento);
   }
 
-  async obtenerHistorial(cicloLectivo: number, usuario: UsuarioActual) {
+  async obtenerHistorial(cicloLectivo: number, requestedScope: HorarioScope | undefined, usuario: UsuarioActual) {
     this.exigirAdministrativo(usuario);
-    return (await this.repository.listarHistorial(cicloLectivo)).map(aDocumentoPublico);
+    const scope = this.scope(requestedScope);
+    await this.validarAmbito(cicloLectivo, scope, usuario);
+    return (await this.repository.listarHistorial(cicloLectivo, scope)).map(aDocumentoPublico);
   }
 
   async obtenerArchivo(id: number, usuario: UsuarioActual) {
     const documento = await this.repository.buscarPorId(id);
     if (!documento) {
       throw new AppError(404, 'Documento de horario no encontrado');
+    }
+    if (documento.carreraId != null) {
+      await this.validarAmbito(documento.cicloLectivo, { carreraId: documento.carreraId, cursoAnio: documento.cursoAnio }, usuario);
     }
     if (!documento.publicacionVigente && usuario.rol !== ROLES.ADMINISTRATIVO) {
       throw new AppError(403, 'Solo los administrativos pueden descargar versiones históricas');
@@ -137,14 +179,17 @@ export class HorarioPublicadoService {
   }
 
   async publicarArchivo(
-    datos: { cicloLectivo: number; titulo?: string },
+    datos: { cicloLectivo: number; titulo?: string; carreraId?: number; cursoAnio?: number },
     archivo: ArchivoHorario | undefined,
     usuario: UsuarioActual
   ) {
     this.exigirAdministrativo(usuario);
+    const scope = this.scope(datos);
+    if (scope.carreraId === null) throw new AppError(400, 'Las nuevas publicaciones requieren carreraId y cursoAnio');
+    await this.validarAmbito(datos.cicloLectivo, scope, usuario);
     validarArchivoHorario(archivo);
     const sha256 = crypto.createHash('sha256').update(archivo.buffer).digest('hex');
-    const existente = await this.repository.buscarPorCicloYHash(datos.cicloLectivo, sha256);
+    const existente = await this.repository.buscarPorCicloYHash(datos.cicloLectivo, sha256, scope);
 
     if (existente) {
       await this.asegurarArchivoDisponible(existente.claveInterna);
@@ -157,6 +202,8 @@ export class HorarioPublicadoService {
     const titulo = datos.titulo?.trim() || path.basename(archivo.originalname, path.extname(archivo.originalname));
     const documento: DocumentoHorarioCreateData = {
       cicloLectivo: datos.cicloLectivo,
+      carreraId: scope.carreraId,
+      cursoAnio: scope.cursoAnio,
       titulo,
       nombreOriginal: path.basename(archivo.originalname),
       claveInterna,
@@ -178,7 +225,7 @@ export class HorarioPublicadoService {
       // La restricción única cicloLectivo+sha256 también cubre dos cargas iguales
       // concurrentes: la que perdió la carrera restaura la versión ya persistida.
       if ((error as { code?: string })?.code === 'P2002') {
-        const existenteEnCarrera = await this.repository.buscarPorCicloYHash(datos.cicloLectivo, sha256);
+        const existenteEnCarrera = await this.repository.buscarPorCicloYHash(datos.cicloLectivo, sha256, scope);
         if (existenteEnCarrera) {
           await this.asegurarArchivoDisponible(existenteEnCarrera.claveInterna);
           await this.repository.publicarExistente(existenteEnCarrera);
@@ -194,6 +241,9 @@ export class HorarioPublicadoService {
     const documento = await this.repository.buscarPorId(id);
     if (!documento) {
       throw new AppError(404, 'Documento de horario no encontrado');
+    }
+    if (documento.carreraId != null) {
+      await this.validarAmbito(documento.cicloLectivo, { carreraId: documento.carreraId, cursoAnio: documento.cursoAnio }, usuario);
     }
     await this.asegurarArchivoDisponible(documento.claveInterna);
     await this.repository.publicarExistente(documento);

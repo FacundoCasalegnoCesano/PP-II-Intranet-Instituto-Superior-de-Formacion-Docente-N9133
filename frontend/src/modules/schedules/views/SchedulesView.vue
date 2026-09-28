@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Download, ExternalLink, FileText, History, Upload } from 'lucide-vue-next'
 import { schedulesApi } from '../api/schedulesApi'
-import type { PublishedSchedule } from '../types/schedules'
+import type { PublishedSchedule, ScheduleCareer, ScheduleOptions } from '../types/schedules'
 import SchedulePdfViewer from '../components/SchedulePdfViewer.vue'
 import { normalizeApiError } from '@/core/api/errors'
 import { useAuthStore } from '@/stores/authStore'
@@ -12,6 +12,9 @@ import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 const auth = useAuthStore()
 const years = ref<number[]>([])
 const selectedYear = ref<number | null>(null)
+const options = ref<ScheduleOptions>({ carreras: [], generalDisponible: false })
+const selectedCareerId = ref<number | null>(null)
+const selectedCourseYear = ref<number | null>(null)
 const current = ref<PublishedSchedule | null>(null)
 const history = ref<PublishedSchedule[]>([])
 const loading = ref(true)
@@ -22,6 +25,8 @@ const blobUrl = ref<string | null>(null)
 const documentBlob = ref<Blob | null>(null)
 const selectedFile = ref<File | null>(null)
 const uploadCycle = ref(new Date().getFullYear())
+const uploadCareerId = ref<number | null>(null)
+const uploadCourseYear = ref<number | null>(null)
 const uploadTitle = ref('')
 const pendingAction = ref<{ kind: 'publish' } | { kind: 'restore'; document: PublishedSchedule } | null>(null)
 const saving = ref(false)
@@ -38,8 +43,27 @@ const safeFileName = computed(() => {
 })
 const actionTitle = computed(() => pendingAction.value?.kind === 'restore' ? 'Volver a publicar versión' : 'Reemplazar horario publicado')
 const actionDescription = computed(() => pendingAction.value?.kind === 'restore'
-  ? 'Esta versión quedará vigente para el ciclo lectivo seleccionado.'
-  : 'El nuevo PDF reemplazará la publicación vigente para ese ciclo lectivo.')
+  ? `Esta versión quedará vigente para ${scopeLabel(pendingAction.value.document)}.`
+  : `El nuevo PDF reemplazará la publicación vigente para ${uploadScopeLabel()}.`)
+const selectedCareer = computed(() => options.value.carreras.find(career => career.id === selectedCareerId.value) ?? null)
+const uploadCareer = computed(() => options.value.carreras.find(career => career.id === uploadCareerId.value) ?? null)
+const selectedCourseYears = computed(() => yearsForCareer(selectedCareer.value))
+const uploadCourseYears = computed(() => yearsForCareer(uploadCareer.value))
+const hasSpecificSelection = computed(() => selectedCareerId.value !== null && selectedCourseYear.value !== null)
+const hasUploadSelection = computed(() => uploadCareerId.value !== null && uploadCourseYear.value !== null)
+const hasScheduleAvailability = computed(() => options.value.generalDisponible || options.value.carreras.length > 0)
+
+function yearsForCareer(career: ScheduleCareer | null): number[] {
+  return career ? Array.from({ length: career.duracionAnios }, (_, index) => index + 1) : []
+}
+
+function scopeLabel(schedule: PublishedSchedule): string {
+  return schedule.carrera && schedule.cursoAnio ? `${schedule.carrera.nombre}, ${schedule.cursoAnio}.° año del ciclo ${schedule.cicloLectivo}` : `el horario general del ciclo ${schedule.cicloLectivo}`
+}
+
+function uploadScopeLabel(): string {
+  return uploadCareer.value && uploadCourseYear.value ? `${uploadCareer.value.nombre}, ${uploadCourseYear.value}.° año del ciclo ${uploadCycle.value}` : `el ciclo ${uploadCycle.value}`
+}
 
 function clearDocumentResources(): void {
   if (blobUrl.value) URL.revokeObjectURL(blobUrl.value)
@@ -82,16 +106,18 @@ async function loadDocument(schedule: PublishedSchedule, generation: number): Pr
 async function loadHistory(cicloLectivo: number, generation: number): Promise<void> {
   if (!isAdmin.value || !isCurrentRequest(generation)) return
   try {
-    const versions = await schedulesApi.listHistory(cicloLectivo)
+    const filters = hasSpecificSelection.value
+      ? { cicloLectivo, carreraId: selectedCareerId.value!, cursoAnio: selectedCourseYear.value! }
+      : { cicloLectivo }
+    const versions = await schedulesApi.listHistory(filters)
     if (isCurrentRequest(generation)) history.value = versions
   } catch {
     if (isCurrentRequest(generation)) history.value = []
   }
 }
 
-async function loadSchedule(): Promise<void> {
+async function loadSchedule(generation = nextRequestGeneration()): Promise<void> {
   if (selectedYear.value === null) return
-  const generation = nextRequestGeneration()
   const cicloLectivo = selectedYear.value
   current.value = null
   history.value = []
@@ -101,36 +127,114 @@ async function loadSchedule(): Promise<void> {
   clearDocumentResources()
   loadingDocument.value = true
   try {
-    const schedule = await schedulesApi.getCurrent(cicloLectivo)
+    const schedule = await schedulesApi.getCurrent({ cicloLectivo, ...(hasSpecificSelection.value ? { carreraId: selectedCareerId.value!, cursoAnio: selectedCourseYear.value! } : {}) })
     if (!isCurrentRequest(generation)) return
     current.value = schedule
     uploadCycle.value = schedule.cicloLectivo
     void loadDocument(schedule, generation)
     void loadHistory(cicloLectivo, generation)
-  } catch {
+  } catch (loadError) {
     if (isCurrentRequest(generation)) {
-      error.value = 'No pudimos cargar el horario para el ciclo lectivo seleccionado.'
+      const status = normalizeApiError(loadError).status
+      error.value = status === 404 ? '' : 'No pudimos cargar el horario para el ciclo lectivo seleccionado.'
       loadingDocument.value = false
     }
   }
 }
 
 async function load(): Promise<void> {
+  const generation = nextRequestGeneration()
   loading.value = true
   error.value = ''
   current.value = null
   history.value = []
   clearDocumentResources()
   try {
-    years.value = await schedulesApi.listYears()
-    selectedYear.value = years.value[0] ?? null
-    uploadCycle.value = selectedYear.value ?? new Date().getFullYear()
-    if (selectedYear.value !== null) await loadSchedule()
+    const listedYears = await schedulesApi.listYears()
+    if (!isCurrentRequest(generation)) return
+    years.value = listedYears
+    const currentCycle = new Date().getFullYear()
+    years.value = [...new Set([currentCycle, ...years.value])].sort((a, b) => b - a)
+    selectedYear.value = years.value[0] ?? currentCycle
+    uploadCycle.value = selectedYear.value
+    await loadOptions(generation)
+    if (!isCurrentRequest(generation)) return
   } catch {
-    error.value = 'No pudimos cargar los horarios publicados.'
+    if (isCurrentRequest(generation)) error.value = 'No pudimos cargar los horarios publicados.'
   } finally {
-    loading.value = false
+    if (isCurrentRequest(generation)) loading.value = false
   }
+}
+
+async function loadOptions(parentGeneration?: number): Promise<void> {
+  if (selectedYear.value === null) return
+  const generation = parentGeneration ?? nextRequestGeneration()
+  loading.value = true
+  error.value = ''
+  current.value = null
+  history.value = []
+  clearDocumentResources()
+  try {
+    let result: ScheduleOptions
+    try {
+      result = await schedulesApi.listOptions(selectedYear.value)
+    } catch {
+      if (isCurrentRequest(generation)) error.value = 'No pudimos cargar las carreras disponibles para el ciclo seleccionado.'
+      return
+    }
+    if (!isCurrentRequest(generation)) return
+    options.value = result
+    if (!options.value.carreras.some(career => career.id === selectedCareerId.value)) selectedCareerId.value = options.value.carreras[0]?.id ?? null
+    if (!selectedCareerId.value) selectedCourseYear.value = null
+    else if (!yearsForCareer(selectedCareer.value).includes(selectedCourseYear.value ?? 0)) selectedCourseYear.value = 1
+    if (!options.value.carreras.some(career => career.id === uploadCareerId.value)) uploadCareerId.value = null
+    if (!uploadCareerId.value) uploadCourseYear.value = null
+    else if (!yearsForCareer(uploadCareer.value).includes(uploadCourseYear.value ?? 0)) uploadCourseYear.value = 1
+    if (!hasSpecificSelection.value && !options.value.generalDisponible) {
+      current.value = null
+      history.value = []
+      clearDocumentResources()
+      return
+    }
+    await loadSchedule(generation)
+  } finally {
+    if (isCurrentRequest(generation)) loading.value = false
+  }
+}
+
+async function changeYear(): Promise<void> {
+  selectedCareerId.value = null
+  selectedCourseYear.value = null
+  await loadOptions()
+}
+
+async function changeCareer(): Promise<void> {
+  selectedCourseYear.value = selectedCareerId.value === null ? null : 1
+  await loadSchedule()
+}
+
+watch(() => [auth.activeRole, auth.user?.idUsuario], () => {
+  nextRequestGeneration()
+  years.value = []
+  options.value = { carreras: [], generalDisponible: false }
+  selectedYear.value = null
+  selectedCareerId.value = null
+  selectedCourseYear.value = null
+  uploadCareerId.value = null
+  uploadCourseYear.value = null
+  selectedFile.value = null
+  uploadTitle.value = ''
+  actionError.value = ''
+  saving.value = false
+  current.value = null
+  history.value = []
+  pendingAction.value = null
+  clearDocumentResources()
+  void load()
+})
+
+async function changeCourseYear(): Promise<void> {
+  await loadSchedule()
 }
 
 function retryDocument(): void {
@@ -143,6 +247,10 @@ function preparePublish(): void {
   actionError.value = ''
   if (!selectedFile.value) {
     actionError.value = 'Seleccioná un archivo PDF para publicar.'
+    return
+  }
+  if (!hasUploadSelection.value) {
+    actionError.value = 'Seleccioná una carrera y un año de cursado.'
     return
   }
   pendingAction.value = { kind: 'publish' }
@@ -162,33 +270,49 @@ function actionFailure(error: unknown, fallback: string): string {
 
 async function confirmAction(): Promise<void> {
   const action = pendingAction.value
-  if (!action) return
+  if (!action || saving.value) return
+  const snapshot = {
+    action,
+    uploadCycle: uploadCycle.value,
+    uploadCareerId: uploadCareerId.value,
+    uploadCourseYear: uploadCourseYear.value,
+    uploadTitle: uploadTitle.value,
+    file: selectedFile.value,
+  }
   saving.value = true
   actionError.value = ''
+  const generation = nextRequestGeneration()
   try {
-    const generation = nextRequestGeneration()
     let published: PublishedSchedule
-    if (action.kind === 'publish') {
-      const result = await schedulesApi.publish({ archivo: selectedFile.value!, cicloLectivo: uploadCycle.value, titulo: uploadTitle.value })
+    if (snapshot.action.kind === 'publish') {
+      const result = await schedulesApi.publish({ archivo: snapshot.file!, cicloLectivo: snapshot.uploadCycle, carreraId: snapshot.uploadCareerId!, cursoAnio: snapshot.uploadCourseYear!, titulo: snapshot.uploadTitle })
       published = result.documento
+    } else {
+      published = await schedulesApi.restore(snapshot.action.document.id)
+    }
+    if (!isCurrentRequest(generation)) return
+    if (snapshot.action.kind === 'publish') {
       selectedFile.value = null
       uploadTitle.value = ''
-    } else {
-      published = await schedulesApi.restore(action.document.id)
     }
     current.value = published
     documentError.value = ''
     selectedYear.value = published.cicloLectivo
+    selectedCareerId.value = published.carreraId
+    selectedCourseYear.value = published.cursoAnio
+    uploadCareerId.value = published.carreraId
+    uploadCourseYear.value = published.cursoAnio
     if (!years.value.includes(published.cicloLectivo)) years.value = [published.cicloLectivo, ...years.value].sort((a, b) => b - a)
     void loadDocument(published, generation)
     void loadHistory(published.cicloLectivo, generation)
     pendingAction.value = null
   } catch (error) {
-    actionError.value = action.kind === 'publish'
+    if (!isCurrentRequest(generation)) return
+    actionError.value = snapshot.action.kind === 'publish'
       ? actionFailure(error, 'No se pudo publicar el horario.')
       : actionFailure(error, 'No se pudo restaurar esta versión.')
   } finally {
-    saving.value = false
+    if (isCurrentRequest(generation)) saving.value = false
   }
 }
 
@@ -207,9 +331,21 @@ onBeforeUnmount(() => {
         <h1 id="schedules-title" class="mt-2 text-3xl font-semibold text-[var(--color-text)]">Horarios publicados</h1>
         <p class="mt-2 max-w-2xl text-[var(--color-graphite)]">Consultá el horario oficial vigente de cada ciclo lectivo.</p>
       </div>
-      <label v-if="years.length" class="grid gap-1 text-sm font-semibold text-[var(--color-text)]">Ciclo lectivo
-        <select v-model.number="selectedYear" class="min-h-11 rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="loadSchedule">
+      <label v-if="years.length || isAdmin" class="grid min-w-0 max-w-full gap-1 text-sm font-semibold text-[var(--color-text)]">Ciclo lectivo
+        <select v-model.number="selectedYear" :disabled="saving" class="min-h-11 min-w-0 max-w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="changeYear">
           <option v-for="year in years" :key="year" :value="year">{{ year }}</option>
+          <option v-if="selectedYear && !years.includes(selectedYear)" :value="selectedYear">{{ selectedYear }}</option>
+        </select>
+      </label>
+      <label v-if="options.carreras.length" class="grid min-w-0 max-w-full gap-1 text-sm font-semibold text-[var(--color-text)]">Carrera
+        <select v-model.number="selectedCareerId" :disabled="loading || saving" class="min-h-11 w-full min-w-0 max-w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="changeCareer">
+          <option v-if="options.generalDisponible" :value="null">Horario general</option>
+          <option v-for="career in options.carreras" :key="career.id" :value="career.id">{{ career.nombre }}</option>
+        </select>
+      </label>
+      <label v-if="selectedCareer" class="grid min-w-0 max-w-full gap-1 text-sm font-semibold text-[var(--color-text)]">Año de cursado
+        <select v-model.number="selectedCourseYear" :disabled="loading || saving" class="min-h-11 min-w-0 max-w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="changeCourseYear">
+          <option v-for="year in selectedCourseYears" :key="year" :value="year">{{ year }}.° año</option>
         </select>
       </label>
     </div>
@@ -218,7 +354,7 @@ onBeforeUnmount(() => {
     <section v-else-if="error && !isAdmin" class="mt-7 rounded-xl border border-[#a31118]/30 bg-[#fff7f6] p-6" role="alert">
       <p>{{ error }}</p><AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton>
     </section>
-    <section v-else-if="!years.length && !isAdmin" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">
+    <section v-else-if="!hasScheduleAvailability && !isAdmin" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">
       Todavía no hay horarios publicados.
       <AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton>
     </section>
@@ -226,7 +362,7 @@ onBeforeUnmount(() => {
       <section v-if="error" class="mt-7 rounded-xl border border-[#a31118]/30 bg-[#fff7f6] p-6" role="alert">
         <p>{{ error }}</p><AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton>
       </section>
-      <section v-else-if="!years.length" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">
+      <section v-else-if="!hasScheduleAvailability" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">
         Todavía no hay horarios publicados.
         <AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton>
       </section>
@@ -252,10 +388,31 @@ onBeforeUnmount(() => {
       <section v-else-if="years.length" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6">No hay un horario vigente para este ciclo lectivo.</section>
 
       <section v-if="isAdmin" class="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,.8fr)]">
-        <form class="rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" @submit.prevent="preparePublish">
+        <form class="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" @submit.prevent="preparePublish">
           <div class="flex items-center gap-2"><Upload class="size-5 text-[var(--color-brand)]" /><h2 class="text-xl font-semibold">Publicar horario</h2></div>
           <p class="mt-2 text-sm text-[var(--color-graphite)]">El nuevo PDF se publicará al confirmar el reemplazo.</p>
-          <div class="mt-5 grid gap-4 sm:grid-cols-2"><label class="text-sm font-semibold">Ciclo lectivo<input v-model.number="uploadCycle" type="number" min="2000" max="2100" required class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" /></label><label class="text-sm font-semibold">Título<input v-model="uploadTitle" maxlength="160" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" /></label><label class="text-sm font-semibold sm:col-span-2">Archivo PDF<input type="file" accept="application/pdf,.pdf" required class="mt-1 block w-full text-sm font-normal" @change="selectedFile = (($event.target as HTMLInputElement).files?.[0] ?? null)" /></label></div>
+          <fieldset :disabled="saving" class="mt-5 grid min-w-0 gap-4 sm:grid-cols-2">
+            <label class="min-w-0 text-sm font-semibold">Ciclo lectivo
+              <input v-model.number="uploadCycle" type="number" min="2000" max="2100" required class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @change="selectedYear = uploadCycle; void loadOptions()" />
+            </label>
+            <label class="min-w-0 text-sm font-semibold">Carrera
+              <select v-model.number="uploadCareerId" class="mt-1 min-h-11 w-full min-w-0 max-w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @change="uploadCourseYear = uploadCareerId === null ? null : 1">
+                <option :value="null">Seleccionar carrera</option>
+                <option v-for="career in options.carreras" :key="career.id" :value="career.id">{{ career.nombre }}</option>
+              </select>
+            </label>
+            <label v-if="uploadCareer" class="min-w-0 text-sm font-semibold">Año de cursado
+              <select v-model.number="uploadCourseYear" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal">
+                <option v-for="year in uploadCourseYears" :key="year" :value="year">{{ year }}.° año</option>
+              </select>
+            </label>
+            <label class="min-w-0 text-sm font-semibold">Título
+              <input v-model="uploadTitle" maxlength="160" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" />
+            </label>
+            <label class="min-w-0 text-sm font-semibold sm:col-span-2">Archivo PDF
+              <input type="file" accept="application/pdf,.pdf" required class="mt-1 block w-full text-sm font-normal" @change="selectedFile = (($event.target as HTMLInputElement).files?.[0] ?? null)" />
+            </label>
+          </fieldset>
           <p v-if="selectedFile" class="mt-4 rounded-md bg-[#f6f7f4] p-3 text-sm"><FileText class="mr-1 inline size-4" />{{ selectedFile.name }} · {{ Math.max(1, Math.round(selectedFile.size / 1024)) }} KB</p>
           <p v-if="actionError" class="mt-4 text-sm text-[#a31118]" role="alert">{{ actionError }}</p>
           <AppButton class="mt-5" type="submit">Publicar horario</AppButton>

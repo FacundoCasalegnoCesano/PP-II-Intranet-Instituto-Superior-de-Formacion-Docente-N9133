@@ -234,9 +234,11 @@ model Carrera {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  materias      Materia[]
-  inscripciones InscripcionCarrera[]
-  planesEstudio PlanEstudio[]
+  materias              Materia[]
+  inscripciones         InscripcionCarrera[]
+  planesEstudio         PlanEstudio[]
+  documentosHorarios    DocumentoHorario[]
+  publicacionesHorarios PublicacionHorario[]
 
   @@map("carreras")
 }
@@ -464,6 +466,9 @@ model Horario {
 model DocumentoHorario {
   id             Int      @id @default(autoincrement())
   cicloLectivo   Int      @map("ciclo_lectivo")
+  ambitoClave    String   @default("GENERAL") @map("ambito_clave") @db.VarChar(64)
+  carreraId      Int?     @map("carrera_id")
+  cursoAnio      Int?     @map("curso_anio")
   titulo         String   @db.VarChar(160)
   nombreOriginal String   @map("nombre_original") @db.VarChar(255)
   claveInterna   String   @unique @map("clave_interna") @db.Char(36)
@@ -473,22 +478,31 @@ model DocumentoHorario {
   createdAt      DateTime @default(now()) @map("created_at")
 
   publicador         Usuario             @relation("DocumentoHorarioPublicador", fields: [publicadorId], references: [idUsuario])
+  carrera            Carrera?            @relation(fields: [carreraId], references: [id], onDelete: Restrict)
   publicacionVigente PublicacionHorario?
 
-  @@unique([cicloLectivo, sha256])
-  @@index([cicloLectivo, createdAt])
+  @@unique([cicloLectivo, ambitoClave, sha256], map: "documentos_horarios_ciclo_ambito_sha256_key")
+  @@index([cicloLectivo, createdAt], map: "documentos_horarios_ciclo_lectivo_created_at_idx")
+  @@index([cicloLectivo, carreraId, cursoAnio], map: "documentos_horarios_ciclo_carrera_curso_idx")
   @@map("documentos_horarios")
 }
 
 /// Puntero al documento actualmente visible para cada ciclo lectivo. Las versiones
 /// previas permanecen en DocumentoHorario y pueden restaurarse por administración.
 model PublicacionHorario {
-  cicloLectivo Int      @id @map("ciclo_lectivo")
+  id           Int      @id @default(autoincrement())
+  cicloLectivo Int      @map("ciclo_lectivo")
+  ambitoClave  String   @default("GENERAL") @map("ambito_clave") @db.VarChar(64)
+  carreraId    Int?     @map("carrera_id")
+  cursoAnio    Int?     @map("curso_anio")
   documentoId  Int      @unique @map("documento_id")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   documento DocumentoHorario @relation(fields: [documentoId], references: [id])
+  carrera   Carrera?         @relation(fields: [carreraId], references: [id], onDelete: Restrict)
 
+  @@unique([cicloLectivo, ambitoClave], map: "publicaciones_horarios_ciclo_ambito_key")
+  @@index([carreraId], map: "publicaciones_horarios_carrera_id_idx")
   @@map("publicaciones_horarios")
 }
 
