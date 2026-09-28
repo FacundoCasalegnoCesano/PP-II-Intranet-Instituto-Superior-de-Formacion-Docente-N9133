@@ -11,7 +11,7 @@ const iconByKind = { success: CircleCheck, error: CircleAlert, info: Info }
     <div
       v-for="message in feedback.messages.value"
       :key="message.id"
-      role="status"
+      :role="message.kind === 'error' ? 'alert' : 'status'"
       aria-live="polite"
       class="pointer-events-auto flex w-full items-start gap-3 rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-lg"
       :class="{
@@ -21,7 +21,7 @@ const iconByKind = { success: CircleCheck, error: CircleAlert, info: Info }
     >
       <component :is="iconByKind[message.kind]" class="mt-0.5 size-5 shrink-0 text-[var(--color-brand)]" aria-hidden="true" />
       <p class="flex-1 text-sm text-[var(--color-text)]">{{ message.text }}</p>
-      <button type="button" class="rounded p-1 text-[var(--color-graphite)]" aria-label="Cerrar mensaje" @click="feedback.dismiss(message.id)">
+      <button type="button" class="min-h-11 min-w-11 rounded p-2 text-[var(--color-graphite)]" aria-label="Cerrar mensaje" @click="feedback.dismiss(message.id)">
         <X class="size-4" aria-hidden="true" />
       </button>
     </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
-import { BadgeCheck, BookOpen, CalendarDays, ChevronDown, ClipboardList, Home, LibraryBig, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { BadgeCheck, BookOpen, CalendarDays, ChevronDown, ClipboardList, GraduationCap, Home, LibraryBig, LogOut, Menu, Repeat2, ShieldCheck, UserRound, X } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AppBackButton from '@/ui/AppBackButton.vue'
@@ -13,6 +13,10 @@ const drawerOpen = ref(false)
 const userMenuOpen = ref(false)
 const confirmLogoutOpen = ref(false)
 const loggingOut = ref(false)
+const drawer = ref<HTMLElement>()
+const drawerTrigger = ref<HTMLButtonElement>()
+const drawerCloseButton = ref<HTMLButtonElement>()
+const userMenuTrigger = ref<HTMLButtonElement>()
 const baseNavItems = [
   { name: 'home', label: 'Inicio', icon: Home },
   { name: 'schedules', label: 'Horarios', icon: CalendarDays },
@@ -26,6 +30,7 @@ const studentNavItems = [
 ] as const
 const adminNavItems = [
   { name: 'admin-users', label: 'Usuarios', icon: ShieldCheck },
+  { name: 'admin-academic-records', label: 'Trayectorias', icon: GraduationCap },
   { name: 'admin-careers', label: 'Carreras', icon: BookOpen },
   { name: 'admin-career-enrollments', label: 'Inscripciones a carreras', icon: ClipboardList },
   { name: 'admin-subjects', label: 'Materias', icon: BookOpen },
@@ -51,6 +56,7 @@ function isNavItemActive(name: string): boolean {
   if (name === 'teacher-exams') return typeof route.name === 'string' && route.name.startsWith('teacher-exam')
   if (name === 'admin-exams') return typeof route.name === 'string' && route.name.startsWith('admin-exam')
   if (name === 'admin-homologations') return typeof route.name === 'string' && route.name.startsWith('admin-homologation')
+  if (name === 'admin-academic-records') return typeof route.name === 'string' && route.name.startsWith('admin-academic-record')
   return route.name === name
 }
 
@@ -60,10 +66,41 @@ async function goToRoleSelection(): Promise<void> {
   await router.push({ name: 'role-selection' })
 }
 function onEscape(event: KeyboardEvent): void {
-  if (event.key === 'Escape') closeDrawer()
+  if (drawerOpen.value && event.key === 'Escape') {
+    event.preventDefault()
+    closeDrawer()
+    return
+  }
+  if (drawerOpen.value && event.key === 'Tab') {
+    const focusable = Array.from(drawer.value?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])
+    if (!focusable.length) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+    return
+  }
+  if (userMenuOpen.value && event.key === 'Escape') {
+    event.preventDefault()
+    userMenuOpen.value = false
+    userMenuTrigger.value?.focus()
+  }
 }
 window.addEventListener('keydown', onEscape)
 onBeforeUnmount(() => window.removeEventListener('keydown', onEscape))
+watch(drawerOpen, async (open) => {
+  if (open) {
+    await nextTick()
+    drawerCloseButton.value?.focus()
+  } else if (drawerTrigger.value?.isConnected) {
+    drawerTrigger.value.focus()
+  }
+})
 
 async function logout(): Promise<void> {
   loggingOut.value = true
@@ -78,8 +115,8 @@ async function logout(): Promise<void> {
 </script>
 
 <template>
-  <div class="min-h-screen bg-[var(--color-background)] lg:grid lg:grid-cols-[17rem_1fr]">
-    <aside class="hidden min-h-screen bg-[var(--color-sidebar)] px-4 py-6 text-white lg:block">
+  <div class="min-h-screen min-w-0 bg-[var(--color-background)] lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]">
+    <aside class="app-sidebar hidden min-h-screen bg-[var(--color-sidebar)] px-4 py-6 text-white lg:block">
       <div class="flex items-center gap-3 px-3"><BookOpen class="size-7" aria-hidden="true" /><span class="text-lg font-semibold">ISFD N.º 9133</span></div>
       <nav class="mt-10" aria-label="Navegación lateral">
         <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined">
@@ -90,27 +127,27 @@ async function logout(): Promise<void> {
 
     <div class="min-w-0">
       <header class="flex min-h-16 items-center justify-between border-b border-[var(--color-border)] bg-white px-4 sm:px-7">
-        <button type="button" class="rounded p-2 lg:hidden" aria-label="Abrir navegación" @click="drawerOpen = true"><Menu class="size-6" /></button>
+        <button ref="drawerTrigger" type="button" class="min-h-11 min-w-11 rounded p-2 lg:hidden" aria-label="Abrir navegación" :aria-expanded="drawerOpen" aria-controls="mobile-navigation" @click="drawerOpen = true"><Menu class="size-6" aria-hidden="true" /></button>
         <p class="hidden text-sm text-[var(--color-graphite)] sm:block">Instituto Superior de Formación Docente N.º 9133</p>
         <div class="relative ml-auto">
-          <button type="button" class="flex items-center gap-2 rounded-md px-2 py-1 text-left" :aria-expanded="userMenuOpen" aria-haspopup="menu" @click="userMenuOpen = !userMenuOpen">
+          <button ref="userMenuTrigger" type="button" class="flex min-h-11 items-center gap-2 rounded-md px-2 py-1 text-left" :aria-expanded="userMenuOpen" aria-haspopup="menu" @click="userMenuOpen = !userMenuOpen">
             <span class="grid size-8 place-items-center rounded-full bg-[#f4e7e7] font-semibold text-[var(--color-brand)]">{{ auth.user?.apellidoNombre?.charAt(0) ?? 'U' }}</span>
             <span class="hidden sm:block"><span class="block text-sm font-semibold text-[var(--color-text)]">{{ auth.user?.apellidoNombre }}</span><span class="block text-xs text-[var(--color-graphite)]">{{ roleLabel }}</span></span><ChevronDown class="size-4" />
           </button>
           <div v-if="userMenuOpen" role="menu" class="absolute right-0 z-20 mt-2 w-52 rounded-md border border-[var(--color-border)] bg-white p-1 shadow-lg">
-            <RouterLink :to="{ name: 'profile' }" role="menuitem" class="block rounded px-3 py-2 hover:bg-[#f6f7f4]" @click="userMenuOpen = false">Mi perfil</RouterLink>
-            <button v-if="canChangeRole" type="button" role="menuitem" class="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[#f6f7f4]" @click="goToRoleSelection"><Repeat2 class="size-4" />Cambiar rol</button>
-            <button type="button" role="menuitem" class="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[#f6f7f4]" @click="confirmLogoutOpen = true; userMenuOpen = false"><LogOut class="size-4" />Cerrar sesión</button>
+            <RouterLink :to="{ name: 'profile' }" role="menuitem" class="flex min-h-11 items-center rounded px-3 py-2 hover:bg-[#f6f7f4]" @click="userMenuOpen = false">Mi perfil</RouterLink>
+            <button v-if="canChangeRole" type="button" role="menuitem" class="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[#f6f7f4]" @click="goToRoleSelection"><Repeat2 class="size-4" />Cambiar rol</button>
+            <button type="button" role="menuitem" class="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[#f6f7f4]" @click="confirmLogoutOpen = true; userMenuOpen = false"><LogOut class="size-4" />Cerrar sesión</button>
           </div>
         </div>
       </header>
-      <main class="p-4 sm:p-7"><AppBackButton /><slot /></main>
+      <div class="min-w-0 p-4 sm:p-7"><AppBackButton /><slot /></div>
     </div>
 
-    <div v-if="drawerOpen" role="dialog" aria-modal="true" aria-label="Navegación" class="fixed inset-0 z-40 lg:hidden">
-      <button class="absolute inset-0 bg-black/40" aria-label="Cerrar navegación" @click="closeDrawer" />
-      <aside class="relative h-full w-72 bg-[var(--color-sidebar)] p-5 text-white shadow-xl">
-        <div class="flex items-center justify-between"><span class="font-semibold">ISFD N.º 9133</span><button type="button" aria-label="Cerrar navegación" class="rounded p-2" @click="closeDrawer"><X class="size-5" /></button></div>
+    <div v-if="drawerOpen" id="mobile-navigation" ref="drawer" role="dialog" aria-modal="true" aria-label="Navegación" class="fixed inset-0 z-40 lg:hidden">
+      <button type="button" class="absolute inset-0 bg-black/40" aria-label="Cerrar navegación" @click="closeDrawer" />
+      <aside class="app-sidebar relative h-full w-[min(18rem,calc(100vw-2rem))] overflow-y-auto bg-[var(--color-sidebar)] p-5 text-white shadow-xl">
+        <div class="flex items-center justify-between gap-3"><span class="font-semibold">ISFD N.º 9133</span><button ref="drawerCloseButton" type="button" aria-label="Cerrar navegación" class="min-h-11 min-w-11 rounded p-2" @click="closeDrawer"><X class="size-5" aria-hidden="true" /></button></div>
         <nav class="mt-8" aria-label="Navegación principal">
           <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-2 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined" @click="closeDrawer"><component :is="item.icon" class="size-5" />{{ item.label }}</RouterLink>
         </nav>

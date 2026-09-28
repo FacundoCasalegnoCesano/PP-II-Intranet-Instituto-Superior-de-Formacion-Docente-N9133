@@ -1,4 +1,4 @@
-import { defineComponent, h } from 'vue'
+import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 import { createRouter, createWebHistory, type RouteLocationNormalized, useRoute, useRouter } from 'vue-router'
 import type { Role } from '@/core/auth/contracts'
 import { useAuthStore } from '@/stores/authStore'

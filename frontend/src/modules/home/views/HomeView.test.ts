@@ -35,6 +35,7 @@ const studentModules = [
 
 const administratorModules = [
   ['Usuarios', 'Administrá cuentas, roles y estados de acceso.', 'admin-users'],
+  ['Trayectorias', 'Consultá las trayectorias académicas de los alumnos.', 'admin-academic-records'],
   ['Carreras', 'Gestioná carreras y planes de estudio.', 'admin-careers'],
   ['Inscripciones a carreras', 'Inscribí alumnos, consultá la nómina y gestioná bajas.', 'admin-career-enrollments'],
   ['Materias', 'Gestioná materias, correlatividades y docentes.', 'admin-subjects'],
@@ -86,7 +87,7 @@ const exclusiveContentByRole = {
     ],
   },
   PROFESOR: {
-    labels: ['Calificaciones', 'Trayectorias', 'Mis mesas'],
+    labels: ['Calificaciones', 'Mis mesas'],
     descriptions: [
       'Cargá y consultá las calificaciones de tus cursadas.',
       'Consultá los resúmenes académicos de tus cursadas.',

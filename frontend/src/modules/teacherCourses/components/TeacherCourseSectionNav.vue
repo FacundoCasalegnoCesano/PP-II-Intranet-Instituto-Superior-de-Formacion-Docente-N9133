@@ -17,7 +17,7 @@ const sections: Array<{ key: TeacherCourseSection; label: string; route: string 
 
 <template>
   <nav aria-label="Secciones de la cursada" class="border-b border-[var(--color-border)]">
-    <ul class="flex gap-1 overflow-x-auto" role="list">
+    <ul class="flex flex-wrap gap-1" role="list">
       <li v-for="item in sections" :key="item.key">
         <RouterLink
           :to="{ name: item.route, params: { id: props.courseId }, query: { anioLectivo: String(props.anioLectivo) } }"

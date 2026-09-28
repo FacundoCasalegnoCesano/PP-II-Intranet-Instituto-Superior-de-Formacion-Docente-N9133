@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppButton from '@/ui/AppButton.vue'
+import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 import { academicLabel } from '@/core/presentation/academicLabels'
 import { teacherCoursesApi } from '../api/teacherCoursesApi'
 import TeacherCourseList from '../components/TeacherCourseList.vue'
@@ -36,6 +37,14 @@ const academicSummary = ref<AcademicSummary | null>(null)
 const gradeActionError = ref('')
 const gradeRefreshCourseId = ref<number | null>(null)
 const savingGrades = ref(false)
+const gradeSaveMessage = ref('')
+const hasUnsavedChanges = ref(false)
+const savingSection = ref(false)
+const leaveDialogOpen = ref(false)
+const leaveResolver = ref<((allow: boolean) => void) | null>(null)
+let leavePromise: Promise<boolean> | null = null
+const leaveOpener = ref<HTMLElement | null>(null)
+let removeRouteGuard: (() => void) | undefined
 const loading = ref(false)
 const loadingSelection = ref(false)
 const error = ref('')
@@ -105,6 +114,7 @@ async function loadSelection(): Promise<void> {
   gradeActionError.value = ''
   gradeRefreshCourseId.value = null
   savingGrades.value = false
+  gradeSaveMessage.value = ''
   try {
     const course = await teacherCoursesApi.get(id)
     if (request !== selectionRequest) {
@@ -153,6 +163,7 @@ async function saveGrades(payload: SaveGradesPayload): Promise<void> {
   const request = selectionRequest
   savingGrades.value = true
   gradeActionError.value = ''
+  gradeSaveMessage.value = ''
   gradeRefreshCourseId.value = null
   try {
     await teacherCoursesApi.saveGrades(payload)
@@ -169,6 +180,7 @@ async function saveGrades(payload: SaveGradesPayload): Promise<void> {
       return
     }
     grades.value = refreshedGrades
+    gradeSaveMessage.value = 'Calificaciones guardadas.'
   } catch {
     if (request === selectionRequest && selectedCourse.value?.id === payload.cursadaId) {
       gradeActionError.value = 'Las calificaciones se guardaron, pero no pudimos actualizar la vista. Podés reintentar la actualización.'
@@ -219,6 +231,44 @@ function retry(): void {
   else void loadSelection()
 }
 
+function setUnsavedChanges(value: boolean): void {
+  hasUnsavedChanges.value = value
+}
+
+function setSavingSection(value: boolean): void {
+  savingSection.value = value
+}
+
+function requestLeaveConfirmation(): Promise<boolean> {
+  if (!hasUnsavedChanges.value) return Promise.resolve(true)
+  if (leavePromise) return leavePromise
+  leaveOpener.value = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  leaveDialogOpen.value = true
+  leavePromise = new Promise(resolve => { leaveResolver.value = resolve })
+  return leavePromise
+}
+
+function cancelLeave(): void {
+  leaveDialogOpen.value = false
+  leaveResolver.value?.(false)
+  leaveResolver.value = null
+  leavePromise = null
+  const opener = leaveOpener.value
+  leaveOpener.value = null
+  void nextTick(() => opener?.focus())
+}
+
+function confirmLeave(): void {
+  leaveDialogOpen.value = false
+  hasUnsavedChanges.value = false
+  leaveResolver.value?.(true)
+  leaveResolver.value = null
+  leavePromise = null
+  const opener = leaveOpener.value
+  leaveOpener.value = null
+  void nextTick(() => opener?.focus())
+}
+
 watch(() => route.fullPath, () => {
   selectedYear.value = yearFromRoute()
   if (isList.value) void loadCourses()
@@ -226,9 +276,21 @@ watch(() => route.fullPath, () => {
 })
 
 onMounted(() => {
+  const candidate = router as unknown as { beforeEach?: (guard: (to: { fullPath: string }, from: { fullPath: string }) => Promise<boolean> | boolean) => () => void }
+  if (candidate.beforeEach) removeRouteGuard = candidate.beforeEach(async (to, from) => {
+    if (to.fullPath === from.fullPath) return true
+    if (to.name === 'login') return true
+    if (savingGrades.value || savingSection.value) {
+      gradeActionError.value = 'Esperá a que termine el guardado antes de cambiar de sección.'
+      return false
+    }
+    return requestLeaveConfirmation()
+  })
   if (isList.value) void loadCourses()
   else void loadSelection()
 })
+
+onBeforeUnmount(() => removeRouteGuard?.())
 </script>
 
 <template>
@@ -259,12 +321,13 @@ onMounted(() => {
         <div v-if="loadingSelection" role="status" aria-busy="true" aria-live="polite">Cargando cursada…</div>
         <div v-else-if="selectionError" role="alert"><p>{{ selectionError }}</p><AppButton class="mt-4" variant="secondary" @click="retry">Reintentar</AppButton></div>
         <template v-else-if="selectedCourse">
-          <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="selected-course-title" class="text-2xl font-semibold">{{ selectedCourse.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ selectedCourse.materia.carrera?.nombre ?? 'Carrera no informada' }} · {{ selectedCourse.anioLectivo }} · {{ academicLabel(selectedCourse.periodo) }}</p></div><p class="font-semibold" :class="courseIsCurrent(selectedCourse) ? 'text-[var(--color-brand)]' : 'text-[var(--color-graphite)]'">{{ courseStatus }}</p></div>
+          <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="selected-course-title" class="text-2xl font-semibold">{{ selectedCourse.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ selectedCourse.materia.carrera?.nombre ?? 'Carrera no informada' }} · Año {{ selectedCourse.anioLectivo }} · {{ academicLabel(selectedCourse.periodo) }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]" aria-live="polite">Contexto: {{ students.length || academicSummary?.alumnos.length || 0 }} alumnos inscriptos</p></div><p class="font-semibold" :class="courseIsCurrent(selectedCourse) ? 'text-[var(--color-brand)]' : 'text-[var(--color-graphite)]'">{{ courseStatus }}</p></div>
           <TeacherCourseSectionNav class="mt-6" :course-id="selectedCourse.id" :section="routeSection" :anio-lectivo="selectedYear" />
           <section v-if="routeSection === 'students'" aria-labelledby="students-title"><h3 id="students-title" class="mt-6 text-xl font-semibold">Alumnos inscriptos</h3><div v-if="!students.length" class="mt-5 rounded-lg border border-dashed border-[var(--color-border)] p-5 text-[var(--color-graphite)]" role="status">No hay alumnos inscriptos en esta cursada.</div><TeacherStudentsTable v-else :students="students" :course-id="selectedCourse.id" :anio-lectivo="selectedYear" /></section>
-          <ClassRegister v-else-if="routeSection === 'classes'" :course="selectedCourse" :students="students" :classes="classHistory" />
+          <ClassRegister v-else-if="routeSection === 'classes'" :course="selectedCourse" :students="students" :classes="classHistory" @dirty-change="setUnsavedChanges" @saving-change="setSavingSection" />
           <template v-else-if="routeSection === 'grades'">
-            <GradesGrid :course="selectedCourse" :students="students" :grades="grades" :saving="savingGrades" @save="saveGrades" />
+            <GradesGrid :course="selectedCourse" :students="students" :grades="grades" :saving="savingGrades" @save="saveGrades" @dirty-change="setUnsavedChanges" />
+            <p v-if="gradeSaveMessage" class="mt-3 text-sm text-[#245c32]" role="status" aria-live="polite">{{ gradeSaveMessage }}</p>
             <div v-if="gradeActionError" class="mt-4 rounded-md border border-[#edb8b8] bg-[#fff4f4] p-3 text-sm text-[#8b151b]" role="alert">
               <p>{{ gradeActionError }}</p>
               <AppButton v-if="gradeRefreshCourseId === selectedCourse.id" class="mt-3" variant="secondary" @click="retryGradeRefresh">Reintentar actualización</AppButton>
@@ -275,6 +338,7 @@ onMounted(() => {
           <section v-else class="mt-6 rounded-lg border border-[var(--color-border)] bg-white p-5" role="status"><h3 class="text-xl font-semibold">{{ sectionTitle }}</h3><p class="mt-2 text-[var(--color-graphite)]">Esta sección se habilitará en una tarea posterior.</p></section>
         </template>
       </section>
+      <ConfirmDialog :open="leaveDialogOpen" title="Cambios sin guardar" description="Hay cambios locales en esta cursada. ¿Querés salir y descartarlos?" confirm-label="Salir sin guardar" @cancel="cancelLeave" @confirm="confirmLeave" />
     </template>
   </main>
 </template>

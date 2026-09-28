@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, nextTick, ref, watch } from 'vue'
 import { academicLabel } from '@/core/presentation/academicLabels'
 import type {
   ExamResultsSnapshot,
@@ -35,7 +35,9 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  changed: []
+  changed: [kind?: 'results' | 'table']
+  'dirty-change': [dirty: boolean]
+  'saving-change': [saving: boolean]
 }>()
 
 const localResults = ref<InscriptoResultado[]>([])
@@ -48,12 +50,15 @@ const rowErrors = ref<Record<number, string>>({})
 const reopenReason = ref('')
 const closeConfirmationOpen = ref(false)
 const closeCancelButton = ref<HTMLButtonElement | null>(null)
+const savedMessage = ref('')
+const refreshRetryAvailable = ref(false)
 
 const readOnly = computed(() => !props.editable || props.status === 'FINALIZADA')
 const pendingCount = computed(() => localResults.value.filter((row) => row.resultado === 'PENDIENTE').length)
 const qualifiedCount = computed(() => localResults.value.filter((row) => row.resultado === 'CALIFICADO').length)
 const absentCount = computed(() => localResults.value.filter((row) => row.resultado === 'AUSENTE').length)
 const canPublish = computed(() => props.canClose && !readOnly.value && pendingCount.value === 0)
+const dirty = computed(() => Object.values(drafts.value).some(draft => draft.dirty))
 
 watch(closeConfirmationOpen, (open) => {
   if (open) void nextTick(() => closeCancelButton.value?.focus())
@@ -79,6 +84,12 @@ function syncResults(results: InscriptoResultado[], preserveDirty = true): void 
 
 watch(() => props.results, (results) => syncResults(results, true), { immediate: true, deep: true })
 watch(() => props.version, (version) => { currentVersion.value = version })
+watch(dirty, value => {
+  emit('dirty-change', value)
+  if (value) window.addEventListener('beforeunload', onBeforeUnload)
+  else window.removeEventListener('beforeunload', onBeforeUnload)
+}, { immediate: true })
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 function statusClass(status: string): string {
   if (status === 'CALIFICADO') return 'bg-[#e6f1e7] text-[#245c32]'
@@ -97,6 +108,19 @@ function markDirty(row: InscriptoResultado): void {
   const current = drafts.value[row.id] ?? draftFromResult(row)
   drafts.value[row.id] = { ...current, dirty: true }
   rowErrors.value[row.id] = ''
+  savedMessage.value = ''
+}
+
+function updateDraft(row: InscriptoResultado, nota: string): void {
+  const current = drafts.value[row.id] ?? draftFromResult(row)
+  drafts.value[row.id] = { ...current, nota, ausente: false, dirty: true }
+  markDirty(row)
+}
+
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!dirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
 }
 
 function toggleAbsence(row: InscriptoResultado): void {
@@ -130,6 +154,7 @@ async function saveRow(row: InscriptoResultado): Promise<void> {
   }
 
   savingId.value = row.id
+  emit('saving-change', true)
   panelError.value = ''
   rowErrors.value[row.id] = ''
   const input: ResultWriteInput = draft.ausente
@@ -139,12 +164,19 @@ async function saveRow(row: InscriptoResultado): Promise<void> {
     const response = await props.saveResult(input)
     currentVersion.value = response.version
     drafts.value[row.id] = { ...draft, dirty: false }
-    const snapshot = await props.reloadResults()
-    currentVersion.value = snapshot.version
-    syncResults(snapshot.results, true)
-    const saved = snapshot.results.find((item) => item.id === row.id)
-    if (saved) drafts.value[row.id] = draftFromResult(saved)
-    emit('changed')
+    try {
+      const snapshot = await props.reloadResults()
+      currentVersion.value = snapshot.version
+      syncResults(snapshot.results, true)
+      const saved = snapshot.results.find((item) => item.id === row.id)
+      if (saved) drafts.value[row.id] = draftFromResult(saved)
+      savedMessage.value = 'Resultado guardado.'
+      refreshRetryAvailable.value = false
+      emit('changed', 'results')
+    } catch {
+      panelError.value = 'El resultado se guardó, pero no pudimos actualizar la vista. Podés reintentar la actualización.'
+      refreshRetryAvailable.value = true
+    }
   } catch (error) {
     if (isConflict(error)) {
       panelError.value = 'Otra persona modificó la mesa. Recargamos la versión más reciente y conservamos tu cambio pendiente.'
@@ -152,6 +184,25 @@ async function saveRow(row: InscriptoResultado): Promise<void> {
     } else {
       rowErrors.value[row.id] = 'No pudimos guardar este resultado. Revisá la conexión e intentá nuevamente.'
     }
+  } finally {
+    emit('saving-change', false)
+    savingId.value = null
+  }
+}
+
+async function retryRefresh(): Promise<void> {
+  if (savingId.value !== null) return
+  savingId.value = -1
+  panelError.value = ''
+  try {
+    const snapshot = await props.reloadResults()
+    currentVersion.value = snapshot.version
+    syncResults(snapshot.results, true)
+    refreshRetryAvailable.value = false
+    savedMessage.value = 'Resultado guardado y vista actualizada.'
+    emit('changed', 'results')
+  } catch {
+    panelError.value = 'No pudimos actualizar la vista. Podés reintentar la actualización.'
   } finally {
     savingId.value = null
   }
@@ -173,7 +224,7 @@ async function confirmClose(): Promise<void> {
   try {
     const response = await props.closeTable(currentVersion.value)
     currentVersion.value = response.version
-    emit('changed')
+    emit('changed', 'table')
   } catch (error) {
     if (isConflict(error)) {
       panelError.value = 'Otra persona modificó la mesa antes del cierre. Recargamos la versión más reciente.'
@@ -198,7 +249,7 @@ async function reopenTable(): Promise<void> {
     const response = await props.reopenTable(motivo, currentVersion.value)
     currentVersion.value = response.version
     reopenReason.value = ''
-    emit('changed')
+    emit('changed', 'table')
   } catch (error) {
     if (isConflict(error)) {
       panelError.value = 'Otra persona modificó la mesa antes de reabrirla. Recargamos la versión más reciente.'
@@ -223,7 +274,9 @@ async function reopenTable(): Promise<void> {
       <p v-else class="rounded-full bg-[#f5eaea] px-3 py-1 text-sm font-semibold text-[var(--color-brand)]">{{ academicLabel(status) }}</p>
     </div>
 
-    <p v-if="panelError" class="mt-4 rounded-md border border-[#a31118]/30 bg-[#fff7f6] p-3 text-sm text-[#7b1116]" role="alert">{{ panelError }}</p>
+    <p v-if="panelError" class="mt-4 rounded-md border border-[#a31118]/30 bg-[#fff7f6] p-3 text-sm text-[#7b1116]" role="alert">{{ panelError }} <button v-if="refreshRetryAvailable" type="button" class="ml-2 underline" @click="retryRefresh">Reintentar actualización</button></p>
+    <p v-if="savedMessage" class="mt-4 text-sm text-[#245c32]" role="status" aria-live="polite">{{ savedMessage }}</p>
+    <p v-if="dirty" class="mt-2 text-sm text-[var(--color-graphite)]" role="status" aria-live="polite">Hay cambios sin guardar.</p>
     <p v-if="readOnly" class="mt-4 rounded-md border border-dashed border-[var(--color-border)] bg-[#f6f7f4] p-3 text-sm text-[var(--color-graphite)]">Mesa cerrada: los resultados publicados son de solo lectura.</p>
 
     <div v-if="!localResults.length" class="mt-5 rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-graphite)]">No hay alumnos inscriptos en esta mesa.</div>
@@ -237,8 +290,8 @@ async function reopenTable(): Promise<void> {
             <td class="px-3 py-4 font-semibold">{{ row.alumno.apellidoNombre }}</td>
             <td class="px-3 py-4">{{ academicLabel(row.condicion) }}</td>
             <td class="px-3 py-4"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(row.resultado)">{{ academicLabel(row.resultado) }}</span><span class="mt-2 block text-xs text-[var(--color-graphite)]">{{ resultDescription(row) }}</span></td>
-            <td class="px-3 py-4"><div class="flex items-center gap-3"><label class="block text-xs font-semibold" :for="`exam-grade-${row.id}`">Nota<input :id="`exam-grade-${row.id}`" :value="drafts[row.id]?.nota" type="number" min="0" max="10" step="1" :disabled="readOnly || drafts[row.id]?.ausente || savingId === row.id" :aria-label="`Nota de ${row.alumno.apellidoNombre}`" class="mt-1 min-h-10 w-20 rounded-md border border-[var(--color-border)] px-2 text-base font-normal" @input="drafts[row.id] = { ...(drafts[row.id] ?? draftFromResult(row)), nota: ($event.target as HTMLInputElement).value, ausente: false, dirty: true }; rowErrors[row.id] = ''" /></label><label class="mt-5 flex min-h-10 items-center gap-2 text-xs font-semibold"><input type="checkbox" :checked="drafts[row.id]?.ausente" :disabled="readOnly || savingId === row.id" :aria-label="`Ausente: ${row.alumno.apellidoNombre}`" class="h-5 w-5" @change="toggleAbsence(row)" />Ausente</label></div><p v-if="rowErrors[row.id]" class="mt-2 max-w-xs text-xs text-[#a31118]" role="alert">{{ rowErrors[row.id] }}</p></td>
-            <td class="px-3 py-4 text-right"><button type="button" class="min-h-10 rounded-md bg-[var(--color-brand)] px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" :aria-label="`Guardar resultado de ${row.alumno.apellidoNombre}`" :disabled="readOnly || savingId !== null" @click="saveRow(row)">{{ savingId === row.id ? 'Guardando…' : 'Guardar' }}</button></td>
+            <td class="px-3 py-4"><div class="flex items-center gap-3"><label class="block text-xs font-semibold" :for="`exam-grade-${row.id}`">Nota<input :id="`exam-grade-${row.id}`" :value="drafts[row.id]?.nota" type="number" min="0" max="10" step="1" :disabled="readOnly || drafts[row.id]?.ausente || savingId === row.id" :aria-label="`Nota de ${row.alumno.apellidoNombre}`" class="mt-1 min-h-11 w-20 rounded-md border border-[var(--color-border)] px-2 text-base font-normal" @input="updateDraft(row, ($event.target as HTMLInputElement).value)" /></label><label class="mt-5 flex min-h-11 items-center gap-2 text-xs font-semibold"><input type="checkbox" :checked="drafts[row.id]?.ausente" :disabled="readOnly || savingId === row.id" :aria-label="`Ausente: ${row.alumno.apellidoNombre}`" class="h-5 w-5" @change="toggleAbsence(row)" />Ausente</label></div><p v-if="rowErrors[row.id]" class="mt-2 max-w-xs text-xs text-[#a31118]" role="alert">{{ rowErrors[row.id] }}</p></td>
+            <td class="px-3 py-4 text-right"><button type="button" class="min-h-11 rounded-md bg-[var(--color-brand)] px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" :aria-label="`Guardar resultado de ${row.alumno.apellidoNombre}`" :disabled="readOnly || savingId !== null" @click="saveRow(row)">{{ savingId === row.id ? 'Guardando…' : 'Guardar' }}</button></td>
           </tr>
         </tbody>
       </table>

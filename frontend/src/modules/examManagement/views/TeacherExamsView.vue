@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 import AdminExamsList from '../components/ExamTableList.vue'
 import ExamResultPanel from '../components/ExamResultPanel.vue'
 import { closeExamTable, getExamWorkspace, listExamTables, reloadExamResults, saveExamResult } from '../api/examsApi'
@@ -21,6 +22,13 @@ const pagination = ref({ page: 1, limit: 20, total: 0, totalPages: 0 })
 const loading = ref(false)
 const error = ref('')
 const requestId = ref(0)
+const hasUnsavedChanges = ref(false)
+const savingResults = ref(false)
+const leaveDialogOpen = ref(false)
+const leaveResolver = ref<((allow: boolean) => void) | null>(null)
+let leavePromise: Promise<boolean> | null = null
+const leaveOpener = ref<HTMLElement | null>(null)
+let removeRouteGuard: (() => void) | undefined
 
 async function loadList(): Promise<void> {
   const current = ++requestId.value
@@ -78,18 +86,67 @@ async function reloadResults(): Promise<ExamResultsSnapshot> {
   return snapshot
 }
 
-function onChanged(): void {
-  void loadWorkspace()
+function onChanged(kind?: 'results' | 'table'): void {
+  if (kind === 'table') void loadWorkspace()
+}
+
+function setUnsavedChanges(value: boolean): void {
+  hasUnsavedChanges.value = value
+}
+
+function setSavingResults(value: boolean): void {
+  savingResults.value = value
+}
+
+function requestLeaveConfirmation(): Promise<boolean> {
+  if (!hasUnsavedChanges.value) return Promise.resolve(true)
+  if (leavePromise) return leavePromise
+  leaveOpener.value = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  leaveDialogOpen.value = true
+  leavePromise = new Promise(resolve => { leaveResolver.value = resolve })
+  return leavePromise
+}
+
+function cancelLeave(): void {
+  leaveDialogOpen.value = false
+  leaveResolver.value?.(false)
+  leaveResolver.value = null
+  leavePromise = null
+  const opener = leaveOpener.value
+  leaveOpener.value = null
+  void nextTick(() => opener?.focus())
+}
+
+function confirmLeave(): void {
+  leaveDialogOpen.value = false
+  hasUnsavedChanges.value = false
+  leaveResolver.value?.(true)
+  leaveResolver.value = null
+  leavePromise = null
+  const opener = leaveOpener.value
+  leaveOpener.value = null
+  void nextTick(() => opener?.focus())
 }
 
 watch(() => route.fullPath, () => { if (isList.value) void loadList(); else void loadWorkspace() })
-onMounted(() => { if (isList.value) void loadList(); else void loadWorkspace() })
+onMounted(() => {
+  const candidate = router as unknown as { beforeEach?: (guard: (to: { fullPath: string }, from: { fullPath: string }) => Promise<boolean> | boolean) => () => void }
+  if (candidate.beforeEach) removeRouteGuard = candidate.beforeEach(async (to, from) => {
+    if (to.fullPath === from.fullPath) return true
+    if (!auth.isAuthenticated) return true
+    if (savingResults.value) return false
+    return requestLeaveConfirmation()
+  })
+  if (isList.value) void loadList(); else void loadWorkspace()
+})
+onBeforeUnmount(() => removeRouteGuard?.())
 </script>
 
 <template>
   <main aria-labelledby="teacher-exams-title" class="mx-auto max-w-6xl">
     <div><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Espacio docente</p><h1 id="teacher-exams-title" class="mt-2 text-3xl font-semibold">Mis mesas de tribunal</h1><p class="mt-2 text-[var(--color-graphite)]">Cargá resultados sólo en las mesas donde participás y cerrá cuando seas presidente.</p></div>
     <template v-if="isList"><div class="mt-6"><AdminExamsList :exams="exams" :pagination="pagination" :loading="loading" :error="error" empty-text="No tenés mesas de tribunal asignadas." detail-route-name="teacher-exam-detail" @retry="loadList" @page="changePage" /></div></template>
-    <template v-else><div class="mt-5"><RouterLink :to="{ name: 'teacher-exams', query: route.query }" class="font-semibold text-[var(--color-brand)]">← Volver a mis mesas</RouterLink></div><div v-if="loading" class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-10 text-center" role="status">Cargando mesa…</div><div v-else-if="error" class="mt-5 rounded-xl border border-red-200 bg-red-50 p-6 text-red-800" role="alert"><p>{{ error }}</p><button type="button" class="mt-3 min-h-10 rounded-md bg-[var(--color-brand)] px-4 font-semibold text-white" @click="loadWorkspace">Reintentar</button></div><template v-else-if="workspace"><section class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6"><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Mesa de examen</p><h2 class="mt-2 text-2xl font-semibold">{{ workspace.detail.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ examDateLabel(workspace.detail.fecha) }} · {{ academicLabel(workspace.detail.tipoExamen) }} · llamado {{ workspace.detail.llamado }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]">Estado: <strong>{{ academicLabel(workspace.detail.estadoMesa) }}</strong></p><h3 class="mt-5 text-lg font-semibold">Tribunal</h3><ul class="mt-2 grid gap-2 sm:grid-cols-2"><li v-for="member in workspace.detail.tribunales" :key="member.id ?? `${member.profesorId}-${member.rolTribunal}`" class="rounded-lg bg-[#f6f7f4] p-3 text-sm"><strong>{{ academicLabel(member.rolTribunal) }}</strong> · {{ member.apellidoNombre }}</li></ul></section><ExamResultPanel :results="workspace.results" :version="workspace.detail.version" :status="workspace.detail.estadoMesa" :editable="workspace.detail.estadoMesa !== 'FINALIZADA'" :can-close="isPresident() && tribunalComplete(workspace.detail.tribunales)" :save-result="saveResult" :reload-results="reloadResults" :close-table="isPresident() ? (version) => closeExamTable(examId, version) : undefined" @changed="onChanged" /></template></template>
+    <template v-else><div class="mt-5"><RouterLink :to="{ name: 'teacher-exams', query: route.query }" class="font-semibold text-[var(--color-brand)]">← Volver a mis mesas</RouterLink></div><div v-if="loading" class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-10 text-center" role="status">Cargando mesa…</div><div v-else-if="error" class="mt-5 rounded-xl border border-red-200 bg-red-50 p-6 text-red-800" role="alert"><p>{{ error }}</p><button type="button" class="mt-3 min-h-11 rounded-md bg-[var(--color-brand)] px-4 font-semibold text-white" @click="loadWorkspace">Reintentar</button></div><template v-else-if="workspace"><section class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6"><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Mesa de examen</p><h2 class="mt-2 text-2xl font-semibold">{{ workspace.detail.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ examDateLabel(workspace.detail.fecha) }} · {{ academicLabel(workspace.detail.tipoExamen) }} · llamado {{ workspace.detail.llamado }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]">Estado: <strong>{{ academicLabel(workspace.detail.estadoMesa) }}</strong></p><h3 class="mt-5 text-lg font-semibold">Tribunal</h3><ul class="mt-2 grid gap-2 sm:grid-cols-2"><li v-for="member in workspace.detail.tribunales" :key="member.id ?? `${member.profesorId}-${member.rolTribunal}`" class="rounded-lg bg-[#f6f7f4] p-3 text-sm"><strong>{{ academicLabel(member.rolTribunal) }}</strong> · {{ member.apellidoNombre }}</li></ul></section><ExamResultPanel :results="workspace.results" :version="workspace.detail.version" :status="workspace.detail.estadoMesa" :editable="workspace.detail.estadoMesa !== 'FINALIZADA'" :can-close="isPresident() && tribunalComplete(workspace.detail.tribunales)" :save-result="saveResult" :reload-results="reloadResults" :close-table="isPresident() ? (version) => closeExamTable(examId, version) : undefined" @changed="onChanged" @dirty-change="setUnsavedChanges" @saving-change="setSavingResults" /></template></template>
+    <ConfirmDialog :open="leaveDialogOpen" title="Cambios sin guardar" description="Hay resultados locales que todavía no se guardaron. ¿Querés salir y descartarlos?" confirm-label="Salir sin guardar" @cancel="cancelLeave" @confirm="confirmLeave" />
   </main>
 </template>
