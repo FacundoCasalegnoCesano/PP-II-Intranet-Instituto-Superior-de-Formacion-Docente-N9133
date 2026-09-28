@@ -2,7 +2,7 @@ import { Router } from 'express';
 import inscripcionCarreraController from '../controllers/inscripcionCarreraController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
-import { inscripcionCarreraSchema } from '../validations/inscripcionCarreraValidation.js';
+import { inscripcionCarreraSchema, inscripcionesCarreraQuerySchema } from '../validations/inscripcionCarreraValidation.js';
 import { ROLES } from '../constants/roles.js';
 import { paginationQuerySchema } from '../validations/paginationValidation.js';
 
@@ -26,6 +26,7 @@ router.delete('/:id',
 // Ver carreras de un alumno (Alumno puede ver las suyas, Admin todas)
 router.get('/alumno/:alumnoId',
   roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
+  validationMiddleware(inscripcionesCarreraQuerySchema, 'query'),
   inscripcionCarreraController.getCarrerasByAlumno
 );
 

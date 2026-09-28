@@ -99,7 +99,11 @@ class InscripcionCarreraController {
       }
 
       const currentUser = req.user!;
-      const inscripciones = await inscripcionCarreraService.getInscripcionesByAlumno(alumnoId, currentUser);
+      const inscripciones = await inscripcionCarreraService.getInscripcionesByAlumno(
+        alumnoId,
+        currentUser,
+        { includeInactive: (req.query.includeInactive as unknown) === true || req.query.includeInactive === 'true' }
+      );
       
       res.json({
         success: true,

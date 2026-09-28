@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import { normalizePagination } from '../utils/pagination.js';
 
 export interface UserFilters {
   page?: number;
@@ -12,6 +13,14 @@ export interface AlumnoProfesorFilters {
   page?: number;
   limit?: number;
   search?: string;
+}
+
+export interface AlumnoAdministrativoFilters {
+  page?: number;
+  limit?: number;
+  search?: string;
+  activo?: string | boolean;
+  carreraId?: number;
 }
 
 export interface UserCreateData {
@@ -192,6 +201,59 @@ class UserRepository {
         total,
         totalPages: Math.ceil(total / limit)
       }
+    };
+  }
+
+  async findAlumnosForAdministrativo(filters: AlumnoAdministrativoFilters = {}) {
+    const { page, limit, skip } = normalizePagination(filters);
+    const conditions: any[] = [{ rol: { contains: 'ALUMNO' } }];
+
+    if (filters.activo !== undefined && filters.activo !== '') {
+      conditions.push({ activo: filters.activo === 'true' || filters.activo === true });
+    }
+
+    if (filters.search) {
+      const searchConditions: any[] = [
+        { apellidoNombre: { contains: filters.search } },
+        { email: { contains: filters.search } }
+      ];
+      if (/^\d{7,8}$/.test(filters.search)) {
+        searchConditions.push({ dni: { equals: parseInt(filters.search, 10) } });
+      }
+      conditions.push({ OR: searchConditions });
+    }
+
+    if (filters.carreraId !== undefined) {
+      conditions.push({ inscripcionesCarrera: { some: { carreraId: filters.carreraId } } });
+    }
+
+    const where = { AND: conditions };
+    const [usuarios, total] = await Promise.all([
+      prisma.usuario.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ apellidoNombre: 'asc' }, { idUsuario: 'asc' }],
+        select: {
+          idUsuario: true,
+          apellidoNombre: true,
+          dni: true,
+          email: true,
+          activo: true,
+          rol: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      }),
+      prisma.usuario.count({ where })
+    ]);
+
+    return {
+      data: usuarios.map((user: any) => ({
+        ...user,
+        roles: user.rol ? user.rol.split(',').map((role: string) => role.trim()) : []
+      })),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
     };
   }
 

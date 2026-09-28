@@ -350,9 +350,10 @@ paths:
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
-        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
         - { name: activo, in: query, schema: { type: string, enum: ['true', 'false'] } }
         - { name: search, in: query, schema: { type: string } }
+        - { name: carreraId, in: query, schema: { type: integer, minimum: 1 }, description: Filtra alumnos con inscripción activa o histórica en la carrera }
       responses:
         '200': { $ref: '#/components/responses/ListOK' }
     post:
@@ -760,6 +761,7 @@ paths:
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
+        - { name: includeInactive, in: query, schema: { type: boolean, default: false }, description: Solo ADMINISTRATIVO puede incluir inscripciones dadas de baja }
       responses:
         '200':
           description: Inscripciones de carrera

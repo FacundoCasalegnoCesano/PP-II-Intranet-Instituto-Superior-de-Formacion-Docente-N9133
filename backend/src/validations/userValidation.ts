@@ -132,3 +132,14 @@ export const listUsersSchema = Joi.object({
     .max(100)
     .allow('', null)
 });
+
+export const listAlumnosSchema = listUsersSchema.keys({
+  carreraId: Joi.number()
+    .integer()
+    .positive()
+    .messages({
+      'number.base': 'El ID de la carrera debe ser un número',
+      'number.integer': 'El ID de la carrera debe ser un número entero',
+      'number.positive': 'El ID de la carrera debe ser mayor a 0'
+    })
+});

@@ -32,3 +32,10 @@ export const inscripcionCarreraSchema = Joi.object({
       'number.max': 'El ciclo lectivo no puede exceder 2100'
     })
 });
+
+export const inscripcionesCarreraQuerySchema = Joi.object({
+  includeInactive: Joi.boolean()
+    .truthy('true')
+    .falsy('false')
+    .default(false)
+});
