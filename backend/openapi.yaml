@@ -948,7 +948,7 @@ paths:
     get:
       tags: [Exámenes]
       summary: Obtener examen por ID (profesor solo si integra tribunal)
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
