@@ -305,6 +305,20 @@ class UserRepository {
     });
   }
 
+  async recordLoginFailure(id: number, now = new Date()) {
+    return prisma.$transaction(async (tx) => {
+      await tx.usuario.update({ where: { idUsuario: id }, data: { loginFailedCount: { increment: 1 } } });
+      const user = await tx.usuario.findUnique({ where: { idUsuario: id }, select: { loginFailedCount: true } });
+      const count = user?.loginFailedCount ?? 0;
+      const delayMs = count >= 5 ? Math.min(15 * 60_000, 30_000 * 2 ** (count - 5)) : 0;
+      return tx.usuario.update({ where: { idUsuario: id }, data: { loginLockedUntil: delayMs ? new Date(now.getTime() + delayMs) : null } });
+    });
+  }
+
+  async clearLoginFailures(id: number) {
+    return prisma.usuario.update({ where: { idUsuario: id }, data: { loginFailedCount: 0, loginLockedUntil: null } });
+  }
+
   async updateBackupCodes(id: number, backupCodes: string) {
     return await prisma.usuario.update({
       where: { idUsuario: id },

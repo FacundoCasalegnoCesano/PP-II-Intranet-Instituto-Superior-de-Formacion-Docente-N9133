@@ -181,6 +181,8 @@ model Usuario {
   ultimoAcceso       DateTime? @map("ultimo_acceso")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+  loginFailedCount   Int       @default(0) @map("login_failed_count")
+  loginLockedUntil   DateTime? @map("login_locked_until")
 
   alumno                       Alumno?
   sesiones                     Sesion[]

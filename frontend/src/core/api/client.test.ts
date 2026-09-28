@@ -182,6 +182,24 @@ describe('ApiClient', () => {
     expect(fetcher.mock.calls.filter(([url]) => url === '/api/auth/refresh-token')).toHaveLength(1)
   })
 
+  it('discards a stale refresh after logout and login replaced the session', async () => {
+    let resolveRefresh: ((response: Response) => void) | undefined
+    const refresh = new Promise<Response>((resolve) => { resolveRefresh = resolve })
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ success: false, message: 'Expired' }, 401))
+      .mockImplementationOnce(() => refresh)
+    const { api, storage } = client(fetcher)
+
+    const request = api.get('/protected')
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+    storage.save({ ...session, accessToken: 'new-access', refreshToken: 'new-refresh', sessionId: 18 })
+    resolveRefresh?.(jsonResponse({ success: true, data: { accessToken: 'stale-access', refreshToken: 'stale-refresh' } }))
+
+    await expect(request).rejects.toMatchObject({ status: 401 })
+    expect(storage.read()).toMatchObject({ accessToken: 'new-access', refreshToken: 'new-refresh', sessionId: 18 })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
   it('propagates 403 without refreshing or clearing the session', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({ success: false, message: 'Sin permiso', code: 'ROLE_REQUIRED' }, 403),

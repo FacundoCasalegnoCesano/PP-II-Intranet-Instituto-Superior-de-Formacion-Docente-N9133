@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma.js';
 import { hashPassword } from '../utils/bcrypt.js';
+import passwordResetTokenRepository from '../repositories/passwordResetTokenRepository.js';
 
 async function resetAdminPassword(): Promise<void> {
   const args = process.argv.slice(2);
@@ -44,13 +45,7 @@ async function resetAdminPassword(): Promise<void> {
 
     const passwordHash = await hashPassword(newPassword);
 
-    await prisma.usuario.update({
-      where: { idUsuario: user.idUsuario },
-      data: {
-        passwordHash,
-        activo: true // Desbloquear por las dudas
-      }
-    });
+    await passwordResetTokenRepository.resetPasswordForUser(user.idUsuario, passwordHash, new Date(), true);
 
     console.log(`✅ Admin ${email} password reset via CLI at ${new Date().toISOString()}`);
     process.exit(0);

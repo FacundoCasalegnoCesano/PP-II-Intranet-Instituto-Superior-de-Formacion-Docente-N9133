@@ -253,14 +253,17 @@ test('ambos recorridos respetan el orden tokens, usuario y sesiones', async () =
   const txForPublic = {
     passwordResetToken: {
       findFirst: async () => { publicEvents.push('tokens:find'); return { id: 4, usuarioId: 21 }; },
-      updateMany: async () => { publicEvents.push('tokens'); return { count: 1 }; }
+      updateMany: async () => {
+        publicEvents.push(publicEvents.includes('tokens') ? 'tokens:pending' : 'tokens');
+        return { count: 1 };
+      }
     },
     usuario: { update: async () => { publicEvents.push('usuario'); return {}; } },
     sesion: { updateMany: async () => { publicEvents.push('sesiones'); return { count: 1 }; } }
   };
   replaceMethod(prisma, '$transaction', async (callback: any) => callback(txForPublic));
   await passwordResetTokenRepository.consumeAndReset({ tokenHash: 'c'.repeat(64), newPasswordHash: 'hash-public' });
-  assert.deepEqual(publicEvents, ['tokens:find', 'tokens', 'usuario', 'sesiones']);
+  assert.deepEqual(publicEvents, ['tokens:find', 'tokens', 'tokens:pending', 'usuario', 'sesiones']);
 });
 
 test('un fallo intermedio rechaza la operación y no informa éxito; el rollback real queda a cargo de Prisma/MySQL', async () => {
