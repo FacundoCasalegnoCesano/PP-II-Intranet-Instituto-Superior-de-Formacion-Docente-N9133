@@ -928,6 +928,12 @@ paths:
       summary: Listar mesas disponibles para el alumno autenticado
       description: Devuelve mesas futuras, activas y abiertas, incluidas en un período EXAMEN vigente, pertenecientes a una carrera activa del alumno y para las que cumple condición académica y correlatividades. La fecha conserva hora porque representa el momento del examen final.
       x-roles: [ALUMNO]
+      parameters:
+        - name: includeNoHabilitadas
+          in: query
+          required: false
+          description: En true incluye mesas futuras propias que explican por qué no están habilitadas.
+          schema: { type: boolean, default: false }
       responses:
         '200':
           description: Mesas habilitadas para inscripción autónoma
@@ -940,7 +946,10 @@ paths:
                   success: { type: boolean, example: true }
                   data:
                     type: array
-                    items: { $ref: '#/components/schemas/MesaDisponibleAlumno' }
+                    items:
+                      oneOf:
+                        - { $ref: '#/components/schemas/MesaDisponibleAlumno' }
+                        - { $ref: '#/components/schemas/MesaDisponibleAlumnoDisponibilidad' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -1565,9 +1574,26 @@ paths:
     get:
       tags: [Asistencias]
       summary: Historial de asistencia del alumno
+      description: Sin filtros conserva el historial legacy; para el rol ALUMNO la respuesta legacy omite observacion. Con cursadaId y carreraId juntos devuelve el detalle paginado y omite observacion del alumno. page y limit sólo se aceptan junto con ambos filtros de detalle.
       x-roles: [ADMINISTRATIVO, ALUMNO]
-      parameters: [{ name: alumnoId, in: path, required: true, schema: { type: integer } }]
-      responses: { '200': { $ref: '#/components/responses/OK' } }
+      parameters:
+        - { name: alumnoId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: cursadaId, in: query, required: false, description: Requerido junto con carreraId para el modo detalle, schema: { type: integer, minimum: 1 } }
+        - { name: carreraId, in: query, required: false, description: Requerido junto con cursadaId para el modo detalle, schema: { type: integer, minimum: 1 } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Historial legacy o detalle paginado según los filtros enviados
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/AsistenciaAlumnoLegacyResponse' }
+                  - { $ref: '#/components/schemas/AsistenciaAlumnoDetalleResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /calificaciones/cursadas-disponibles:
     get:
@@ -2726,9 +2752,9 @@ components:
     EstadoMesa:
       type: string
       enum: [ABIERTA, EN_PROCESO, FINALIZADA]
-    MesaDisponibleAlumno:
+    MesaDisponibleAlumnoBase:
       type: object
-      required: [id, materia, fecha, tipoExamen, llamado, tribunal, condicion, inscripto, version]
+      required: [id, materia, fecha, tipoExamen, llamado, tribunal, version]
       properties:
         id: { type: integer, minimum: 1 }
         version: { type: integer, minimum: 0 }
@@ -2756,8 +2782,59 @@ components:
               profesorId: { type: integer, minimum: 1 }
               apellidoNombre: { type: string }
               rolTribunal: { type: string, enum: [PRESIDENTE, VOCAL, SUPLENTE] }
-        condicion: { type: string, enum: [REGULAR, LIBRE] }
-        inscripto: { type: boolean }
+    MesaDisponibleAlumno:
+      allOf:
+        - { $ref: '#/components/schemas/MesaDisponibleAlumnoBase' }
+        - type: object
+          required: [condicion, inscripto]
+          properties:
+            condicion: { type: string, enum: [REGULAR, LIBRE] }
+            inscripto: { type: boolean }
+    MesaDisponibleAlumnoDisponibilidad:
+      oneOf:
+        - $ref: '#/components/schemas/MesaDisponibleHabilitada'
+        - $ref: '#/components/schemas/MesaDisponibleNoHabilitada'
+        - $ref: '#/components/schemas/MesaDisponibleYaInscripto'
+      discriminator:
+        propertyName: estadoDisponibilidad
+    MesaDisponibleHabilitada:
+      allOf:
+        - { $ref: '#/components/schemas/MesaDisponibleAlumnoBase' }
+        - type: object
+          required: [estadoDisponibilidad, condicion, inscripto, motivos]
+          properties:
+            estadoDisponibilidad: { type: string, enum: [HABILITADA] }
+            condicion: { type: string, enum: [REGULAR, LIBRE] }
+            inscripto: { type: boolean, enum: [false] }
+            motivos: { type: array, maxItems: 0, items: { $ref: '#/components/schemas/MotivoDisponibilidad' } }
+    MesaDisponibleNoHabilitada:
+      allOf:
+        - { $ref: '#/components/schemas/MesaDisponibleAlumnoBase' }
+        - type: object
+          required: [estadoDisponibilidad, condicion, inscripto, motivos]
+          properties:
+            estadoDisponibilidad: { type: string, enum: [NO_HABILITADA] }
+            condicion: { type: string, nullable: true, enum: [REGULAR, LIBRE, null] }
+            inscripto: { type: boolean, enum: [false] }
+            motivos: { type: array, minItems: 1, items: { $ref: '#/components/schemas/MotivoDisponibilidad' } }
+    MesaDisponibleYaInscripto:
+      allOf:
+        - { $ref: '#/components/schemas/MesaDisponibleAlumnoBase' }
+        - type: object
+          required: [estadoDisponibilidad, condicion, inscripto, motivos]
+          properties:
+            estadoDisponibilidad: { type: string, enum: [YA_INSCRIPTO] }
+            condicion: { type: string, enum: [REGULAR, LIBRE] }
+            inscripto: { type: boolean, enum: [true] }
+            motivos: { type: array, maxItems: 0, items: { $ref: '#/components/schemas/MotivoDisponibilidad' } }
+    MotivoDisponibilidad:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo: { type: string, enum: [PERIODO, CORRELATIVA, CONDICION] }
+        materiaRequeridaId: { type: integer }
+        materiaRequeridaNombre: { type: string }
+        mensaje: { type: string }
     Pagination:
       type: object
       required: [page, limit, total, totalPages]
@@ -2766,6 +2843,38 @@ components:
         limit: { type: integer }
         total: { type: integer }
         totalPages: { type: integer }
+    AsistenciaAlumnoDetalle:
+      type: object
+      required: [cursadaId, materia, anioLectivo, periodo, fecha, presente, justificado]
+      properties:
+        cursadaId: { type: integer, minimum: 1 }
+        materia:
+          type: object
+          required: [id, nombre]
+          properties:
+            id: { type: integer, minimum: 1 }
+            nombre: { type: string }
+        anioLectivo: { type: integer }
+        periodo: { type: string }
+        fecha: { type: string, format: date }
+        presente: { type: boolean }
+        justificado: { type: boolean }
+    AsistenciaAlumnoLegacyResponse:
+      type: object
+      required: [success, data]
+      additionalProperties: false
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { type: array, items: { type: object } }
+    AsistenciaAlumnoDetalleResponse:
+      type: object
+      required: [success, data, pagination]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AsistenciaAlumnoDetalle' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
     MesaListItem:
       type: object
       required: [id, materia, fecha, tipoExamen, llamado, estadoMesa, version, tribunales, _count]

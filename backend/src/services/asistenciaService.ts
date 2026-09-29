@@ -10,6 +10,7 @@ import {
   verificarPermisoMutacionCursada
 } from '../utils/docenteHelper.js';
 import { fechaPerteneceAlAnioLectivo } from '../utils/cicloLectivo.js';
+import type { PaginationInput } from '../utils/pagination.js';
 
 interface FilaCarga {
   alumnoId: number; // id de cuenta (Usuario.idUsuario)
@@ -79,7 +80,7 @@ class AsistenciaService {
     return await asistenciaRepository.findByCursada(cursadaId, fechaNormalizada);
   }
 
-  async getByAlumno(alumnoUsuarioId: number, currentUser: any) {
+  async getByAlumno(alumnoUsuarioId: number, currentUser: any, filters: PaginationInput & { cursadaId?: number; carreraId?: number } = {}) {
     if (currentUser.rol === ROLES.PROFESOR) {
       throw new AppError(403, 'Los profesores deben consultar asistencia desde sus cursadas');
     }
@@ -92,7 +93,23 @@ class AsistenciaService {
     }
 
     const idAlumno = await getAlumnoIdByUsuarioId(alumnoUsuarioId);
-    return await asistenciaRepository.findByAlumno(idAlumno);
+    const detailRequested = filters.cursadaId !== undefined || filters.carreraId !== undefined;
+    if (!detailRequested) {
+      const rows = await asistenciaRepository.findByAlumno(idAlumno);
+      if (currentUser.rol === ROLES.ALUMNO) {
+        return rows.map(({ observacion: _observacion, ...row }) => row);
+      }
+      return rows;
+    }
+
+    if (filters.cursadaId === undefined || filters.carreraId === undefined) {
+      throw new AppError(400, 'cursadaId y carreraId son requeridos juntos para consultar el detalle');
+    }
+    const enrollment = await asistenciaRepository.findAlumnoCursada(idAlumno, filters.cursadaId);
+    if (!enrollment || enrollment.cursada?.materia.carreraId !== filters.carreraId) {
+      throw new AppError(404, 'Cursada no encontrada para el alumno y la carrera indicados');
+    }
+    return asistenciaRepository.findDetailByAlumno(idAlumno, filters.cursadaId, filters);
   }
 
   /**

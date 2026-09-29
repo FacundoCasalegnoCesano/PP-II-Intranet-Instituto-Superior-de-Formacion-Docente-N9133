@@ -45,7 +45,16 @@ class AsistenciaController {
         return;
       }
 
-      const data = await asistenciaService.getByAlumno(alumnoId, req.user);
+      const data = await asistenciaService.getByAlumno(alumnoId, req.user, {
+        cursadaId: req.query.cursadaId as number | undefined,
+        carreraId: req.query.carreraId as number | undefined,
+        page: req.query.page as number | undefined,
+        limit: req.query.limit as number | undefined
+      });
+      if ('pagination' in data) {
+        res.json({ success: true, data: data.data, pagination: data.pagination });
+        return;
+      }
       res.json({ success: true, data });
     } catch (error) {
       next(error);
