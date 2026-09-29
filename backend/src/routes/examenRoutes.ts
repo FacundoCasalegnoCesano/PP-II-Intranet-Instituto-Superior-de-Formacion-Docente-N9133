@@ -11,6 +11,7 @@ import {
   cerrarExamenSchema,
   reabrirExamenSchema,
   listExamenSchema,
+  disponiblesExamenSchema,
   expectedVersionQuerySchema
 } from '../validations/examenValidation.js';
 import { ROLES } from '../constants/roles.js';
@@ -34,6 +35,7 @@ router.get('/',
 
 router.get('/disponibles',
   roleCheck(ROLES.ALUMNO),
+  validationMiddleware(disponiblesExamenSchema, 'query'),
   examenController.getMesasDisponibles
 );
 

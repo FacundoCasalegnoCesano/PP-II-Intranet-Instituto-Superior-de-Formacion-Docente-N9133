@@ -14,7 +14,14 @@ type CurrentUser = {
   rol: string;
 };
 
-interface MesaDisponibleAlumno {
+interface MotivoDisponibilidad {
+  codigo: 'PERIODO' | 'CORRELATIVA' | 'CONDICION';
+  materiaRequeridaId?: number;
+  materiaRequeridaNombre?: string;
+  mensaje: string;
+}
+
+interface MesaDisponibleBase {
   id: number;
   version?: number;
   materia: {
@@ -33,8 +40,14 @@ interface MesaDisponibleAlumno {
     apellidoNombre: string;
     rolTribunal: string;
   }>;
-  condicion: 'REGULAR' | 'LIBRE';
+  condicion: 'REGULAR' | 'LIBRE' | null;
   inscripto: boolean;
+  estadoDisponibilidad: 'HABILITADA' | 'NO_HABILITADA' | 'YA_INSCRIPTO';
+  motivos: MotivoDisponibilidad[];
+}
+
+interface MesaDisponibleAlumno extends MesaDisponibleBase {
+  estadoDisponibilidad: 'HABILITADA' | 'NO_HABILITADA' | 'YA_INSCRIPTO';
 }
 
 class ExamenService {
@@ -293,7 +306,8 @@ class ExamenService {
 
   async getMesasDisponibles(
     currentUser: CurrentUser,
-    evaluadoEn = new Date()
+    evaluadoEn = new Date(),
+    includeNoHabilitadas = false
   ): Promise<MesaDisponibleAlumno[]> {
     if (currentUser.rol !== ROLES.ALUMNO) {
       throw new Error('Solo alumnos pueden consultar mesas disponibles');
@@ -308,7 +322,8 @@ class ExamenService {
       alumnoId: idAlumno,
       cicloLectivo: evaluadoEn.getFullYear(),
       evaluadoEn,
-      fechaDesde
+      fechaDesde,
+      includeNoHabilitadas
     });
     if (mesas.length === 0) return [];
 
@@ -323,40 +338,68 @@ class ExamenService {
     ]);
 
     return mesas.flatMap<MesaDisponibleAlumno>(mesa => {
+      const inscripcionActiva = mesa.inscripciones.find(inscripcion => inscripcion.fechaBaja === null);
+      if (includeNoHabilitadas && inscripcionActiva) {
+        return [this.mapMesaDisponible(mesa, inscripcionActiva.condicion === 'LIBRE' ? 'LIBRE' : 'REGULAR', true, 'YA_INSCRIPTO', [])];
+      }
       const correlatividades = evaluarCorrelatividades({
         modo: 'RENDIR',
         correlatividades: mesa.materia.correlatividadesOrigen,
         materiasCumplidas: materiasAprobadas
       });
-      if (!correlatividades.cumple) return [];
-
       const condicion = regularidadesVigentes.has(mesa.materiaId)
         ? 'REGULAR'
         : mesa.materia.inscripciones.length > 0
           ? 'LIBRE'
           : null;
-      if (condicion === null) return [];
+      if (!includeNoHabilitadas) {
+        if (!correlatividades.cumple || condicion === null) return [];
+        return [this.mapMesaDisponible(mesa, condicion, mesa.inscripciones.some(inscripcion => inscripcion.fechaBaja === null), 'HABILITADA', [], false)];
+      }
 
-      return [{
-        id: mesa.id,
-        materia: {
-          id: mesa.materia.id,
-          nombre: mesa.materia.nombre,
-          carrera: mesa.materia.carrera
-        },
-        fecha: mesa.fecha,
-        tipoExamen: mesa.tipoExamen,
-        llamado: mesa.llamado,
-        tribunal: mesa.tribunales.map(tribunal => ({
-          profesorId: tribunal.profesorId,
-          apellidoNombre: tribunal.profesor.apellidoNombre,
-          rolTribunal: tribunal.rolTribunal
-        })),
-        condicion,
-        inscripto: mesa.inscripciones.some(inscripcion => inscripcion.fechaBaja === null),
-        ...((mesa as any).version === undefined ? {} : { version: (mesa as any).version })
-      }];
+      const motivos: MotivoDisponibilidad[] = [];
+      const periodoVigente = (mesa.periodosHabilitadores ?? []).some(({ periodoInscripcion }) =>
+        periodoInscripcion.tipo === 'EXAMEN' && periodoInscripcion.activo &&
+        periodoInscripcion.fechaInicio <= evaluadoEn && periodoInscripcion.fechaFin >= evaluadoEn
+      );
+      if (!periodoVigente) motivos.push({ codigo: 'PERIODO', mensaje: 'No hay un período de inscripción vigente para esta mesa' });
+      if (!correlatividades.cumple && correlatividades.primerError) {
+        motivos.push({
+          codigo: 'CORRELATIVA',
+          materiaRequeridaId: correlatividades.primerError.materiaRequeridaId,
+          materiaRequeridaNombre: correlatividades.primerError.nombreMateria,
+          mensaje: `Debés aprobar ${correlatividades.primerError.nombreMateria} antes de rendir esta materia`
+        });
+      }
+      if (condicion === null) motivos.push({ codigo: 'CONDICION', mensaje: 'No cumplís con una condición académica para rendir esta mesa' });
+      return [this.mapMesaDisponible(mesa, condicion, false, motivos.length ? 'NO_HABILITADA' : 'HABILITADA', motivos)];
     });
+  }
+
+  private mapMesaDisponible(
+    mesa: import('../repositories/examenRepository.js').MesaDisponibleParaAlumno,
+    condicion: 'REGULAR' | 'LIBRE' | null,
+    inscripto: boolean,
+    estadoDisponibilidad: 'HABILITADA' | 'NO_HABILITADA' | 'YA_INSCRIPTO',
+    motivos: MotivoDisponibilidad[],
+    includeMetadata = true
+  ): MesaDisponibleAlumno {
+    return {
+      id: mesa.id,
+      materia: { id: mesa.materia.id, nombre: mesa.materia.nombre, carrera: mesa.materia.carrera },
+      fecha: mesa.fecha,
+      tipoExamen: mesa.tipoExamen,
+      llamado: mesa.llamado,
+      tribunal: mesa.tribunales.map(tribunal => ({
+        profesorId: tribunal.profesorId,
+        apellidoNombre: tribunal.profesor.apellidoNombre,
+        rolTribunal: tribunal.rolTribunal
+      })),
+      condicion,
+      inscripto,
+      ...(includeMetadata ? { estadoDisponibilidad, motivos } : {}),
+      ...(mesa.version === undefined ? {} : { version: mesa.version })
+    } as MesaDisponibleAlumno;
   }
 
   async updateExamen(id: number, data: ExamenUpdateData, currentUser: any) {

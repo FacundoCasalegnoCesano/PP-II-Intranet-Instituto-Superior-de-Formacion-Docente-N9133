@@ -47,6 +47,27 @@ beforeEach(() => {
 })
 
 describe('ExamsView', () => {
+  it('separa mesas no habilitadas y muestra sólo los motivos calculados por backend', async () => {
+    api.available.mockResolvedValue([
+      { ...availableExam(61, 'Mesa habilitada'), estadoDisponibilidad: 'HABILITADA', motivos: [] },
+      { ...availableExam(62, 'Mesa bloqueada'), condicion: null, estadoDisponibilidad: 'NO_HABILITADA', motivos: [
+        { codigo: 'PERIODO', mensaje: 'No hay un período de inscripción vigente para esta mesa' },
+        { codigo: 'CORRELATIVA', materiaRequeridaId: 4, materiaRequeridaNombre: 'Pedagogía', mensaje: 'Debés aprobar Pedagogía antes de rendir esta materia' },
+      ] },
+      { ...availableExam(63, 'Mesa inscripta'), estadoDisponibilidad: 'YA_INSCRIPTO', inscripto: true, motivos: [] },
+    ])
+    api.mine.mockResolvedValue([])
+    render(ExamsView)
+
+    expect(await screen.findByText('Mesa habilitada')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Mesas no habilitadas' })).toBeVisible()
+    expect(screen.getByText('Mesa bloqueada')).toBeVisible()
+    expect(screen.getByText('No hay un período de inscripción vigente para esta mesa')).toBeVisible()
+    expect(screen.getByText('Debés aprobar Pedagogía antes de rendir esta materia')).toBeVisible()
+    expect(screen.getByText('Mesa bloqueada').closest('li')?.querySelector('button')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Dar de baja' })).toBeVisible()
+  })
+
   it('shows backend-calculated exam condition, tribunal and enrolls without a student id', async () => {
     api.available.mockResolvedValue([{ id: 9, materia: { id: 5, nombre: 'Pedagogía', carrera: { id: 3, nombre: 'Profesorado' } }, fecha: '2026-12-10T12:00:00.000Z', tipoExamen: 'ORAL', llamado: 2, tribunal: [{ profesorId: 1, apellidoNombre: 'Ana Profesor', rolTribunal: 'PRESIDENTE' }], condicion: 'LIBRE', inscripto: false, version: 4 }])
     api.mine.mockResolvedValue([])

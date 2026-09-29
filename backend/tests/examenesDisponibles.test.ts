@@ -61,6 +61,48 @@ function mesaCandidata(input: {
   };
 }
 
+test('modo opt-in conserva mesas propias y explica período, correlativa y condición', async () => {
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 42 }));
+  replaceMethod(examenRepository, 'findMesasDisponiblesParaAlumno', async () => [
+    mesaCandidata({ id: 11, materiaId: 7 }),
+    mesaCandidata({ id: 12, materiaId: 8, correlativaId: 99 }),
+    mesaCandidata({ id: 13, materiaId: 9, conInscripcionMateria: true }),
+    { ...mesaCandidata({ id: 14, materiaId: 10, inscripto: true }), inscripciones: [{ id: 1400, fechaBaja: null, condicion: 'LIBRE' }] }
+  ]);
+  replaceMethod(estadoAcademicoService, 'getRegularidadesVigentesSet', async () => new Set([7]));
+  replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set<number>());
+  const resultado = await examenService.getMesasDisponibles(
+    { id: 10, rol: ROLES.ALUMNO },
+    new Date('2026-08-26T15:00:00.000Z'),
+    true
+  );
+  assert.deepEqual(resultado.map(mesa => ({ id: mesa.id, estado: mesa.estadoDisponibilidad, motivos: mesa.motivos.map(motivo => motivo.codigo) })), [
+    { id: 11, estado: 'NO_HABILITADA', motivos: ['PERIODO'] },
+    { id: 12, estado: 'NO_HABILITADA', motivos: ['PERIODO', 'CORRELATIVA', 'CONDICION'] },
+    { id: 13, estado: 'NO_HABILITADA', motivos: ['PERIODO'] },
+    { id: 14, estado: 'YA_INSCRIPTO', motivos: [] }
+  ]);
+  assert.equal(resultado[3].condicion, 'LIBRE');
+});
+
+test('considera habilitada una mesa si cualquier período EXAMEN está vigente', async () => {
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 42 }));
+  replaceMethod(examenRepository, 'findMesasDisponiblesParaAlumno', async () => [{
+    ...mesaCandidata({ id: 15, materiaId: 7 }),
+    periodosHabilitadores: [
+      { periodoInscripcion: { tipo: 'EXAMEN', activo: true, fechaInicio: new Date('2026-08-01'), fechaFin: new Date('2026-08-10') } },
+      { periodoInscripcion: { tipo: 'EXAMEN', activo: true, fechaInicio: new Date('2026-08-20'), fechaFin: new Date('2026-09-10') } },
+    ]
+  }]);
+  replaceMethod(estadoAcademicoService, 'getRegularidadesVigentesSet', async () => new Set([7]));
+  replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set<number>());
+  const resultado = await examenService.getMesasDisponibles(
+    { id: 10, rol: ROLES.ALUMNO }, new Date('2026-08-26T15:00:00.000Z'), true
+  );
+  assert.equal(resultado[0].estadoDisponibilidad, 'HABILITADA');
+  assert.deepEqual(resultado[0].motivos, []);
+});
+
 test('lista una mesa regular con fecha y hora, tribunal e inscripción actual', async () => {
   const fecha = new Date('2026-09-15T12:00:00.000Z');
   replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 42 }));
@@ -232,15 +274,42 @@ test('la consulta candidata exige período vigente, carrera activa y mesa futura
   assert.deepEqual(consulta.orderBy, [{ fecha: 'asc' }, { id: 'asc' }]);
 });
 
+test('la consulta opt-in conserva el universo seguro y carga todos los períodos EXAMEN', async () => {
+  let consulta: any;
+  replaceMethod(prisma.mesa as unknown as Record<string, unknown>, 'findMany', async (args: any) => {
+    consulta = args;
+    return [];
+  });
+  await examenRepository.findMesasDisponiblesParaAlumno({
+    usuarioId: 10,
+    alumnoId: 42,
+    cicloLectivo: 2026,
+    evaluadoEn: new Date('2026-08-26T15:00:00.000Z'),
+    fechaDesde: new Date('2026-08-27T03:00:00.000Z'),
+    includeNoHabilitadas: true
+  });
+  assert.equal(consulta.where.activo, true);
+  assert.equal(consulta.where.estadoMesa, 'ABIERTA');
+  assert.deepEqual(consulta.where.fecha, { gte: new Date('2026-08-27T03:00:00.000Z') });
+  assert.equal(consulta.where.periodosHabilitadores, undefined);
+  assert.deepEqual(consulta.where.materia.carrera.inscripciones.some, {
+    usuarioId: 10, activo: true, fechaBaja: null
+  });
+  assert.deepEqual(consulta.select.periodosHabilitadores, {
+    select: { periodoInscripcion: { select: { tipo: true, activo: true, fechaInicio: true, fechaFin: true } } }
+  });
+});
+
 test('el controlador obtiene el alumno del token y responde success con las mesas', async () => {
   const usuario = { id: 10, rol: ROLES.ALUMNO };
   const mesas = [{ id: 12, condicion: 'REGULAR', inscripto: false }];
-  replaceMethod(examenService, 'getMesasDisponibles', async (currentUser: unknown) => {
+  replaceMethod(examenService, 'getMesasDisponibles', async (currentUser: unknown, _evaluadoEn: Date, includeNoHabilitadas: boolean) => {
     assert.equal(currentUser, usuario);
+    assert.equal(includeNoHabilitadas, true);
     return mesas;
   });
   let respuesta: unknown;
-  const req = { user: usuario };
+  const req = { user: usuario, query: { includeNoHabilitadas: true } };
   const res = {
     json(payload: unknown) {
       respuesta = payload;

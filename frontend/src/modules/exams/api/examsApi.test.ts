@@ -8,12 +8,14 @@ describe('exam API', () => {
     const client = { get, post }
 
     await fetchAvailableExams(client)
+    await fetchAvailableExams({ includeNoHabilitadas: true }, client)
     await fetchMyExamEnrollments(13, client)
     await enrollInExam(9, 'LIBRE', 4, client)
     await withdrawFromExam(9, 4, client)
 
     expect(get).toHaveBeenNthCalledWith(1, '/examenes/disponibles')
-    expect(get).toHaveBeenNthCalledWith(2, '/examenes/alumno/13/inscripciones')
+    expect(get).toHaveBeenNthCalledWith(2, '/examenes/disponibles?includeNoHabilitadas=true')
+    expect(get).toHaveBeenNthCalledWith(3, '/examenes/alumno/13/inscripciones')
     expect(post).toHaveBeenNthCalledWith(1, '/examenes/9/inscribir', { condicion: 'LIBRE', expectedVersion: 4 })
     expect(post).toHaveBeenNthCalledWith(2, '/examenes/9/desinscribir', { expectedVersion: 4 })
     expect(JSON.stringify(post.mock.calls)).not.toContain('alumnoId')
