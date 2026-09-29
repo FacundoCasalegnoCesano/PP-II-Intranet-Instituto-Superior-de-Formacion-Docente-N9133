@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import alumnoController from '../controllers/alumnoController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
-import { updateUserSchema, listUsersSchema } from '../validations/userValidation.js';
+import { updateUserSchema, listAlumnosSchema } from '../validations/userValidation.js';
 import { registerSchema } from '../validations/authValidation.js';
 import { ROLES } from '../constants/roles.js';
 
@@ -15,7 +15,7 @@ router.use(authMiddleware);
 // Rutas para admin y profesores (pueden ver alumnos)
 router.get('/',
   roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
-  validationMiddleware(listUsersSchema, 'query'),
+  validationMiddleware(listAlumnosSchema, 'query'),
   alumnoController.listarAlumnos
 );
 

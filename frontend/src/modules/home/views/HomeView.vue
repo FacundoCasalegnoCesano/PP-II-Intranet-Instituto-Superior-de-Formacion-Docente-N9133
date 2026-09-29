@@ -7,6 +7,7 @@ import type { Role } from '@/core/auth/contracts'
 import { useAuthStore } from '@/stores/authStore'
 import ModuleAccessCard from '../components/ModuleAccessCard.vue'
 import StudentProgressCard from '../components/StudentProgressCard.vue'
+import AppButton from '@/ui/AppButton.vue'
 import { fetchStudentCareers, fetchStudentTrajectory, progressFromTrajectory } from '../api/homeApi'
 import type { StudentCareer, StudentTrajectory } from '../types/home'
 
@@ -46,6 +47,7 @@ const modulesByRole: Record<Role, ModuleAccess[]> = {
   ],
   ADMINISTRATIVO: [
     { label: 'Usuarios', description: 'Administrá cuentas, roles y estados de acceso.', icon: Users, to: { name: 'admin-users' } },
+    { label: 'Trayectorias', description: 'Consultá las trayectorias académicas de los alumnos.', icon: GraduationCap, to: { name: 'admin-academic-records' } },
     { label: 'Carreras', description: 'Gestioná carreras y planes de estudio.', icon: GraduationCap, to: { name: 'admin-careers' } },
     { label: 'Inscripciones a carreras', description: 'Inscribí alumnos, consultá la nómina y gestioná bajas.', icon: ClipboardList, to: { name: 'admin-career-enrollments' } },
     { label: 'Materias', description: 'Gestioná materias, correlatividades y docentes.', icon: BookOpen, to: { name: 'admin-subjects' } },
@@ -111,7 +113,7 @@ onMounted(() => { if (isStudent.value) void loadStudentHome() })
 
     <section v-if="isStudent" class="mt-8" aria-live="polite">
       <div v-if="loadingCareers" role="status" class="rounded-lg border border-[var(--color-border)] bg-white p-5 text-[var(--color-graphite)]">Cargando tu trayectoria académica…</div>
-      <p v-else-if="error" role="alert" class="rounded-md border border-[#edb8b8] bg-[#fff4f4] p-4 text-[#8b151b]">{{ error }}</p>
+      <div v-else-if="error" role="alert" class="rounded-md border border-[#edb8b8] bg-[#fff4f4] p-4 text-[#8b151b]"><p>{{ error }}</p><AppButton class="mt-3" variant="secondary" @click="loadStudentHome">Reintentar</AppButton></div>
       <div v-else-if="careers.length === 0" class="rounded-lg border border-[var(--color-border)] bg-white p-5 text-[var(--color-graphite)]">Todavía no registramos una carrera activa para tu cuenta.</div>
       <template v-else>
         <div class="max-w-xl">

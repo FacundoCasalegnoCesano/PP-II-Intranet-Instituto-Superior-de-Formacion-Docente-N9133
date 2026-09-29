@@ -61,6 +61,15 @@ describe('ExamsView', () => {
     expect(api.enroll).toHaveBeenCalledWith(9, 'LIBRE', 4)
   })
 
+  it('renders available exams in chronological order', async () => {
+    api.available.mockResolvedValue([availableExam(11, 'Mesa tardía'), availableExam(10, 'Mesa temprana')].map((exam, index) => ({ ...exam, fecha: index === 0 ? '2026-12-20T12:00:00.000Z' : '2026-11-20T12:00:00.000Z' })))
+    api.mine.mockResolvedValue([])
+    render(ExamsView)
+
+    const headings = await screen.findAllByRole('heading', { level: 2 })
+    expect(headings.map((heading) => heading.textContent)).toEqual(['Mesa temprana', 'Mesa tardía'])
+  })
+
   it('shows backend-published result status and a valid zero grade', async () => {
     api.available.mockResolvedValue([])
     api.mine.mockResolvedValue([{ id: 7, mesaId: 9, materia: { id: 5, nombre: 'Pedagogía' }, fecha: '2026-12-10T12:00:00.000Z', condicion: 'REGULAR', estadoResultado: 'CALIFICADO', nota: 0, aprobado: false, notaMinima: 7 }])

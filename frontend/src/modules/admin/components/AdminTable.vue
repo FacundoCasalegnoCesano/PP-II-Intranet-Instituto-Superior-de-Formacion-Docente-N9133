@@ -4,9 +4,10 @@ defineProps<{ columns: Array<{ key: string; label: string }> }>()
 
 <template>
   <div class="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
-    <div class="hidden overflow-x-auto md:block">
+    <div class="hidden max-w-full overflow-x-auto overscroll-contain md:block">
       <table class="min-w-full text-left text-sm">
-        <thead class="bg-[#f6f7f4] text-xs uppercase tracking-wide text-[var(--color-graphite)]"><tr><th v-for="column in columns" :key="column.key" class="px-4 py-3 font-semibold">{{ column.label }}</th><th class="px-4 py-3"><span class="sr-only">Acciones</span></th></tr></thead>
+        <caption class="sr-only">Listado</caption>
+        <thead class="bg-[#f6f7f4] text-xs uppercase tracking-wide text-[var(--color-graphite)]"><tr><th v-for="column in columns" :key="column.key" scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">{{ column.label }}</th><th scope="col" class="px-4 py-3"><span class="sr-only">Acciones</span></th></tr></thead>
         <tbody><slot name="rows" /></tbody>
       </table>
     </div>

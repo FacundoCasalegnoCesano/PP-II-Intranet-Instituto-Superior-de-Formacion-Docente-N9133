@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/vue'
+import { render, screen, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import SubjectEnrollmentsView from './SubjectEnrollmentsView.vue'
 
@@ -31,5 +31,31 @@ describe('SubjectEnrollmentsView', () => {
     expect(await screen.findByRole('alertdialog', { name: 'Confirmar inscripción' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Inscribirme' }))
     expect(api.enroll).toHaveBeenCalledWith(expect.objectContaining({ materiaId: 5, modalidadElegida: 'SEMIPRESENCIAL' }))
+  })
+
+  it('does not verify a subject already marked unavailable', async () => {
+    api.verify.mockClear()
+    api.available.mockResolvedValue([{ id: 6, nombre: 'Historia', modalidad: 'PRESENCIAL', yaInscripto: true, yaAprobada: false, cumpleCorrelativas: true, correlativasPendientes: [], habilitada: true }])
+    api.mine.mockResolvedValue([])
+    const user = userEvent.setup()
+    render(SubjectEnrollmentsView)
+
+    expect(await screen.findByText('Ya estás inscripto/a')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Verificar e inscribirme' })).toBeDisabled()
+    expect(api.verify).not.toHaveBeenCalled()
+  })
+
+  it('keeps the confirmation selection and exposes the API rejection above the dialog', async () => {
+    api.available.mockResolvedValue([{ id: 7, nombre: 'Didáctica', modalidad: 'PRESENCIAL', yaInscripto: false, yaAprobada: false, cumpleCorrelativas: true, correlativasPendientes: [], habilitada: true }])
+    api.mine.mockResolvedValue([])
+    api.verify.mockResolvedValue({ puedeInscribirse: true, materia: { id: 7, nombre: 'Didáctica', modalidad: 'PRESENCIAL', yaInscripto: false, yaAprobada: false, cumpleCorrelativas: true, correlativasPendientes: [], habilitada: true } })
+    api.enroll.mockRejectedValue(new Error('Período de inscripción cerrado'))
+    const user = userEvent.setup()
+    render(SubjectEnrollmentsView)
+
+    await user.click(await screen.findByRole('button', { name: 'Verificar e inscribirme' }))
+    await user.click(screen.getByRole('button', { name: 'Inscribirme' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Confirmar inscripción' })
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Período de inscripción cerrado')
   })
 })

@@ -38,7 +38,7 @@ router.get('/disponibles',
 );
 
 router.get('/:id',
-  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR, ROLES.ALUMNO),
+  roleCheck(ROLES.ADMINISTRATIVO, ROLES.PROFESOR),
   examenController.getExamenById
 );
 

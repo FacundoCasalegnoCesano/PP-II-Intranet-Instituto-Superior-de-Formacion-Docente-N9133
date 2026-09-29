@@ -52,6 +52,34 @@ beforeEach(() => {
 })
 
 describe('GradesGrid', () => {
+  it('cancels a number change without losing a pending note, then discards it when confirmed', async () => {
+    const user = userEvent.setup()
+    renderGrid()
+
+    const note = within(screen.getByRole('group', { name: /Lucía Fernández/ })).getByLabelText('Nota')
+    fireEvent.update(note, '7')
+    await nextTick()
+    expect(note).toHaveValue(7)
+
+    const number = screen.getByLabelText('Número de evaluación')
+    fireEvent.update(number, '2')
+    fireEvent.change(number, { target: { value: '2' } })
+    await nextTick()
+    expect(screen.getByRole('alertdialog', { name: 'Cambios sin guardar' })).toBeVisible()
+    await user.click(screen.getAllByRole('button', { name: 'Cancelar' }).at(-1)!)
+
+    expect(screen.getByLabelText('Número de evaluación')).toHaveValue(1)
+    expect(note).toHaveValue(7)
+
+    fireEvent.update(number, '2')
+    fireEvent.change(number, { target: { value: '2' } })
+    await nextTick()
+    await user.click(screen.getByRole('button', { name: 'Descartar cambios' }))
+
+    expect(screen.getByLabelText('Número de evaluación')).toHaveValue(2)
+    expect(within(screen.getByRole('group', { name: /Lucía Fernández/ })).getByLabelText('Nota')).toHaveValue(null)
+  })
+
   it('shows the approved evaluation types and only exposes the integrative instance for promotable courses', async () => {
     const user = userEvent.setup()
     renderGrid()

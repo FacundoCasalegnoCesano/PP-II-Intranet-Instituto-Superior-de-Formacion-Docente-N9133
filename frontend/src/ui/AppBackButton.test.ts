@@ -26,6 +26,21 @@ describe('AppBackButton', () => {
     expect(router.replace).toHaveBeenCalledWith({ name: 'admin-exams', query: { estadoMesa: 'EN_PROCESO' } })
   })
 
+  it('falls back from an academic trajectory detail while retaining only list filters', async () => {
+    route.name = 'admin-academic-record-detail'
+    route.query = { search: 'Lucía', carreraId: '3', page: '2', selectedCareerId: '8', unrelated: 'drop' }
+    route.fullPath = '/app/administracion/trayectorias/13?search=Luc%C3%ADa&carreraId=3&page=2&selectedCareerId=8&unrelated=drop'
+
+    render(AppBackButton)
+
+    await screen.getByRole('button', { name: /Volver/ }).click()
+
+    expect(router.replace).toHaveBeenCalledWith({
+      name: 'admin-academic-records',
+      query: { search: 'Lucía', carreraId: '3', page: '2' },
+    })
+  })
+
   it.each(['admin-homologation-create', 'admin-homologation-detail'])('retorna desde %s al listado con filtros internos normalizados', async (name) => {
     route.name = name
     route.query = { returnTo: '/app/administracion/homologaciones?search=%20Luc%C3%ADa%20&estado=PENDIENTE&tipo=PARCIAL&carreraId=3&materiaId=14&page=2&sort=createdAt' }

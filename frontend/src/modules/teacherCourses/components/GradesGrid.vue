@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import ConfirmDialog from '@/ui/ConfirmDialog.vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { gradeTypeLabel } from '@/core/presentation/academicLabels'
 import type {
   EnrolledStudent,
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   save: [payload: SaveGradesPayload]
+  'dirty-change': [dirty: boolean]
 }>()
 
 type DraftRow = {
@@ -29,6 +31,7 @@ type DraftRow = {
   observacion: string
   parcialOriginalId: string
   fechaEvaluacion: string
+  dirty: boolean
 }
 
 const currentYear = Number(new Intl.DateTimeFormat('en-US', {
@@ -42,6 +45,11 @@ const selectedDate = ref('')
 const selectedDateExplicit = ref(false)
 const drafts = ref<Record<number, DraftRow>>({})
 const validationError = ref('')
+const dirty = computed(() => Object.values(drafts.value).some(draft => draft.dirty))
+const selectionDialogOpen = ref(false)
+const pendingSelection = ref<(() => void) | null>(null)
+const pendingSelectionDiscardAll = ref(false)
+const selectionOpener = ref<HTMLElement | null>(null)
 
 const editable = computed(() => (
   (props.course.editable ?? (props.course.activo && props.course.anioLectivo === currentYear))
@@ -59,7 +67,7 @@ const evaluationOptions = computed<Array<{ value: GradeType; label: string }>>((
 
 const rows = computed(() => props.students.map(student => ({
   ...student,
-  draft: drafts.value[student.alumnoId] ?? { nota: '', observacion: '', parcialOriginalId: '', fechaEvaluacion: '' },
+  draft: drafts.value[student.alumnoId] ?? { nota: '', observacion: '', parcialOriginalId: '', fechaEvaluacion: '', dirty: false },
 })))
 
 function existingForStudent(studentId: number, parcialOriginalId?: number): GradeRecord | undefined {
@@ -114,6 +122,7 @@ function syncDrafts(): void {
       observacion: existing?.observacion ?? '',
       parcialOriginalId: originalId ? String(originalId) : '',
       fechaEvaluacion: existing?.fechaEvaluacion?.slice(0, 10) ?? '',
+      dirty: false,
     }
   }
   drafts.value = next
@@ -121,7 +130,7 @@ function syncDrafts(): void {
   selectedDateExplicit.value = false
 }
 
-function setType(value: string): void {
+function applyType(value: string): void {
   selectedType.value = value as GradeType
   selectedDate.value = ''
   selectedDateExplicit.value = false
@@ -129,7 +138,7 @@ function setType(value: string): void {
   validationError.value = ''
 }
 
-function setOriginalPartials(studentId: number, value: string): void {
+function applyOriginalPartials(studentId: number, value: string): void {
   const current = drafts.value[studentId]
   if (!current || current.parcialOriginalId === value) return
   const originalId = Number(value)
@@ -139,6 +148,7 @@ function setOriginalPartials(studentId: number, value: string): void {
     observacion: existing?.observacion ?? '',
     parcialOriginalId: value,
     fechaEvaluacion: existing?.fechaEvaluacion?.slice(0, 10) ?? '',
+    dirty: false,
   }
   selectedDate.value = commonPersistedDate(drafts.value)
   selectedDateExplicit.value = false
@@ -219,11 +229,109 @@ function save(): void {
   if (payload) emit('save', payload)
 }
 
+function setOriginalPartials(studentId: number, value: string, event?: Event): void {
+  const current = drafts.value[studentId]
+  if (!current || current.parcialOriginalId === value) return
+  if (dirty.value) {
+    requestSelection(() => applyOriginalPartials(studentId, value), event)
+    return
+  }
+  applyOriginalPartials(studentId, value)
+}
+
+function markDirty(studentId: number): void {
+  const current = drafts.value[studentId]
+  if (!current) return
+  drafts.value[studentId] = { ...current, dirty: true }
+  validationError.value = ''
+}
+
+function setType(value: string, event?: Event): void {
+  if (dirty.value && value !== selectedType.value) {
+    requestSelection(() => applyType(value), event, true)
+    return
+  }
+  applyType(value)
+}
+
+function setNumber(value: string, event?: Event): void {
+  if (dirty.value && value !== selectedNumber.value) {
+    requestSelection(() => { selectedNumber.value = value }, event, true)
+    return
+  }
+  selectedNumber.value = value
+}
+
+function requestSelection(action: () => void, event?: Event, discardAll = false): void {
+  pendingSelection.value = action
+  pendingSelectionDiscardAll.value = discardAll
+  selectionOpener.value = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  selectionDialogOpen.value = true
+}
+
+function cancelTypeChange(): void {
+  selectionDialogOpen.value = false
+  pendingSelection.value = null
+  pendingSelectionDiscardAll.value = false
+  const opener = selectionOpener.value
+  selectionOpener.value = null
+  void nextTick(() => opener?.focus())
+}
+
+function confirmTypeChange(): void {
+  const action = pendingSelection.value
+  const discardAll = pendingSelectionDiscardAll.value
+  selectionDialogOpen.value = false
+  pendingSelection.value = null
+  pendingSelectionDiscardAll.value = false
+  const opener = selectionOpener.value
+  selectionOpener.value = null
+  if (discardAll) {
+    for (const student of props.students) {
+      const draft = drafts.value[student.alumnoId]
+      if (draft) drafts.value[student.alumnoId] = { ...draft, dirty: false }
+    }
+  }
+  action?.()
+  void nextTick(() => opener?.focus())
+}
+
+function markAllDirty(): void {
+  for (const student of props.students) markDirty(student.alumnoId)
+}
+
+function setDate(value: string): void {
+  selectedDate.value = value
+  selectedDateExplicit.value = true
+  markAllDirty()
+}
+
+function updateDraftValue(studentId: number, field: 'nota' | 'observacion', value: string): void {
+  const current = drafts.value[studentId]
+  if (!current) return
+  drafts.value[studentId] = { ...current, [field]: value, dirty: true }
+  validationError.value = ''
+}
+
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!dirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
 watch(
   [selectedType, selectedNumber, () => props.grades, () => props.students],
   () => syncDrafts(),
   { immediate: true },
 )
+
+watch(dirty, value => {
+  emit('dirty-change', value)
+  if (value) window.addEventListener('beforeunload', onBeforeUnload)
+  else window.removeEventListener('beforeunload', onBeforeUnload)
+}, { immediate: true })
+
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 </script>
 
 <template>
@@ -234,21 +342,22 @@ watch(
         <p class="mt-1 text-sm text-[var(--color-graphite)]">Elegí una evaluación y cargá las notas de los alumnos inscriptos.</p>
       </div>
       <p v-if="!editable" class="font-semibold text-[var(--color-graphite)]">Solo lectura: cursada histórica</p>
+      <p v-if="dirty" class="text-sm text-[var(--color-graphite)]" role="status" aria-live="polite">Hay cambios sin guardar.</p>
     </div>
 
     <form class="mt-5 rounded-lg border border-[var(--color-border)] bg-white p-4 sm:p-5" :aria-busy="props.saving" :aria-disabled="!editable ? 'true' : undefined" @submit.prevent="save">
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <label class="block text-sm font-semibold" for="grade-type">Tipo de evaluación
-          <select id="grade-type" :value="selectedType" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="setType(($event.target as HTMLSelectElement).value)">
+          <select id="grade-type" :value="selectedType" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="setType(($event.target as HTMLSelectElement).value, $event)">
             <option v-for="option in evaluationOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
           </select>
         </label>
         <label v-if="selectedType !== 'RECUPERATORIO'" class="block text-sm font-semibold" for="grade-number">Número de evaluación
-          <input id="grade-number" v-model="selectedNumber" type="number" min="1" max="99" step="1" :aria-required="selectedType !== 'RECUPERATORIO' ? 'true' : undefined" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" />
+          <input id="grade-number" :value="selectedNumber" type="number" min="1" max="99" step="1" :aria-required="selectedType !== 'RECUPERATORIO' ? 'true' : undefined" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @input="setNumber(($event.target as HTMLInputElement).value, $event)" />
         </label>
         <p v-else class="rounded-md border border-dashed border-[var(--color-border)] p-3 text-sm text-[var(--color-graphite)]">El número se deriva del parcial original de cada alumno.</p>
         <label class="block text-sm font-semibold" for="grade-date">Fecha de evaluación
-          <input id="grade-date" v-model="selectedDate" type="date" :aria-required="selectedType === 'PARCIAL' ? 'true' : undefined" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @input="selectedDateExplicit = true" />
+          <input id="grade-date" :value="selectedDate" type="date" :aria-required="selectedType === 'PARCIAL' ? 'true' : undefined" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @input="setDate(($event.target as HTMLInputElement).value)" @change="setDate(($event.target as HTMLInputElement).value)" />
         </label>
       </div>
 
@@ -261,14 +370,14 @@ watch(
             <legend class="px-1 font-semibold"><span>{{ row.apellidoNombre }}</span><span class="font-normal"> · DNI {{ row.dni }}</span></legend>
             <div class="mt-2 grid gap-3 sm:grid-cols-[minmax(7rem,10rem)_1fr]">
               <label class="block text-sm font-semibold" :for="`grade-note-${row.alumnoId}`">Nota
-                <input :id="`grade-note-${row.alumnoId}`" v-model="row.draft.nota" type="number" min="0" max="10" step="1" inputmode="numeric" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" />
+                <input :id="`grade-note-${row.alumnoId}`" :value="row.draft.nota" type="number" min="0" max="10" step="1" inputmode="numeric" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @input="updateDraftValue(row.alumnoId, 'nota', ($event.target as HTMLInputElement).value)" />
               </label>
               <label class="block text-sm font-semibold" :for="`grade-observation-${row.alumnoId}`">Observación
-                <textarea :id="`grade-observation-${row.alumnoId}`" v-model="row.draft.observacion" rows="2" maxlength="5000" class="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2 font-normal" />
+                <textarea :id="`grade-observation-${row.alumnoId}`" :value="row.draft.observacion" rows="2" maxlength="5000" class="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2 font-normal" @input="updateDraftValue(row.alumnoId, 'observacion', ($event.target as HTMLTextAreaElement).value)" />
               </label>
             </div>
             <label v-if="selectedType === 'RECUPERATORIO'" class="mt-3 block text-sm font-semibold" :for="`grade-original-${row.alumnoId}`">Parcial original
-              <select :id="`grade-original-${row.alumnoId}`" :value="row.draft.parcialOriginalId" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="setOriginalPartials(row.alumnoId, ($event.target as HTMLSelectElement).value)">
+              <select :id="`grade-original-${row.alumnoId}`" :value="row.draft.parcialOriginalId" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="setOriginalPartials(row.alumnoId, ($event.target as HTMLSelectElement).value, $event)">
                 <option value="">Seleccioná un parcial</option>
                 <option v-for="original in originalPartialsForStudent(row.alumnoId)" :key="original.id" :value="String(original.id)">{{ originalLabel(original) }}</option>
               </select>
@@ -279,5 +388,6 @@ watch(
 
       <button v-if="editable && students.length" type="submit" class="mt-5 min-h-11 rounded-md bg-[var(--color-brand)] px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55" :disabled="props.saving">{{ props.saving ? 'Guardando…' : 'Guardar calificaciones' }}</button>
     </form>
+    <ConfirmDialog :open="selectionDialogOpen" title="Cambios sin guardar" description="Cambiar la selección descartará las notas locales de esta grilla. ¿Querés continuar?" confirm-label="Descartar cambios" @cancel="cancelTypeChange" @confirm="confirmTypeChange" />
   </section>
 </template>

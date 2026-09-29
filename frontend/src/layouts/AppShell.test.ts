@@ -128,6 +128,29 @@ describe('AppShell', () => {
     expect(screen.getAllByRole('link', { name: 'Homologaciones' })).toHaveLength(2)
   })
 
+  it('shows Trayectorias in the administrative desktop and mobile navigation', async () => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    const user = userEvent.setup()
+    const RouterLink = defineComponent({
+      inheritAttrs: false,
+      props: { to: { type: Object, required: true } },
+      setup: (props, { attrs, slots }) => () => h('a', { ...attrs, href: '#', 'data-route-name': (props.to as { name: string }).name }, slots.default?.()),
+    })
+    render(AppShell, { global: { stubs: { RouterLink } } })
+
+    expect(screen.getByRole('link', { name: 'Trayectorias' })).toHaveAttribute('data-route-name', 'admin-academic-records')
+    await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
+    expect(screen.getAllByRole('link', { name: 'Trayectorias' })).toHaveLength(2)
+  })
+
+  it.each(['admin-academic-records', 'admin-academic-record-detail'] as const)('marks Trayectorias active for route %s', (routeName) => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    routeState.name = routeName
+    render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+
+    expect(screen.getByRole('link', { name: 'Trayectorias' })).toHaveAttribute('aria-current', 'page')
+  })
+
   it.each(['admin-homologations', 'admin-homologation-create', 'admin-homologation-detail'] as const)('marks Homologaciones active for route %s only', (routeName) => {
     authState.activeRole = 'ADMINISTRATIVO'
     routeState.name = routeName

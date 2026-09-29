@@ -43,6 +43,7 @@ interface PasswordResetOptions {
 
 const PASSWORD_RESET_MESSAGE = 'Si el email existe, recibirás un enlace para recuperar tu contraseña';
 const PASSWORD_RESET_COOLDOWN_MS = 60 * 1000;
+const DUMMY_PASSWORD_HASH = '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
 
 class AuthService {
   // Registrar usuario (SOLO ADMIN)
@@ -116,19 +117,17 @@ class AuthService {
   // Login - retorna roles disponibles
   async login(identifier: string, password: string, ipAddress: string | undefined, userAgent: string | undefined) {
     const user = await userRepository.findByEmailOrDni(identifier);
-  
-    if (!user) {
+    const now = new Date();
+    const isValidPassword = await comparePassword(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH)
+      .catch(() => false);
+    const isLocked = Boolean(user?.loginLockedUntil && user.loginLockedUntil > now);
+    if (!user || !user.activo || isLocked || !isValidPassword) {
+      if (user && user.activo && !isLocked && !isValidPassword) {
+        await userRepository.recordLoginFailure(user.idUsuario, now);
+      }
       throw new Error('Credenciales inválidas');
     }
-  
-    if (!user.activo) {
-      throw new Error('Usuario desactivado. Contacte al administrador');
-    }
-  
-    const isValidPassword = await comparePassword(password, user.passwordHash);
-    if (!isValidPassword) {
-      throw new Error('Credenciales inválidas');
-    }
+    await userRepository.clearLoginFailures(user.idUsuario);
 
     // Obtener roles del usuario (string separado por coma)
     const roles = user.rol ? user.rol.split(',').map((r: string) => r.trim()) : [];
@@ -279,17 +278,8 @@ class AuthService {
 
       // Buscar la sesión por hash del refresh token
       const refreshTokenHash = hashRefreshToken(refreshToken);
-      const session = await prisma.sesion.findFirst({
-        where: {
-          refreshTokenHash,
-          refreshTokenExpira: { gte: new Date() },
-          revocadaEn: null
-        }
-      });
-
-      if (!session) {
-        throw new Error('Refresh token inválido o expirado');
-      }
+      const session = await prisma.sesion.findFirst({ where: { refreshTokenHash } });
+      if (!session || !session.refreshTokenExpira || session.refreshTokenExpira < new Date()) throw new Error('Refresh token inválido o expirado');
 
       // ✅ Payload mantiene rol y familia
       const payload: TokenPayload = {
@@ -308,24 +298,19 @@ class AuthService {
       const decodedAccess = verifyAccessToken(newAccessToken);
       const decodedRefresh = verifyRefreshToken(newRefreshToken);
 
-      // Rotación: invalidar TODA la familia (revocadaEn) y crear nueva sesión
-      await prisma.sesion.updateMany({
-        where: { familiaId: session.familiaId, revocadaEn: null },
-        data: { revocadaEn: new Date() }
+      const replayDetected = await prisma.$transaction(async (tx) => {
+        const claimed = await tx.sesion.updateMany({ where: { id: session.id, refreshTokenHash, revocadaEn: null, refreshTokenExpira: { gte: new Date() } }, data: { revocadaEn: new Date() } });
+        if (claimed.count !== 1) {
+          await tx.sesion.updateMany({ where: { familiaId: session.familiaId, revocadaEn: null }, data: { revocadaEn: new Date(), cerradaEn: new Date() } });
+          return true;
+        }
+        await tx.sesion.create({ data: { token: newAccessToken, refreshTokenHash: newRefreshTokenHash, refreshTokenExpira: new Date(decodedRefresh.exp! * 1000), familiaId: session.familiaId, usuarioId: user.idUsuario, expiraEn: new Date(decodedAccess.exp! * 1000), ipAddress: session.ipAddress ?? null, userAgent: session.userAgent ?? null } });
+        return false;
       });
 
-      await prisma.sesion.create({
-        data: {
-          token: newAccessToken,
-          refreshTokenHash: newRefreshTokenHash,
-          refreshTokenExpira: new Date(decodedRefresh.exp! * 1000),
-          familiaId: session.familiaId,
-          usuarioId: user.idUsuario,
-          expiraEn: new Date(decodedAccess.exp! * 1000),
-          ipAddress: session.ipAddress ?? null,
-          userAgent: session.userAgent ?? null,
-        }
-      });
+      if (replayDetected) {
+        throw new Error('Refresh token inválido o expirado');
+      }
 
       return {
         accessToken: newAccessToken,
@@ -353,7 +338,7 @@ class AuthService {
   }
 
   // Cambiar contraseña
-  async changePassword(userId: number, currentPassword: string, newPassword: string) {
+  async changePassword(userId: number, currentPassword: string, newPassword: string, currentSessionId?: number) {
     const user = await userRepository.findById(userId);
     if (!user) {
       throw new Error('Usuario no encontrado');
@@ -365,7 +350,10 @@ class AuthService {
     }
 
     const newPasswordHash = await hashPassword(newPassword);
-    await userRepository.updatePassword(userId, newPasswordHash);
+    await prisma.$transaction(async (tx) => {
+      await tx.usuario.update({ where: { idUsuario: userId }, data: { passwordHash: newPasswordHash } });
+      await tx.sesion.updateMany({ where: { usuarioId: userId, ...(currentSessionId ? { id: { not: currentSessionId } } : {}), revocadaEn: null }, data: { revocadaEn: new Date(), cerradaEn: new Date() } });
+    });
 
     return { message: 'Contraseña actualizada exitosamente' };
   }
@@ -381,22 +369,24 @@ class AuthService {
     }
 
     const now = options.now?.() ?? new Date();
-    const recentRequest = await passwordResetTokenRepository.hasRecentRequest(
-      user.idUsuario,
-      new Date(now.getTime() - PASSWORD_RESET_COOLDOWN_MS)
-    );
-    if (recentRequest) {
-      return publicResponse;
-    }
-
     const resetToken = generatePasswordResetToken();
     const tokenHash = hashPasswordResetToken(resetToken);
-    await passwordResetTokenRepository.invalidateForUser(user.idUsuario, now);
-    await passwordResetTokenRepository.create({
-      usuarioId: user.idUsuario,
-      tokenHash,
-      expiresAt: new Date(now.getTime() + 60 * 60 * 1000)
-    });
+    let issued: boolean;
+    try {
+      issued = await passwordResetTokenRepository.issueIfAllowed({
+        usuarioId: user.idUsuario,
+        tokenHash,
+        expiresAt: new Date(now.getTime() + 60 * 60 * 1000)
+      }, now, new Date(now.getTime() - PASSWORD_RESET_COOLDOWN_MS));
+    } catch (error) {
+      if ((error as { code?: string })?.code === 'P2034') {
+        return publicResponse;
+      }
+      throw error;
+    }
+    if (!issued) {
+      return publicResponse;
+    }
 
     try {
       await (options.sendEmail ?? sendPasswordResetEmail)(user.email, resetToken, user.apellidoNombre);
@@ -491,28 +481,25 @@ class AuthService {
 
     // 6. Si match → eliminar código usado, guardar array cifrado actualizado
     storedCodes.splice(matchedIndex, 1);
-    await userRepository.updateBackupCodes(user.idUsuario, encryptBackupCodes(storedCodes));
 
     // 7. Validar newPassword (reusar lógica de register - patrón ya validado por Joi)
     const passwordHash = await hashPassword(newPassword);
 
-    // 8. Actualizar passwordHash + activo = true
-    await userRepository.updatePasswordAndActivate(user.idUsuario, passwordHash);
-
-    // 9. Invalidar TODA la familia de sesiones
-    await prisma.sesion.updateMany({
-      where: { usuarioId: user.idUsuario, revocadaEn: null },
-      data: {
-        revocadaEn: new Date(),
-        cerradaEn: new Date()
-      }
+    // 8. Reclamar el código y actualizar todas las credenciales en una sola transacción.
+    const recovery = await passwordResetTokenRepository.consumeBackupCodeAndReset({
+      usuarioId: user.idUsuario,
+      expectedBackupCodes: user.backupCodes,
+      replacementBackupCodes: encryptBackupCodes(storedCodes),
+      newPasswordHash: passwordHash,
+      now: new Date(),
+      remainingCodes: storedCodes.length
     });
 
     // 10. Log auditoría
     console.log(`Admin recovery via backup code: ${email} at ${new Date().toISOString()} IP: ${ip || 'unknown'}`);
 
     // 11. Return { remainingCodes }
-    return { remainingCodes: storedCodes.length };
+    return recovery;
   }
 
   // Ver propios backup codes (requiere re-ingresar contraseña)

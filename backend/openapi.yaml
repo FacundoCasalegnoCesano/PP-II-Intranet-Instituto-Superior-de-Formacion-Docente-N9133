@@ -350,9 +350,10 @@ paths:
       x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1 } }
-        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
         - { name: activo, in: query, schema: { type: string, enum: ['true', 'false'] } }
         - { name: search, in: query, schema: { type: string } }
+        - { name: carreraId, in: query, schema: { type: integer, minimum: 1 }, description: Filtra alumnos con inscripción activa o histórica en la carrera }
       responses:
         '200': { $ref: '#/components/responses/ListOK' }
     post:
@@ -760,6 +761,7 @@ paths:
       x-roles: [ALUMNO, ADMINISTRATIVO]
       parameters:
         - { name: alumnoId, in: path, required: true, schema: { type: integer } }
+        - { name: includeInactive, in: query, schema: { type: boolean, default: false }, description: Solo ADMINISTRATIVO puede incluir inscripciones dadas de baja }
       responses:
         '200':
           description: Inscripciones de carrera
@@ -946,7 +948,7 @@ paths:
     get:
       tags: [Exámenes]
       summary: Obtener examen por ID (profesor solo si integra tribunal)
-      x-roles: [ADMINISTRATIVO, PROFESOR, ALUMNO]
+      x-roles: [ADMINISTRATIVO, PROFESOR]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -1752,6 +1754,16 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
 
+  /horarios-publicados/opciones:
+    get:
+      tags: [Horarios Publicados]
+      summary: Listar carreras habilitadas para consultar horarios
+      x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
+      parameters:
+        - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+      responses:
+        '200': { description: Opciones de ámbito, content: { application/json: { schema: { $ref: '#/components/schemas/HorariosPublicadosOpcionesResponse' } } } }
+
   /horarios-publicados/actual:
     get:
       tags: [Horarios Publicados]
@@ -1760,6 +1772,8 @@ paths:
       x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
       parameters:
         - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+        - { name: carreraId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: cursoAnio, in: query, schema: { type: integer, minimum: 1 } }
       responses:
         '200':
           description: Metadatos del horario PDF vigente
@@ -1794,10 +1808,12 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [archivo, cicloLectivo]
+              required: [archivo, cicloLectivo, carreraId, cursoAnio]
               properties:
                 archivo: { type: string, format: binary, description: PDF simple de hasta 10 MB }
                 cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
+                carreraId: { type: integer, minimum: 1 }
+                cursoAnio: { type: integer, minimum: 1 }
                 titulo: { type: string, maxLength: 160 }
       responses:
         '200':
@@ -1820,6 +1836,8 @@ paths:
       x-roles: [ADMINISTRATIVO]
       parameters:
         - { name: cicloLectivo, in: query, required: true, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+        - { name: carreraId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: cursoAnio, in: query, schema: { type: integer, minimum: 1 } }
       responses:
         '200':
           description: Historial de metadatos de versiones del PDF
@@ -2652,10 +2670,13 @@ components:
                   estado: { type: string, enum: [EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO] }
     HorarioPublicado:
       type: object
-      required: [id, cicloLectivo, titulo, nombreOriginal, tamanio, fechaPublicacion, vigente]
+      required: [id, cicloLectivo, carreraId, cursoAnio, titulo, nombreOriginal, tamanio, fechaPublicacion, vigente]
       properties:
         id: { type: integer }
         cicloLectivo: { type: integer }
+        carreraId: { type: integer, nullable: true }
+        cursoAnio: { type: integer, nullable: true }
+        carrera: { type: object, nullable: true, properties: { id: { type: integer }, nombre: { type: string }, duracionAnios: { type: integer } } }
         titulo: { type: string }
         nombreOriginal: { type: string }
         tamanio: { type: integer }
@@ -2668,6 +2689,22 @@ components:
       properties:
         success: { type: boolean }
         data: { $ref: '#/components/schemas/HorarioPublicado' }
+    HorariosPublicadosOpcionesResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          required: [carreras, generalDisponible]
+          properties:
+            carreras:
+              type: array
+              items:
+                type: object
+                required: [id, nombre, duracionAnios]
+                properties: { id: { type: integer }, nombre: { type: string }, duracionAnios: { type: integer } }
+            generalDisponible: { type: boolean }
     HistorialHorarioPublicadoResponse:
       type: object
       required: [success, data]

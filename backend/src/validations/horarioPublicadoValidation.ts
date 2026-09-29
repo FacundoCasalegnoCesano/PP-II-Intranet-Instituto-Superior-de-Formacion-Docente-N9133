@@ -14,6 +14,8 @@ export const cicloLectivoSchema = Joi.object({
 });
 
 export const publicarHorarioSchema = cicloLectivoSchema.keys({
+  carreraId: Joi.number().integer().min(1).required(),
+  cursoAnio: Joi.number().integer().min(1).required(),
   titulo: Joi.string().trim().min(1).max(160).optional().messages({
     'string.empty': 'El título no puede estar vacío',
     'string.max': 'El título no puede superar los 160 caracteres'
@@ -23,6 +25,14 @@ export const publicarHorarioSchema = cicloLectivoSchema.keys({
 export const cicloLectivoQuerySchema = Joi.object({
   cicloLectivo: Joi.number().integer().min(CICLO_MINIMO).max(CICLO_MAXIMO).optional()
 });
+
+export const horarioScopeQuerySchema = cicloLectivoQuerySchema.keys({
+  carreraId: Joi.number().integer().min(1).optional(),
+  cursoAnio: Joi.number().integer().min(1).optional()
+}).custom((value, helpers) => {
+  if ((value.carreraId == null) !== (value.cursoAnio == null)) return helpers.error('any.invalid');
+  return value;
+}).messages({ 'any.invalid': 'carreraId y cursoAnio deben enviarse juntos' });
 
 export const idDocumentoSchema = Joi.object({
   id: Joi.number().integer().min(1).required()

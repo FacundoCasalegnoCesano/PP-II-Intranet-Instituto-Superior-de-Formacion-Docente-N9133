@@ -2,6 +2,10 @@ import type { NextFunction, Request, Response } from 'express';
 import horarioPublicadoService from '../services/horarioPublicadoService.js';
 import { AppError } from '../utils/AppError.js';
 
+function scopeQuery(req: Request) {
+  return { carreraId: req.query.carreraId as unknown as number | undefined, cursoAnio: req.query.cursoAnio as unknown as number | undefined };
+}
+
 function idParametrico(req: Request): number {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id < 1) {
@@ -11,15 +15,22 @@ function idParametrico(req: Request): number {
 }
 
 class HorarioPublicadoController {
-  async listarAnios(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async opciones(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.json({ success: true, data: await horarioPublicadoService.listarAnios() });
+      const ciclo = Number(req.query.cicloLectivo ?? new Date().getFullYear());
+      res.json({ success: true, data: await horarioPublicadoService.listarOpciones(ciclo, req.user!) });
+    } catch (error) { next(error); }
+  }
+
+  async listarAnios(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      res.json({ success: true, data: await horarioPublicadoService.listarAnios(req.user!) });
     } catch (error) { next(error); }
   }
 
   async obtenerActual(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.json({ success: true, data: await horarioPublicadoService.obtenerActual(req.query.cicloLectivo as unknown as number | undefined) });
+      res.json({ success: true, data: await horarioPublicadoService.obtenerActual(req.query.cicloLectivo as unknown as number | undefined, scopeQuery(req), req.user!) });
     } catch (error) { next(error); }
   }
 
@@ -46,7 +57,7 @@ class HorarioPublicadoController {
 
   async historial(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.json({ success: true, data: await horarioPublicadoService.obtenerHistorial(req.query.cicloLectivo as unknown as number, req.user!) });
+      res.json({ success: true, data: await horarioPublicadoService.obtenerHistorial(req.query.cicloLectivo as unknown as number, scopeQuery(req), req.user!) });
     } catch (error) { next(error); }
   }
 

@@ -18,7 +18,15 @@ class AlumnoController extends UserController {
         res.json({ success: true, data: result.data, pagination: result.pagination });
         return;
       }
-      await super.listUsers(req, res, next);
+
+      const result = await userService.listAlumnosForAdministrativo({
+        page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
+        limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+        search: req.query.search as string | undefined,
+        activo: req.query.activo as string | undefined,
+        carreraId: req.query.carreraId ? parseInt(req.query.carreraId as string, 10) : undefined
+      });
+      res.json({ success: true, data: result.data, pagination: result.pagination });
     } catch (error) {
       next(error);
     }

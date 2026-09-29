@@ -139,11 +139,11 @@ test('un alumno se inscribe y desinscribe de una mesa con la identidad del JWT',
   const response = { status: () => ({ json: () => undefined }), json: () => undefined } as any;
   const next = (error: unknown) => { throw error; };
 
-  await examenController.inscribirAlumno({ params: { examenId: '3' }, body: { alumnoId: 999, condicion: 'LIBRE' }, user } as any, response, next);
-  await examenController.desinscribirAlumno({ params: { examenId: '3' }, body: { alumnoId: 999 }, user } as any, response, next);
+  await examenController.inscribirAlumno({ params: { examenId: '3' }, body: { alumnoId: 999, condicion: 'LIBRE', expectedVersion: 7 }, user } as any, response, next);
+  await examenController.desinscribirAlumno({ params: { examenId: '3' }, body: { alumnoId: 999, expectedVersion: 8 }, user } as any, response, next);
 
   assert.deepEqual(llamadas, [
-    ['alta', [3, 10, 'LIBRE', user]],
-    ['baja', [3, 10, user]]
+    ['alta', [3, 10, 'LIBRE', user, 7]],
+    ['baja', [3, 10, user, 8]]
   ]);
 });

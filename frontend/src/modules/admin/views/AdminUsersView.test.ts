@@ -37,6 +37,7 @@ function createUsersRouter() {
       { path: '/app/administracion/usuarios/nuevo', name: 'admin-user-create', component: AdminUsersView },
       { path: '/app/administracion/usuarios/:id', name: 'admin-user-detail', component: AdminUsersView },
       { path: '/app/administracion/usuarios/:id/editar', name: 'admin-user-edit', component: AdminUsersView },
+      { path: '/app/administracion/trayectorias/:id', name: 'admin-academic-record-detail', component: defineComponent({ render: () => h('div') }) },
     ],
   })
 }
@@ -57,6 +58,20 @@ beforeEach(() => {
 })
 
 describe('AdminUsersView', () => {
+  it('links an Alumno account detail to its academic trajectory using idUsuario', async () => {
+    const router = await renderUsers()
+    await router.push('/app/administracion/usuarios/42')
+
+    const link = await screen.findByRole('link', { name: 'Ver trayectoria' })
+    expect(link).toHaveAttribute('href', '/app/administracion/trayectorias/42')
+
+    await userEvent.setup().click(link)
+    await waitFor(() => {
+      expect(router.currentRoute.value.name).toBe('admin-academic-record-detail')
+      expect(router.currentRoute.value.params.id).toBe('42')
+    })
+  })
+
   it('exposes Modificar roles from both the desktop row and mobile card with the account id and hash', async () => {
     const router = await renderUsers()
     const expectedHref = '/app/administracion/usuarios/42#roles-asignados'

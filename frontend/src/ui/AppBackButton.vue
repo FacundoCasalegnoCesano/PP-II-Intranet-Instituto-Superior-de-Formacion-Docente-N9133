@@ -15,11 +15,22 @@ function queryValue(key: string): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+function filteredQuery(keys: readonly string[]): Record<string, string> {
+  return Object.fromEntries(keys.flatMap((key) => {
+    const value = queryValue(key)
+    return value === undefined ? [] : [[key, value]]
+  }))
+}
+
 function fallbackDestination(): RouteLocationRaw {
   const name = String(route.name ?? '')
   if (name === 'admin-homologation-create' || name === 'admin-homologation-detail') {
     const query = homologationReturnToQuery(queryValue('returnTo'))
     return { name: 'admin-homologations', ...(Object.keys(query).length ? { query } : {}) }
+  }
+  if (name === 'admin-academic-record-detail') {
+    const query = filteredQuery(['search', 'carreraId', 'page'])
+    return { name: 'admin-academic-records', ...(Object.keys(query).length ? { query } : {}) }
   }
   if (name.startsWith('teacher-course-')) {
     return { name: 'teacher-courses', query: { anioLectivo: route.query.anioLectivo } }

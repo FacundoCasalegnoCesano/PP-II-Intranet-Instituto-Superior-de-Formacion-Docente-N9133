@@ -1,4 +1,4 @@
-import { defineComponent, h } from 'vue'
+import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 import { createRouter, createWebHistory, type RouteLocationNormalized, useRoute, useRouter } from 'vue-router'
 import type { Role } from '@/core/auth/contracts'
 import { useAuthStore } from '@/stores/authStore'
@@ -10,20 +10,10 @@ import AppShell from '@/layouts/AppShell.vue'
 import HomeView from '@/modules/home/views/HomeView.vue'
 import ProfileView from '@/modules/profile/views/ProfileView.vue'
 import AdminUsersView from '@/modules/admin/views/AdminUsersView.vue'
-import AdminCareersView from '@/modules/admin/views/AdminCareersView.vue'
 import CareerEnrollmentsView from '@/modules/admin/views/CareerEnrollmentsView.vue'
-import AdminSubjectsView from '@/modules/admin/views/AdminSubjectsView.vue'
-import AdminCoursesView from '@/modules/admin/views/AdminCoursesView.vue'
-import AdminPeriodsView from '@/modules/admin/views/AdminPeriodsView.vue'
-import SchedulesView from '@/modules/schedules/views/SchedulesView.vue'
-import AcademicRecordView from '@/modules/academicRecord/views/AcademicRecordView.vue'
-import SubjectEnrollmentsView from '@/modules/subjectEnrollments/views/SubjectEnrollmentsView.vue'
-import ExamsView from '@/modules/exams/views/ExamsView.vue'
 import CareerCatalogView from '@/modules/careerCatalog/views/CareerCatalogView.vue'
-import TeacherCoursesView from '@/modules/teacherCourses/views/TeacherCoursesView.vue'
-import AdminExamsView from '@/modules/examManagement/views/AdminExamsView.vue'
-import TeacherExamsView from '@/modules/examManagement/views/TeacherExamsView.vue'
 import AdminHomologationsView from '@/modules/homologations/views/AdminHomologationsView.vue'
+import AdminAcademicRecordsView from '@/modules/adminAcademicRecords/views/AdminAcademicRecordsView.vue'
 import PresentationView from '@/modules/public/views/PresentationView.vue'
 import PrivacyView from '@/modules/public/views/PrivacyView.vue'
 
@@ -83,20 +73,28 @@ const ProfilePage = defineComponent({
   render: () => h(AppShell, null, { default: () => h(ProfileView) }),
 })
 const AdminUsersPage = defineComponent({ name: 'AdminUsersPage', render: () => h(AppShell, null, { default: () => h(AdminUsersView) }) })
-const AdminCareersPage = defineComponent({ name: 'AdminCareersPage', render: () => h(AppShell, null, { default: () => h(AdminCareersView) }) })
-const AdminSubjectsPage = defineComponent({ name: 'AdminSubjectsPage', render: () => h(AppShell, null, { default: () => h(AdminSubjectsView) }) })
-const AdminCoursesPage = defineComponent({ name: 'AdminCoursesPage', render: () => h(AppShell, null, { default: () => h(AdminCoursesView) }) })
-const AdminPeriodsPage = defineComponent({ name: 'AdminPeriodsPage', render: () => h(AppShell, null, { default: () => h(AdminPeriodsView) }) })
+const RouteLoadingPage = defineComponent({ name: 'RouteLoadingPage', setup: () => () => h('main', { role: 'status', 'aria-live': 'polite', class: 'p-4 sm:p-7' }, [h('p', 'Cargando sección…')]) })
+const RouteErrorPage = defineComponent({ name: 'RouteErrorPage', setup: () => () => h('main', { role: 'alert', class: 'p-4 sm:p-7' }, [h('p', 'No pudimos cargar esta sección.'), h('button', { type: 'button', class: 'mt-4 min-h-11 rounded-md border border-[var(--color-brand)] px-4 py-2 font-semibold text-[var(--color-brand)]', onClick: () => window.location.reload() }, 'Reintentar')]) })
+function lazyAppPage(name: string, loader: () => Promise<{ default: Component }>): Component {
+  const view = defineAsyncComponent({ loader, loadingComponent: RouteLoadingPage, errorComponent: RouteErrorPage })
+  return defineComponent({ name, render: () => h(AppShell, null, { default: () => h(view) }) })
+}
+
+const AdminCareersPage = lazyAppPage('AdminCareersPage', () => import('@/modules/admin/views/AdminCareersView.vue'))
+const AdminSubjectsPage = lazyAppPage('AdminSubjectsPage', () => import('@/modules/admin/views/AdminSubjectsView.vue'))
+const AdminCoursesPage = lazyAppPage('AdminCoursesPage', () => import('@/modules/admin/views/AdminCoursesView.vue'))
+const AdminPeriodsPage = lazyAppPage('AdminPeriodsPage', () => import('@/modules/admin/views/AdminPeriodsView.vue'))
 const AdminCareerEnrollmentsPage = defineComponent({ name: 'AdminCareerEnrollmentsPage', render: () => h(AppShell, null, { default: () => h(CareerEnrollmentsView) }) })
-const SchedulesPage = defineComponent({ name: 'SchedulesPage', render: () => h(AppShell, null, { default: () => h(SchedulesView) }) })
-const AcademicRecordPage = defineComponent({ name: 'AcademicRecordPage', render: () => h(AppShell, null, { default: () => h(AcademicRecordView) }) })
-const SubjectEnrollmentsPage = defineComponent({ name: 'SubjectEnrollmentsPage', render: () => h(AppShell, null, { default: () => h(SubjectEnrollmentsView) }) })
-const ExamsPage = defineComponent({ name: 'ExamsPage', render: () => h(AppShell, null, { default: () => h(ExamsView) }) })
+const SchedulesPage = lazyAppPage('SchedulesPage', () => import('@/modules/schedules/views/SchedulesView.vue'))
+const AcademicRecordPage = lazyAppPage('AcademicRecordPage', () => import('@/modules/academicRecord/views/AcademicRecordView.vue'))
+const SubjectEnrollmentsPage = lazyAppPage('SubjectEnrollmentsPage', () => import('@/modules/subjectEnrollments/views/SubjectEnrollmentsView.vue'))
+const ExamsPage = lazyAppPage('ExamsPage', () => import('@/modules/exams/views/ExamsView.vue'))
 const CareerCatalogPage = defineComponent({ name: 'CareerCatalogPage', render: () => h(AppShell, null, { default: () => h(CareerCatalogView) }) })
-const TeacherCoursesPage = defineComponent({ name: 'TeacherCoursesPage', render: () => h(AppShell, null, { default: () => h(TeacherCoursesView) }) })
-const AdminExamsPage = defineComponent({ name: 'AdminExamsPage', render: () => h(AppShell, null, { default: () => h(AdminExamsView) }) })
-const TeacherExamsPage = defineComponent({ name: 'TeacherExamsPage', render: () => h(AppShell, null, { default: () => h(TeacherExamsView) }) })
+const TeacherCoursesPage = lazyAppPage('TeacherCoursesPage', () => import('@/modules/teacherCourses/views/TeacherCoursesView.vue'))
+const AdminExamsPage = lazyAppPage('AdminExamsPage', () => import('@/modules/examManagement/views/AdminExamsView.vue'))
+const TeacherExamsPage = lazyAppPage('TeacherExamsPage', () => import('@/modules/examManagement/views/TeacherExamsView.vue'))
 const AdminHomologationsPage = defineComponent({ name: 'AdminHomologationsPage', render: () => h(AppShell, null, { default: () => h(AdminHomologationsView) }) })
+const AdminAcademicRecordsPage = defineComponent({ name: 'AdminAcademicRecordsPage', render: () => h(AppShell, null, { default: () => h(AdminAcademicRecordsView) }) })
 
 function routeMeta(route: RouteLocationNormalized): RouteMeta {
   return route.meta as RouteMeta
@@ -152,6 +150,8 @@ export function createAppRouter() {
       { path: '/app/administracion/usuarios/nuevo', name: 'admin-user-create', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios/:id', name: 'admin-user-detail', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/usuarios/:id/editar', name: 'admin-user-edit', component: AdminUsersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/trayectorias', name: 'admin-academic-records', component: AdminAcademicRecordsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/trayectorias/:id', name: 'admin-academic-record-detail', component: AdminAcademicRecordsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/carreras', name: 'admin-careers', component: AdminCareersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/inscripciones-carreras', name: 'admin-career-enrollments', component: AdminCareerEnrollmentsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/carreras/nueva', name: 'admin-career-create', component: AdminCareersPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },

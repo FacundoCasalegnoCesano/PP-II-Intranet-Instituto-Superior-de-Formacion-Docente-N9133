@@ -17,14 +17,21 @@ import config from '../config/env.js';
 
 const router = Router();
 
-const publicAuthLimiter = rateLimit({
+const loginIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  skip: () => config.nodeEnv === 'test',
+  skipSuccessfulRequests: true,
+  message: { success: false, message: 'Demasiadas solicitudes. Intente de nuevo más tarde.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const recoveryIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
   skip: () => config.nodeEnv === 'test',
-  message: {
-    success: false,
-    message: 'Demasiadas solicitudes. Intente de nuevo en 15 minutos.'
-  },
+  message: { success: false, message: 'Demasiadas solicitudes. Intente de nuevo más tarde.' },
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -60,11 +67,11 @@ const backupCodesActionLimiter = rateLimit({
 });
 
 // Rutas públicas
-router.post('/login', publicAuthLimiter, validationMiddleware(loginSchema), authController.login);
+router.post('/login', loginIpLimiter, validationMiddleware(loginSchema), authController.login);
 router.post('/select-role', authOnly, authController.selectRole); // Seleccionar rol después de login
-router.post('/forgot-password', publicAuthLimiter, passwordResetLimiter, validationMiddleware(forgotPasswordSchema), authController.forgotPassword);
-router.post('/reset-password', publicAuthLimiter, validationMiddleware(resetPasswordSchema), authController.resetPassword);
-router.get('/verify-reset-token/:token', publicAuthLimiter, authController.verifyResetToken);
+router.post('/forgot-password', recoveryIpLimiter, passwordResetLimiter, validationMiddleware(forgotPasswordSchema), authController.forgotPassword);
+router.post('/reset-password', recoveryIpLimiter, validationMiddleware(resetPasswordSchema), authController.resetPassword);
+router.get('/verify-reset-token/:token', recoveryIpLimiter, authController.verifyResetToken);
 
 // Backup code recovery (admin only, público pero rate-limited)
 router.post('/admin/backup-code',

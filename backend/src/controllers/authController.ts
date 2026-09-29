@@ -1,6 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
 import authService from '../services/authService.js';
-import { prisma } from '../config/prisma.js';
 import { validationMiddleware } from '../middleware/validation.js';
 
 class AuthController {
@@ -137,23 +136,7 @@ async register(req: Request, res: Response, next: NextFunction): Promise<void> {
       const userId = req.user!.id;
       const { currentPassword, newPassword } = req.body;
       
-      const result = await authService.changePassword(userId, currentPassword, newPassword);
-      
-      // Invalidar TODA la familia de sesiones excepto la actual
-      const session = await prisma.sesion.findUnique({ where: { id: req.sessionId! } });
-      if (session) {
-        await prisma.sesion.updateMany({
-          where: {
-            familiaId: session.familiaId,
-            revocadaEn: null,
-            id: { not: req.sessionId! }
-          },
-          data: {
-            revocadaEn: new Date(),
-            cerradaEn: new Date()
-          }
-        });
-      }
+      const result = await authService.changePassword(userId, currentPassword, newPassword, req.sessionId);
 
       res.json({
         success: true,

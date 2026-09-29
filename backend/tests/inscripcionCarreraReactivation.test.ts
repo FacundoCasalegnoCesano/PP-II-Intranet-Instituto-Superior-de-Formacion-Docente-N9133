@@ -8,6 +8,7 @@ import userRepository from '../src/repositories/userRepository.js';
 import carreraRepository from '../src/repositories/carreraRepository.js';
 import { ROLES } from '../src/constants/roles.js';
 import { prisma } from '../src/config/prisma.js';
+import { AppError } from '../src/utils/AppError.js';
 
 const restorations: Array<() => void> = [];
 
@@ -77,7 +78,7 @@ test('reactiva la inscripción inactiva reutilizando su ID y actualizando sus fe
 test('mantiene el rechazo específico cuando la inscripción activa ya existe', async () => {
   configureValidEnrollment();
   replaceMethod(inscripcionCarreraRepository, 'inscribirAtomic', async () => {
-    throw new Error('El alumno ya está inscripto en esta carrera');
+    throw new AppError(400, 'El alumno ya está inscripto en esta carrera');
   });
 
   await assert.rejects(

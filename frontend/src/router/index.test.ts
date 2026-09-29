@@ -9,6 +9,7 @@ import CareerEnrollmentsView from '@/modules/admin/views/CareerEnrollmentsView.v
 import AdminExamsView from '@/modules/examManagement/views/AdminExamsView.vue'
 import TeacherExamsView from '@/modules/examManagement/views/TeacherExamsView.vue'
 import AdminHomologationsView from '@/modules/homologations/views/AdminHomologationsView.vue'
+import AdminAcademicRecordsView from '@/modules/adminAcademicRecords/views/AdminAcademicRecordsView.vue'
 import { createAppRouter } from './index'
 
 vi.mock('@/modules/schedules/views/SchedulesView.vue', () => ({
@@ -117,6 +118,44 @@ describe('navigation guards', () => {
     await adminRouter.isReady()
     expect(adminRouter.currentRoute.value.name).toBe('admin-users')
     expect(adminRouter.getRoutes().filter((route) => String(route.name).startsWith('admin-')).length).toBeGreaterThanOrEqual(20)
+  })
+
+  it('registers administrative academic trajectory routes inside the AppShell', () => {
+    const router = createAppRouter()
+    for (const [name, path] of [
+      ['admin-academic-records', '/app/administracion/trayectorias'],
+      ['admin-academic-record-detail', '/app/administracion/trayectorias/:id'],
+    ] as const) {
+      const route = router.getRoutes().find((candidate) => candidate.name === name)
+      const page = route?.components?.default as Component & { render?: () => VNode }
+      const shell = page.render?.() as VNode & { type?: unknown; children?: { default?: () => VNode } }
+
+      expect(route).toMatchObject({ path, name, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } })
+      expect(shell.type).toBe(AppShell)
+      expect(shell.children?.default?.()?.type).toBe(AdminAcademicRecordsView)
+    }
+  })
+
+  it.each(['/app/administracion/trayectorias', '/app/administracion/trayectorias/13'])('allows only ADMINISTRATIVO to open %s', async (path) => {
+    for (const role of ['ALUMNO', 'PROFESOR'] as const) {
+      sessionStorage.save({ ...session(role, [role]), user: { ...user, rol: role } })
+      const unauthorizedRouter = createAppRouter()
+      await unauthorizedRouter.push(path)
+      await unauthorizedRouter.isReady()
+      expect(unauthorizedRouter.currentRoute.value.name).toBe('home')
+    }
+
+    sessionStorage.save({ ...session('ADMINISTRATIVO'), roles: ['ADMINISTRATIVO'], role: 'ADMINISTRATIVO', user: { ...user, rol: 'ADMINISTRATIVO' } })
+    const adminRouter = createAppRouter()
+    await adminRouter.push(path)
+    await adminRouter.isReady()
+    expect(adminRouter.currentRoute.value.name).toBe(path.endsWith('/13') ? 'admin-academic-record-detail' : 'admin-academic-records')
+
+    sessionStorage.clear()
+    const anonymousRouter = createAppRouter()
+    await anonymousRouter.push(path)
+    await anonymousRouter.isReady()
+    expect(anonymousRouter.currentRoute.value.name).toBe('login')
   })
 
   it.each(['ALUMNO', 'PROFESOR', 'ADMINISTRATIVO'] as const)('allows %s to open published schedules', async (role) => {

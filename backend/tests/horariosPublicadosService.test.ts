@@ -35,6 +35,10 @@ function dependencias(overrides: Record<string, unknown> = {}) {
   const calls: Record<string, any[]> = { writes: [], unlinks: [], publica: [], creados: [] };
   const repo: any = {
     listarAnios: async () => [{ cicloLectivo: 2026 }],
+    buscarCarrera: async () => ({ id: 1, nombre: 'Carrera', duracionAnios: 4, activo: true }),
+    carreraElegible: async () => true,
+    buscarVigentePorAmbito: async () => null,
+    buscarUltimaVigentePorAmbito: async () => null,
     buscarVigentePorCiclo: async () => null,
     buscarUltimaVigente: async () => null,
     buscarPorId: async () => null,
@@ -61,7 +65,7 @@ test('publicación inicial escribe un PDF con clave aleatoria y lo deja vigente'
   const { repo, storage, calls } = dependencias();
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, titulo: 'Horarios oficiales' }, pdf(), administrador);
+  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1, titulo: 'Horarios oficiales' }, pdf(), administrador);
 
   assert.equal(resultado.reutilizado, false);
   assert.equal(resultado.documento.vigente, true);
@@ -78,7 +82,7 @@ test('un reintento idéntico restaura el documento sin escribir otra versión', 
   const { repo, storage, calls } = dependencias({ buscarPorCicloYHash: async () => previo });
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  const resultado = await service.publicarArchivo({ cicloLectivo: 2026 }, pdf(), administrador);
+  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1 }, pdf(), administrador);
 
   assert.equal(resultado.reutilizado, true);
   assert.equal(resultado.documento.vigente, true);
@@ -95,7 +99,7 @@ test('una carrera de publicación reutiliza la versión ganadora y limpia el arc
   });
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  const resultado = await service.publicarArchivo({ cicloLectivo: 2026 }, pdf(), administrador);
+  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1 }, pdf(), administrador);
 
   assert.equal(resultado.reutilizado, true);
   assert.equal(calls.writes.length, 1);
@@ -112,7 +116,7 @@ test('rechaza archivos vacíos, con MIME, firma o extensión inseguros', () => {
 });
 
 test('limita el título de publicación a 160 caracteres', () => {
-  const validacion = publicarHorarioSchema.validate({ cicloLectivo: 2026, titulo: 'x'.repeat(161) });
+  const validacion = publicarHorarioSchema.validate({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1, titulo: 'x'.repeat(161) });
   assert.ok(validacion.error);
   assert.match(validacion.error.message, /160/);
 });
@@ -121,7 +125,7 @@ test('limpia el archivo nuevo si la transacción falla sin reemplazar la publica
   const { repo, storage, calls } = dependencias({ crearYPublicar: async () => { throw new Error('DB caída'); } });
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  await assert.rejects(service.publicarArchivo({ cicloLectivo: 2026 }, pdf(), administrador), /DB caída/);
+  await assert.rejects(service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1 }, pdf(), administrador), /DB caída/);
   assert.equal(calls.writes.length, 1);
   assert.equal(calls.unlinks.length, 1);
 });
@@ -139,12 +143,12 @@ test('permite descargar el vigente a todos y reserva históricos al administrati
 test('sin ciclo pedido busca primero el año actual y luego el último publicado', async () => {
   const ultimo = documento({ cicloLectivo: 2025 });
   const { repo, storage } = dependencias({
-    buscarVigentePorCiclo: async () => null,
-    buscarUltimaVigente: async () => ({ documento: ultimo })
+    buscarVigentePorAmbito: async () => null,
+    buscarUltimaVigentePorAmbito: async () => ({ documento: ultimo })
   });
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  const actual = await service.obtenerActual();
+  const actual = await service.obtenerActual(undefined, undefined, administrador);
   assert.equal(actual.cicloLectivo, 2025);
 });
 

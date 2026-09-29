@@ -23,6 +23,14 @@ interface UserFilters {
   search?: string;
 }
 
+interface AlumnoAdministrativoFilters {
+  page?: number;
+  limit?: number;
+  search?: string;
+  activo?: string | boolean;
+  carreraId?: number;
+}
+
 interface UserUpdateData {
   apellidoNombre?: string;
   dni?: string;
@@ -60,6 +68,10 @@ class UserService {
 
   async listAlumnosForProfesor(filters: { page?: number; limit?: number; search?: string }, profesorId: number) {
     return await userRepository.findAlumnosForProfesor(filters, profesorId);
+  }
+
+  async listAlumnosForAdministrativo(filters: AlumnoAdministrativoFilters = {}) {
+    return await userRepository.findAlumnosForAdministrativo(filters);
   }
 
   async alumnoVisibleParaProfesor(usuarioId: number, profesorId: number): Promise<boolean> {

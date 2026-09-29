@@ -54,7 +54,11 @@ class InscripcionCarreraService {
     return await inscripcionCarreraRepository.delete(id);
   }
 
-  async getInscripcionesByAlumno(alumnoId: number, currentUser: any) {
+  async getInscripcionesByAlumno(
+    alumnoId: number,
+    currentUser: any,
+    options: { includeInactive?: boolean } = {}
+  ) {
     // Verificar permisos: el mismo alumno o admin
     if (currentUser.rol === ROLES.PROFESOR) {
       throw new AppError(403, 'Los profesores no pueden consultar inscripciones globales a carreras');
@@ -63,6 +67,13 @@ class InscripcionCarreraService {
       throw new AppError(403, 'No tienes permisos para ver estas inscripciones');
     }
 
+    if (options.includeInactive && currentUser.rol !== ROLES.ADMINISTRATIVO) {
+      throw new AppError(403, 'Solo administrativos pueden consultar inscripciones históricas');
+    }
+
+    if (options.includeInactive === true) {
+      return await inscripcionCarreraRepository.getCarrerasInscriptas(alumnoId, true);
+    }
     return await inscripcionCarreraRepository.getCarrerasInscriptas(alumnoId);
   }
 

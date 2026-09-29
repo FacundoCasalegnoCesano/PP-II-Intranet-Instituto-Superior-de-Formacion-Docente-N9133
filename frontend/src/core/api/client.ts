@@ -213,7 +213,8 @@ export class ApiClient {
   }
 
   private async refreshSessionOnce(): Promise<SessionTokens> {
-    const refreshToken = this.storage.read()?.refreshToken
+    const originalSession = this.storage.read()
+    const refreshToken = originalSession?.refreshToken
     if (!refreshToken) {
       this.invalidateSession()
       throw new ApiError('La sesión expiró', 401, 'SESSION_EXPIRED')
@@ -231,9 +232,18 @@ export class ApiClient {
         throw new ApiError('La respuesta de renovación es inválida', response.status, 'INVALID_RESPONSE')
       }
 
+      const currentSession = this.storage.read()
+      if (currentSession?.sessionId !== originalSession?.sessionId || currentSession?.refreshToken !== refreshToken) {
+        throw new ApiError('La sesión cambió mientras se renovaba', 401, 'SESSION_CHANGED')
+      }
+
       this.storage.updateTokens(tokens)
       return tokens
     } catch (error) {
+      const currentSession = this.storage.read()
+      if (currentSession?.sessionId !== originalSession?.sessionId || currentSession?.refreshToken !== refreshToken) {
+        throw normalizeApiError(error)
+      }
       this.invalidateSession()
       throw normalizeApiError(error)
     }

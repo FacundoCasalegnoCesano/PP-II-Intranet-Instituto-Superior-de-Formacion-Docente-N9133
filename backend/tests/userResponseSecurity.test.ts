@@ -7,6 +7,7 @@ import userRepository from '../src/repositories/userRepository.js';
 import { prisma } from '../src/config/prisma.js';
 import { hashPassword } from '../src/utils/bcrypt.js';
 import { ROLES } from '../src/constants/roles.js';
+import { toPublicUser } from '../src/utils/publicUser.js';
 
 const restorations: Array<() => void> = [];
 
@@ -83,11 +84,110 @@ test('login no expone credenciales internas del usuario', async () => {
     updatedAt: new Date('2026-01-01')
   }) as any);
   replaceMethod(userRepository, 'updateLastAccess', async () => ({}) as any);
+  replaceMethod(userRepository, 'clearLoginFailures', async () => ({}) as any);
   replaceMethod(prisma.sesion, 'create', async () => ({ id: 99 }) as any);
 
   const result = await authService.login('seguro@example.com', 'Clave123!', undefined, undefined);
 
   assertNoInternalCredentials(result.user);
+});
+
+test('login rechaza con mensaje genérico una cuenta bloqueada', async () => {
+  replaceMethod(userRepository, 'findByEmailOrDni', async () => ({
+    idUsuario: 21,
+    email: 'bloqueado@example.com',
+    loginLockedUntil: new Date(Date.now() + 60_000),
+    activo: true,
+    passwordHash: 'unused',
+    dni: 30111223,
+    apellidoNombre: 'Usuario Bloqueado',
+    rol: ROLES.PROFESOR
+  }) as any);
+
+  await assert.rejects(
+    () => authService.login('bloqueado@example.com', 'Clave123!', undefined, undefined),
+    { message: 'Credenciales inválidas' }
+  );
+});
+
+test('login registra el intento cuando la contraseña es inválida', async () => {
+  const passwordHash = await hashPassword('OtraClave123!');
+  let failures = 0;
+  replaceMethod(userRepository, 'findByEmailOrDni', async () => ({
+    idUsuario: 22,
+    email: 'invalido@example.com',
+    loginLockedUntil: null,
+    activo: true,
+    passwordHash,
+    dni: 30111224,
+    apellidoNombre: 'Usuario Inválido',
+    rol: ROLES.PROFESOR
+  }) as any);
+  replaceMethod(userRepository, 'recordLoginFailure', async () => { failures += 1; return {} as any; });
+
+  await assert.rejects(
+    () => authService.login('invalido@example.com', 'Clave123!', undefined, undefined),
+    { message: 'Credenciales inválidas' }
+  );
+  assert.equal(failures, 1);
+});
+
+test('login limpia los fallos al autenticarse correctamente', async () => {
+  const passwordHash = await hashPassword('Clave123!');
+  let cleared = 0;
+  replaceMethod(userRepository, 'findByEmailOrDni', async () => ({
+    idUsuario: 23,
+    email: 'correcto@example.com',
+    loginLockedUntil: null,
+    activo: true,
+    passwordHash,
+    dni: 30111225,
+    apellidoNombre: 'Usuario Correcto',
+    rol: ROLES.PROFESOR
+  }) as any);
+  replaceMethod(userRepository, 'clearLoginFailures', async () => { cleared += 1; return {} as any; });
+  replaceMethod(userRepository, 'updateLastAccess', async () => ({}) as any);
+  replaceMethod(prisma.sesion, 'create', async () => ({ id: 100 }) as any);
+
+  await authService.login('correcto@example.com', 'Clave123!', undefined, undefined);
+  assert.equal(cleared, 1);
+});
+
+test('login ejecuta una comparación bcrypt para un identificador inexistente', async () => {
+  const bcrypt = await import('bcryptjs');
+  const originalCompare = bcrypt.default.compare;
+  let comparisons = 0;
+  bcrypt.default.compare = async (...args: Parameters<typeof originalCompare>) => {
+    comparisons += 1;
+    return originalCompare(...args);
+  };
+  replaceMethod(userRepository, 'findByEmailOrDni', async () => null);
+
+  try {
+    await assert.rejects(
+      () => authService.login('no-existe@example.com', 'Clave123!', undefined, undefined),
+      { message: 'Credenciales inválidas' }
+    );
+    assert.equal(comparisons, 1);
+  } finally {
+    bcrypt.default.compare = originalCompare;
+  }
+});
+
+test('toPublicUser excluye también los contadores de bloqueo de login', () => {
+  const user = toPublicUser({
+    idUsuario: 20,
+    email: 'seguro@example.com',
+    passwordHash: 'hash',
+    backupCodes: 'encrypted',
+    loginFailedCount: 4,
+    loginLockedUntil: new Date('2026-08-27T12:00:00.000Z')
+  });
+
+  assert.equal('passwordHash' in user, false);
+  assert.equal('backupCodes' in user, false);
+  assert.equal('loginFailedCount' in user, false);
+  assert.equal('loginLockedUntil' in user, false);
 });
 
 test('cambio de rol no expone credenciales internas del usuario', async () => {

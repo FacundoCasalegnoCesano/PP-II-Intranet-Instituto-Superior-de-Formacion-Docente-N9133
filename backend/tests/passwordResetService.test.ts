@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import authService from '../src/services/authService.js';
 import userRepository from '../src/repositories/userRepository.js';
 import passwordResetTokenRepository from '../src/repositories/passwordResetTokenRepository.js';
+import { encryptBackupCodes, decryptBackupCodes } from '../src/utils/backupCodes.js';
 
 function replaceMethod(target: Record<string, unknown>, key: string, replacement: unknown): () => void {
   const original = target[key];
@@ -22,13 +23,11 @@ test('forgot password crea un token hash y envía el token solo al correo', asyn
     apellidoNombre: 'Alumno Ejemplo',
     activo: true
   }));
-  const restoreInvalidate = replaceMethod(passwordResetTokenRepository as any, 'invalidateForUser', async () => undefined);
-  const restoreCreate = replaceMethod(passwordResetTokenRepository as any, 'create', async (data: any) => {
+  const restoreIssue = replaceMethod(passwordResetTokenRepository as any, 'issueIfAllowed', async (data: any) => {
     created = data;
-    return { id: 1, ...data };
+    return true;
   });
   const restoreDelete = replaceMethod(passwordResetTokenRepository as any, 'deleteByHash', async () => undefined);
-  const restoreRecent = replaceMethod(passwordResetTokenRepository as any, 'hasRecentRequest', async () => false);
 
   try {
     const result = await authService.forgotPassword('ALUMNO@EXAMPLE.COM', {
@@ -44,9 +43,7 @@ test('forgot password crea un token hash y envía el token solo al correo', asyn
     assert.equal(created.expiresAt.toISOString(), '2026-08-27T13:00:00.000Z');
   } finally {
     restoreDelete();
-    restoreRecent();
-    restoreCreate();
-    restoreInvalidate();
+    restoreIssue();
     restoreUser();
   }
 });
@@ -112,7 +109,7 @@ test('verify reset token responde inválido sin filtrar el motivo', async () => 
 });
 
 test('forgot password respeta el intervalo mínimo por usuario', async () => {
-  let createCalls = 0;
+  let issueCalls = 0;
   let sendCalls = 0;
   const restoreUser = replaceMethod(userRepository as any, 'findByEmail', async () => ({
     idUsuario: 21,
@@ -120,19 +117,17 @@ test('forgot password respeta el intervalo mínimo por usuario', async () => {
     apellidoNombre: 'Alumno Ejemplo',
     activo: true
   }));
-  const restoreRecent = replaceMethod(passwordResetTokenRepository as any, 'hasRecentRequest', async () => true);
-  const restoreCreate = replaceMethod(passwordResetTokenRepository as any, 'create', async () => { createCalls += 1; });
+  const restoreIssue = replaceMethod(passwordResetTokenRepository as any, 'issueIfAllowed', async () => { issueCalls += 1; return false; });
 
   try {
     const result = await authService.forgotPassword('alumno@example.com', {
       sendEmail: async () => { sendCalls += 1; return {} as any; }
     });
     assert.deepEqual(result, { message: publicMessage });
-    assert.equal(createCalls, 0);
+    assert.equal(issueCalls, 1);
     assert.equal(sendCalls, 0);
   } finally {
-    restoreCreate();
-    restoreRecent();
+    restoreIssue();
     restoreUser();
   }
 });
@@ -145,9 +140,7 @@ test('forgot password elimina el token si falla la entrega de correo', async () 
     apellidoNombre: 'Alumno Ejemplo',
     activo: true
   }));
-  const restoreRecent = replaceMethod(passwordResetTokenRepository as any, 'hasRecentRequest', async () => false);
-  const restoreInvalidate = replaceMethod(passwordResetTokenRepository as any, 'invalidateForUser', async () => undefined);
-  const restoreCreate = replaceMethod(passwordResetTokenRepository as any, 'create', async () => undefined);
+  const restoreIssue = replaceMethod(passwordResetTokenRepository as any, 'issueIfAllowed', async () => true);
   const restoreDelete = replaceMethod(passwordResetTokenRepository as any, 'deleteByHash', async (hash: string) => { deletedHash = hash; });
 
   try {
@@ -158,9 +151,38 @@ test('forgot password elimina el token si falla la entrega de correo', async () 
     assert.match(deletedHash, /^[a-f0-9]{64}$/);
   } finally {
     restoreDelete();
-    restoreCreate();
-    restoreInvalidate();
-    restoreRecent();
+    restoreIssue();
+    restoreUser();
+  }
+});
+
+test('recovery con código delega el consumo CAS y el reseteo de credenciales en una sola operación', async () => {
+  const backupCodes = encryptBackupCodes(['CODE-1', 'CODE-2']);
+  let received: any;
+  const restoreUser = replaceMethod(userRepository as any, 'findByEmail', async () => ({
+    idUsuario: 30,
+    email: 'admin@example.com',
+    apellidoNombre: 'Admin',
+    rol: 'ADMINISTRATIVO',
+    activo: false,
+    backupCodes
+  }));
+  const restoreConsume = replaceMethod(passwordResetTokenRepository as any, 'consumeBackupCodeAndReset', async (data: any) => {
+    received = data;
+    return { remainingCodes: data.remainingCodes };
+  });
+
+  try {
+    const result = await authService.recoveryWithBackupCode('admin@example.com', 'CODE-1', 'NuevaClave123!');
+
+    assert.deepEqual(result, { remainingCodes: 1 });
+    assert.equal(received.usuarioId, 30);
+    assert.equal(received.expectedBackupCodes, backupCodes);
+    assert.deepEqual(decryptBackupCodes(received.replacementBackupCodes), ['CODE-2']);
+    assert.equal(received.remainingCodes, 1);
+    assert.match(received.newPasswordHash, /^\$2[aby]\$/);
+  } finally {
+    restoreConsume();
     restoreUser();
   }
 });

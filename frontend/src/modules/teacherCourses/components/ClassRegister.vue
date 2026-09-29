@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import ConfirmDialog from '@/ui/ConfirmDialog.vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { teacherCoursesApi } from '../api/teacherCoursesApi'
 import type { ClassRecord, ClassSummary, EnrolledStudent, TeacherCourse } from '../types/teacherCourses'
 
@@ -11,6 +12,11 @@ const props = withDefaults(defineProps<{
   students: () => [],
   classes: () => [],
 })
+
+const emit = defineEmits<{
+  'dirty-change': [dirty: boolean]
+  'saving-change': [saving: boolean]
+}>()
 
 type DraftAttendance = EnrolledStudent & {
   presente: boolean
@@ -25,6 +31,8 @@ const currentYear = Number(new Intl.DateTimeFormat('en-US', {
 
 const history = ref<ClassSummary[]>([])
 const selectedDate = ref('')
+const dateBeforeEdit = ref('')
+const dirtyBeforeDateEdit = ref(false)
 const topic = ref('')
 const rows = ref<DraftAttendance[]>([])
 const loadingDetail = ref(false)
@@ -32,9 +40,67 @@ const saving = ref(false)
 const error = ref('')
 const validationError = ref('')
 const successMessage = ref('')
+const dirty = ref(false)
+const discardDialogOpen = ref(false)
+const discardAction = ref<(() => void) | null>(null)
+const discardOpener = ref<HTMLElement | null>(null)
 const staleResponsesDiscarded = ref(0)
 let detailRequest = 0
 let refreshRequest = 0
+
+function markDirty(): void {
+  if (!dirty.value) {
+    dirty.value = true
+    emit('dirty-change', true)
+  }
+}
+
+function restoreDiscardFocus(): void {
+  const opener = discardOpener.value
+  discardOpener.value = null
+  void nextTick(() => opener?.focus())
+}
+
+function requestDiscard(action: () => void, event?: Event): void {
+  if (!dirty.value) {
+    action()
+    return
+  }
+  discardAction.value = action
+  discardOpener.value = event?.currentTarget instanceof HTMLElement ? event.currentTarget : (document.activeElement as HTMLElement | null)
+  discardDialogOpen.value = true
+}
+
+function cancelDiscard(): void {
+  if (selectedDate.value !== dateBeforeEdit.value) selectedDate.value = dateBeforeEdit.value
+  discardDialogOpen.value = false
+  discardAction.value = null
+  restoreDiscardFocus()
+}
+
+function confirmDiscard(): void {
+  const action = discardAction.value
+  discardDialogOpen.value = false
+  discardAction.value = null
+  dirty.value = false
+  emit('dirty-change', false)
+  action?.()
+  restoreDiscardFocus()
+}
+
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!dirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+watch(dirty, value => {
+  emit('dirty-change', value)
+  if (value) window.addEventListener('beforeunload', onBeforeUnload)
+  else window.removeEventListener('beforeunload', onBeforeUnload)
+}, { immediate: true })
+
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 const editable = computed(() => (
   (props.course.editable ?? (props.course.activo && props.course.anioLectivo === currentYear))
@@ -52,16 +118,19 @@ function blankRows(): DraftAttendance[] {
 
 function resetDraft(date = ''): void {
   selectedDate.value = date
+  dateBeforeEdit.value = date
   topic.value = ''
   rows.value = editable.value ? blankRows() : []
   loadingDetail.value = false
   validationError.value = ''
   error.value = ''
   successMessage.value = ''
+  dirty.value = false
 }
 
 function applyRecord(record: ClassRecord): void {
   topic.value = record.temaDesarrollado
+  dirty.value = false
   if (!editable.value) {
     rows.value = record.asistencias.map(attendance => ({
       alumnoId: attendance.alumnoId,
@@ -99,17 +168,24 @@ function historySummary(item: ClassSummary): string {
   ].join(' · ')
 }
 
-function startNewClass(): void {
+function startNewClass(event?: Event): void {
   if (saving.value) return
-  detailRequest += 1
-  resetDraft()
+  requestDiscard(() => {
+    detailRequest += 1
+    resetDraft()
+  }, event)
 }
 
-async function openDate(date: string): Promise<void> {
+async function openDate(date: string, event?: Event): Promise<void> {
   if (saving.value) return
+  if (dirty.value && (date !== selectedDate.value || (dirtyBeforeDateEdit.value && date !== dateBeforeEdit.value))) {
+    requestDiscard(() => { void openDate(date) }, event)
+    return
+  }
   detailRequest += 1
   const request = detailRequest
   selectedDate.value = date
+  dateBeforeEdit.value = date
   validationError.value = ''
   error.value = ''
   successMessage.value = ''
@@ -138,6 +214,7 @@ async function openDate(date: string): Promise<void> {
 }
 
 function updatePresence(row: DraftAttendance, presente: boolean): void {
+  markDirty()
   row.presente = presente
   if (presente) row.justificado = false
 }
@@ -190,6 +267,7 @@ async function save(): Promise<void> {
   const date = selectedDate.value
   const payload = payloadForCurrentDraft()
   saving.value = true
+  emit('saving-change', true)
   error.value = ''
   successMessage.value = ''
   try {
@@ -197,6 +275,7 @@ async function save(): Promise<void> {
   } catch {
     error.value = 'No pudimos guardar la clase. Revisá los datos e intentá nuevamente.'
     saving.value = false
+    emit('saving-change', false)
     return
   }
 
@@ -208,6 +287,7 @@ async function save(): Promise<void> {
     if (request === refreshRequest) error.value = 'La clase se guardó, pero no pudimos actualizar su detalle. Intentá nuevamente.'
   } finally {
     saving.value = false
+    emit('saving-change', false)
   }
 }
 
@@ -255,7 +335,7 @@ watch(() => props.classes, value => {
               <th scope="row" class="px-3 py-3 font-semibold">{{ item.fecha }}</th>
               <td class="px-3 py-3">{{ item.temaDesarrollado }}</td>
               <td class="px-3 py-3 text-[var(--color-graphite)]">{{ historySummary(item) }}</td>
-              <td class="px-3 py-3 text-right"><button type="button" class="min-h-10 rounded-md border border-[var(--color-brand)] px-3 font-semibold text-[var(--color-brand)]" :aria-label="`Abrir ${item.fecha}`" :disabled="saving" @click="openDate(item.fecha)">Abrir</button></td>
+              <td class="px-3 py-3 text-right"><button type="button" class="min-h-11 rounded-md border border-[var(--color-brand)] px-3 font-semibold text-[var(--color-brand)]" :aria-label="`Abrir ${item.fecha}`" :disabled="saving" @click="openDate(item.fecha, $event)">Abrir</button></td>
             </tr>
           </tbody>
         </table>
@@ -264,8 +344,8 @@ watch(() => props.classes, value => {
 
     <form class="mt-5 rounded-lg border border-[var(--color-border)] bg-white p-4 sm:p-5" :aria-busy="saving || loadingDetail" @submit.prevent="save">
       <div class="flex flex-wrap items-end gap-4">
-        <label class="block w-full min-w-0 text-sm font-semibold sm:w-auto sm:min-w-48 sm:flex-1" for="class-date">Fecha de clase<input id="class-date" v-model="selectedDate" type="date" required :disabled="!editable || saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="openDate(selectedDate)" /></label>
-        <label class="block w-full min-w-0 text-sm font-semibold sm:w-auto sm:min-w-64 sm:flex-[2]" for="class-topic">Tema desarrollado<input id="class-topic" v-model="topic" type="text" required :disabled="!editable || saving" :aria-invalid="validationError && !topic.trim() ? 'true' : undefined" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" /></label>
+        <label class="block w-full min-w-0 text-sm font-semibold sm:w-auto sm:min-w-48 sm:flex-1" for="class-date">Fecha de clase<input id="class-date" v-model="selectedDate" type="date" required :disabled="!editable || saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @focus="dateBeforeEdit = selectedDate; dirtyBeforeDateEdit = dirty" @input="markDirty" @change="openDate(selectedDate, $event)" /></label>
+        <label class="block w-full min-w-0 text-sm font-semibold sm:w-auto sm:min-w-64 sm:flex-[2]" for="class-topic">Tema desarrollado<input id="class-topic" v-model="topic" type="text" required :disabled="!editable || saving" :aria-invalid="validationError && !topic.trim() ? 'true' : undefined" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @input="markDirty" /></label>
         <button v-if="editable" type="button" class="min-h-11 rounded-md border border-[var(--color-brand)] px-4 font-semibold text-[var(--color-brand)]" :disabled="saving" @click="startNewClass">Nueva fecha</button>
       </div>
 
@@ -289,11 +369,11 @@ watch(() => props.classes, value => {
                   <div class="flex flex-wrap gap-x-4">
                     <label class="inline-flex min-h-11 items-center gap-2"><input type="radio" :name="`attendance-${row.alumnoId}`" :checked="row.presente" class="accent-[var(--color-brand)]" @change="updatePresence(row, true)" />Presente</label>
                     <label class="inline-flex min-h-11 items-center gap-2"><input type="radio" :name="`attendance-${row.alumnoId}`" :checked="!row.presente" class="accent-[var(--color-brand)]" @change="updatePresence(row, false)" />Ausente</label>
-                    <label v-if="!row.presente" class="inline-flex min-h-11 items-center gap-2"><input v-model="row.justificado" type="checkbox" class="accent-[var(--color-brand)]" />Ausencia justificada</label>
+                    <label v-if="!row.presente" class="inline-flex min-h-11 items-center gap-2"><input v-model="row.justificado" type="checkbox" class="accent-[var(--color-brand)]" @change="markDirty" />Ausencia justificada</label>
                   </div>
                   <p class="text-sm text-[var(--color-graphite)]" role="status">Asistencia: {{ row.presente ? 'Presente' : row.justificado ? 'Ausente, justificada' : 'Ausente, sin justificar' }}</p>
                 </div>
-                <label class="block min-w-0 text-sm font-semibold" :for="`attendance-note-${row.alumnoId}`"><span class="md:sr-only">Observación</span><textarea :id="`attendance-note-${row.alumnoId}`" v-model="row.observacion" rows="2" class="mt-1 block w-full rounded-md border border-[var(--color-border)] px-3 py-2 font-normal md:mt-0" /></label>
+                <label class="block min-w-0 text-sm font-semibold" :for="`attendance-note-${row.alumnoId}`"><span class="md:sr-only">Observación</span><textarea :id="`attendance-note-${row.alumnoId}`" v-model="row.observacion" rows="2" class="mt-1 block w-full rounded-md border border-[var(--color-border)] px-3 py-2 font-normal md:mt-0" @input="markDirty" /></label>
               </div>
             </fieldset>
           </li>
@@ -303,4 +383,5 @@ watch(() => props.classes, value => {
       <button v-if="editable && students.length" type="submit" class="mt-5 min-h-11 rounded-md bg-[var(--color-brand)] px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-55" :disabled="saving">{{ saving ? 'Guardando…' : 'Guardar clase' }}</button>
     </form>
   </section>
+  <ConfirmDialog :open="discardDialogOpen" title="Descartar cambios sin guardar" description="Hay cambios locales que todavía no se guardaron. ¿Querés descartarlos y continuar?" confirm-label="Descartar cambios" @cancel="cancelDiscard" @confirm="confirmDiscard" />
 </template>

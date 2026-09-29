@@ -206,11 +206,11 @@ class InscripcionCarreraRepository {
     });
   }
 
-  async getCarrerasInscriptas(usuarioId: number): Promise<any[]> {
+  async getCarrerasInscriptas(usuarioId: number, includeInactive = false): Promise<any[]> {
     return await prisma.inscripcionCarrera.findMany({
       where: {
         usuarioId,
-        activo: true
+        ...(includeInactive ? {} : { activo: true })
       },
       include: {
         carrera: {

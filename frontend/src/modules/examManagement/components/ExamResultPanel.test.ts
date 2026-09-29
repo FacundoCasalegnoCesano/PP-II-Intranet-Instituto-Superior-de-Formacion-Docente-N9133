@@ -29,6 +29,42 @@ function renderPanel(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ExamResultPanel', () => {
+  it('saves one draft, preserves the other, and retries a failed refresh', async () => {
+    const second: InscriptoResultado = {
+      ...pending,
+      id: 22,
+      alumno: { ...pending.alumno, idUsuario: 14, apellidoNombre: 'Marcos Acosta', email: 'marcos@example.test', dni: '30111222' },
+    }
+    const saveResult = vi.fn().mockResolvedValue({ version: 8 })
+    const reloadResults = vi.fn()
+      .mockRejectedValueOnce(new Error('refresh failed'))
+      .mockResolvedValueOnce({
+        results: [{ ...pending, resultado: 'CALIFICADO', nota: 8, aprobado: true }, second],
+        version: 8,
+      })
+    const onChanged = vi.fn()
+    const user = userEvent.setup()
+    renderPanel({ results: [pending, second], saveResult, reloadResults, onChanged })
+
+    await user.type(screen.getByLabelText('Nota de Lucía Fernández'), '8')
+    await user.type(screen.getByLabelText('Nota de Marcos Acosta'), '7')
+    await user.click(screen.getByRole('button', { name: 'Guardar resultado de Lucía Fernández' }))
+
+    expect(saveResult).toHaveBeenCalledWith({ alumnoId: 13, nota: 8, expectedVersion: 7 })
+    expect(await screen.findByRole('button', { name: 'Reintentar actualización' })).toBeVisible()
+    expect(screen.getByLabelText('Nota de Marcos Acosta')).toHaveValue(7)
+    expect(onChanged).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar actualización' }))
+
+    expect(await screen.findByText('Resultado guardado y vista actualizada.')).toBeVisible()
+    expect(reloadResults).toHaveBeenCalledTimes(2)
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(onChanged).toHaveBeenCalledWith('results')
+    expect(screen.getByLabelText('Nota de Marcos Acosta')).toHaveValue(7)
+    expect(screen.getByText('Hay cambios sin guardar.')).toBeVisible()
+  })
+
   it('keeps zero as a grade and shows the backend result state', async () => {
     const saveResult = vi.fn().mockResolvedValue({ version: 8 })
     const user = userEvent.setup()
