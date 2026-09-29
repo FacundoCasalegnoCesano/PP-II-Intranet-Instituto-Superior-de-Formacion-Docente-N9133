@@ -2,7 +2,7 @@ import { Router } from 'express';
 import asistenciaController from '../controllers/asistenciaController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
-import { cargaMasivaSchema, listAsistenciasQuerySchema } from '../validations/asistenciaValidation.js';
+import { cargaMasivaSchema, listAsistenciasAlumnoQuerySchema, listAsistenciasQuerySchema } from '../validations/asistenciaValidation.js';
 import { ROLES } from '../constants/roles.js';
 
 const router = Router();
@@ -34,6 +34,7 @@ router.get('/resumen/:cursadaId',
 // asistencia desde sus cursadas autorizadas.
 router.get('/alumno/:alumnoId',
   roleCheck(ROLES.ALUMNO, ROLES.ADMINISTRATIVO),
+  validationMiddleware(listAsistenciasAlumnoQuerySchema, 'query'),
   asistenciaController.getByAlumno
 );
 

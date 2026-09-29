@@ -1,6 +1,6 @@
 import { prisma } from '../config/prisma.js';
 import { Prisma } from '@prisma/client';
-import type { RolTribunal, TipoExamen } from '@prisma/client';
+import type { CondicionExamen, RolTribunal, TipoExamen } from '@prisma/client';
 import { AppError } from '../utils/AppError.js';
 
 export interface ExamenCreateData {
@@ -41,6 +41,7 @@ export interface ResultadoExamenData {
 
 export interface MesaDisponibleParaAlumno {
   id: number;
+  version?: number;
   materiaId: number;
   fecha: Date;
   tipoExamen: TipoExamen;
@@ -62,7 +63,13 @@ export interface MesaDisponibleParaAlumno {
     rolTribunal: RolTribunal;
     profesor: { apellidoNombre: string };
   }>;
-  inscripciones: Array<{ id: number; fechaBaja: Date | null }>;
+  inscripciones: Array<{ id: number; fechaBaja: Date | null; condicion?: CondicionExamen }>;
+  periodosHabilitadores?: Array<{ periodoInscripcion: {
+    tipo: string;
+    activo: boolean;
+    fechaInicio: Date;
+    fechaFin: Date;
+  } }>;
 }
 
 class ExamenRepository {
@@ -252,34 +259,38 @@ class ExamenRepository {
     cicloLectivo: number;
     evaluadoEn: Date;
     fechaDesde: Date;
+    includeNoHabilitadas?: boolean;
   }): Promise<MesaDisponibleParaAlumno[]> {
-    return await prisma.mesa.findMany({
-      where: {
-        activo: true,
-        estadoMesa: 'ABIERTA',
-        fecha: { gte: filtros.fechaDesde },
-        periodosHabilitadores: {
-          some: {
-            periodoInscripcion: {
-              tipo: 'EXAMEN',
+    const where: Prisma.MesaWhereInput = {
+      activo: true,
+      estadoMesa: 'ABIERTA',
+      fecha: { gte: filtros.fechaDesde },
+      materia: {
+        carrera: {
+          inscripciones: {
+            some: {
+              usuarioId: filtros.usuarioId,
               activo: true,
-              fechaInicio: { lte: filtros.evaluadoEn },
-              fechaFin: { gte: filtros.evaluadoEn }
-            }
-          }
-        },
-        materia: {
-          carrera: {
-            inscripciones: {
-              some: {
-                usuarioId: filtros.usuarioId,
-                activo: true,
-                fechaBaja: null
-              }
+              fechaBaja: null
             }
           }
         }
-      },
+      }
+    };
+    if (!filtros.includeNoHabilitadas) {
+      where.periodosHabilitadores = {
+        some: {
+          periodoInscripcion: {
+            tipo: 'EXAMEN',
+            activo: true,
+            fechaInicio: { lte: filtros.evaluadoEn },
+            fechaFin: { gte: filtros.evaluadoEn }
+          }
+        }
+      };
+    }
+    return await prisma.mesa.findMany({
+      where,
       select: {
         id: true,
         version: true,
@@ -320,7 +331,14 @@ class ExamenRepository {
         },
         inscripciones: {
           where: { alumnoId: filtros.alumnoId },
-          select: { id: true, fechaBaja: true }
+          select: { id: true, fechaBaja: true, condicion: true }
+        },
+        periodosHabilitadores: {
+          select: {
+            periodoInscripcion: {
+              select: { tipo: true, activo: true, fechaInicio: true, fechaFin: true }
+            }
+          }
         }
       },
       orderBy: [{ fecha: 'asc' }, { id: 'asc' }]

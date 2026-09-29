@@ -78,7 +78,8 @@ class ExamenController {
 
   async getMesasDisponibles(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const data = await examenService.getMesasDisponibles(req.user!);
+      const query = req.query as unknown as { includeNoHabilitadas?: boolean };
+      const data = await examenService.getMesasDisponibles(req.user!, new Date(), query.includeNoHabilitadas === true);
       res.json({ success: true, data });
     } catch (error) {
       next(error);

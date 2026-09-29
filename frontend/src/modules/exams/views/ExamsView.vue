@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { enrollInExam, fetchAvailableExams, fetchMyExamEnrollments, withdrawFromExam } from '../api/examsApi'
-import type { AvailableExam, ExamEnrollment } from '../types/exams'
+import type { AvailableExam, ExamAvailability, ExamEnrollment } from '../types/exams'
 import { useAuthStore } from '@/stores/authStore'
 import AppButton from '@/ui/AppButton.vue'
 import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 import { academicLabel, roleLabel } from '@/core/presentation/academicLabels'
 
 const auth = useAuthStore()
-const exams = ref<AvailableExam[]>([])
+const exams = ref<ExamAvailability[]>([])
 const enrollments = ref<ExamEnrollment[]>([])
 const loading = ref(false)
 const error = ref('')
 const actionError = ref('')
-const pendingWithdrawal = ref<AvailableExam | null>(null)
+const pendingWithdrawal = ref<ExamAvailability | null>(null)
 const saving = ref(false)
 const sortedExams = computed(() => [...exams.value].sort((left, right) => new Date(left.fecha).getTime() - new Date(right.fecha).getTime()))
+const enabledExams = computed(() => sortedExams.value.filter(exam => exam.estadoDisponibilidad !== 'NO_HABILITADA'))
+const unavailableExams = computed(() => sortedExams.value.filter(exam => exam.estadoDisponibilidad === 'NO_HABILITADA'))
 let disposed = false
 let loadGeneration = 0
 
@@ -47,7 +49,7 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const [available, mine] = await Promise.all([fetchAvailableExams(), fetchMyExamEnrollments(user.idUsuario)])
+    const [available, mine] = await Promise.all([fetchAvailableExams({ includeNoHabilitadas: true }), fetchMyExamEnrollments(user.idUsuario)])
     if (!isCurrent(generation)) return
     exams.value = available
     enrollments.value = mine
@@ -61,7 +63,8 @@ async function load(): Promise<void> {
   }
 }
 
-async function enroll(exam: AvailableExam): Promise<void> {
+async function enroll(exam: ExamAvailability): Promise<void> {
+  if (!exam.condicion) return
   saving.value = true
   actionError.value = ''
   try {
@@ -90,7 +93,7 @@ async function withdraw(): Promise<void> {
   }
 }
 
-function openWithdrawal(exam: AvailableExam): void { actionError.value = ''; pendingWithdrawal.value = exam }
+function openWithdrawal(exam: ExamAvailability): void { actionError.value = ''; pendingWithdrawal.value = exam }
 
 watch(() => [auth.activeRole, auth.user?.idUsuario ?? null], ([role, userId]) => {
   ++loadGeneration
@@ -107,5 +110,5 @@ onBeforeUnmount(() => { disposed = true; ++loadGeneration })
 </script>
 
 <template>
-  <main class="mx-auto max-w-6xl" aria-labelledby="exams-title"><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Autogestión académica</p><h1 id="exams-title" class="mt-2 text-3xl font-semibold">Mis exámenes</h1><p class="mt-2 text-[var(--color-graphite)]">Las mesas, condiciones y períodos se informan desde la institución.</p><p v-if="actionError && !pendingWithdrawal" class="mt-4 rounded-md border border-[#a31118]/30 bg-[#fff7f6] p-3" role="alert">{{ actionError }}</p><section v-if="loading" class="mt-7 rounded-lg border border-[var(--color-border)] bg-white p-5" role="status">Cargando mesas de examen…</section><section v-else-if="error" class="mt-7 rounded-lg border border-[#a31118]/30 bg-[#fff7f6] p-5" role="alert"><p>{{ error }}</p><AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton></section><section v-else-if="!exams.length" class="mt-7 rounded-lg border border-[var(--color-border)] bg-white p-5">No hay mesas habilitadas para inscribirte.</section><ul v-else class="mt-7 grid gap-4" aria-label="Mesas disponibles"><li v-for="exam in sortedExams" :key="exam.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5"><div class="flex flex-wrap items-start justify-between gap-3"><div><h2 class="text-xl font-semibold">{{ exam.materia.nombre }}</h2><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ exam.materia.carrera.nombre }} · {{ formattedDate(exam.fecha) }} · {{ academicLabel(exam.tipoExamen) }} · Llamado {{ exam.llamado }}</p></div><span class="rounded-full bg-[#f4e7e7] px-3 py-1 text-sm font-semibold text-[var(--color-brand)]">Condición: {{ academicLabel(exam.condicion) }}</span></div><p class="mt-4 text-sm"><span class="font-semibold">Tribunal:</span> {{ exam.tribunal.map((member) => `${member.apellidoNombre} (${roleLabel(member.rolTribunal)})`).join(', ') || 'Sin tribunal informado' }}</p><AppButton class="mt-5" :disabled="saving" @click="exam.inscripto ? openWithdrawal(exam) : enroll(exam)">{{ exam.inscripto ? 'Dar de baja' : 'Inscribirme' }}</AppButton></li></ul><section v-if="enrollments.length" class="mt-8" aria-labelledby="my-results-title"><h2 id="my-results-title" class="text-xl font-semibold">Mis inscripciones</h2><ul class="mt-4 grid gap-4"><li v-for="enrollment in enrollments" :key="enrollment.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5"><div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="font-semibold">{{ enrollment.materia.nombre }}</h3><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ formattedDate(enrollment.fecha) }} · Condición: {{ academicLabel(enrollment.condicion) }}</p></div><span class="rounded-full bg-[#f4e7e7] px-3 py-1 text-sm font-semibold text-[var(--color-brand)]">{{ statusText(enrollment.estadoResultado) }}</span></div><p v-if="enrollment.estadoResultado === 'CALIFICADO' && enrollment.nota !== null" class="mt-4 text-sm">Nota: {{ enrollment.nota }}</p><p class="mt-1 text-sm font-semibold">{{ resultText(enrollment) }}</p></li></ul></section><ConfirmDialog :open="Boolean(pendingWithdrawal)" :error="actionError" title="Confirmar baja de examen" :description="`Vas a dar de baja la inscripción a ${pendingWithdrawal?.materia.nombre ?? ''}.`" confirm-label="Dar de baja" :loading="saving" @cancel="pendingWithdrawal = null; actionError = &quot;&quot;" @confirm="withdraw" /></main>
+  <main class="mx-auto max-w-6xl" aria-labelledby="exams-title"><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Autogestión académica</p><h1 id="exams-title" class="mt-2 text-3xl font-semibold">Mis exámenes</h1><p class="mt-2 text-[var(--color-graphite)]">Las mesas, condiciones y períodos se informan desde la institución.</p><p v-if="actionError && !pendingWithdrawal" class="mt-4 rounded-md border border-[#a31118]/30 bg-[#fff7f6] p-3" role="alert">{{ actionError }}</p><section v-if="loading" class="mt-7 rounded-lg border border-[var(--color-border)] bg-white p-5" role="status">Cargando mesas de examen…</section><section v-else-if="error" class="mt-7 rounded-lg border border-[#a31118]/30 bg-[#fff7f6] p-5" role="alert"><p>{{ error }}</p><AppButton class="mt-4" variant="secondary" @click="load">Reintentar</AppButton></section><template v-else><section v-if="!enabledExams.length" class="mt-7 rounded-lg border border-[var(--color-border)] bg-white p-5">No hay mesas habilitadas para inscribirte.</section><ul v-else class="mt-7 grid gap-4" aria-label="Mesas disponibles"><li v-for="exam in enabledExams" :key="exam.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5"><div class="flex flex-wrap items-start justify-between gap-3"><div><h2 class="text-xl font-semibold">{{ exam.materia.nombre }}</h2><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ exam.materia.carrera.nombre }} · {{ formattedDate(exam.fecha) }} · {{ academicLabel(exam.tipoExamen) }} · Llamado {{ exam.llamado }}</p></div><span class="rounded-full bg-[#f4e7e7] px-3 py-1 text-sm font-semibold text-[var(--color-brand)]">Condición: {{ academicLabel(exam.condicion) }}</span></div><p class="mt-4 text-sm"><span class="font-semibold">Tribunal:</span> {{ exam.tribunal.map((member) => `${member.apellidoNombre} (${roleLabel(member.rolTribunal)})`).join(', ') || 'Sin tribunal informado' }}</p><AppButton class="mt-5" :disabled="saving" @click="exam.inscripto ? openWithdrawal(exam) : enroll(exam)">{{ exam.inscripto ? 'Dar de baja' : 'Inscribirme' }}</AppButton></li></ul><section v-if="unavailableExams.length" class="mt-8" aria-labelledby="unavailable-exams-title"><h2 id="unavailable-exams-title" class="text-xl font-semibold">Mesas no habilitadas</h2><ul class="mt-4 grid gap-4" aria-label="Mesas no habilitadas"><li v-for="exam in unavailableExams" :key="exam.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5"><h3 class="text-xl font-semibold">{{ exam.materia.nombre }}</h3><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ exam.materia.carrera.nombre }} · {{ formattedDate(exam.fecha) }} · Llamado {{ exam.llamado }}</p><ul class="mt-4 list-disc pl-5 text-sm"><li v-for="motivo in exam.motivos ?? []" :key="`${exam.id}-${motivo.codigo}`">{{ motivo.mensaje }}</li></ul></li></ul></section></template><section v-if="enrollments.length" class="mt-8" aria-labelledby="my-results-title"><h2 id="my-results-title" class="text-xl font-semibold">Mis inscripciones</h2><ul class="mt-4 grid gap-4"><li v-for="enrollment in enrollments" :key="enrollment.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5"><div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="font-semibold">{{ enrollment.materia.nombre }}</h3><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ formattedDate(enrollment.fecha) }} · Condición: {{ academicLabel(enrollment.condicion) }}</p></div><span class="rounded-full bg-[#f4e7e7] px-3 py-1 text-sm font-semibold text-[var(--color-brand)]">{{ statusText(enrollment.estadoResultado) }}</span></div><p v-if="enrollment.estadoResultado === 'CALIFICADO' && enrollment.nota !== null" class="mt-4 text-sm">Nota: {{ enrollment.nota }}</p><p class="mt-1 text-sm font-semibold">{{ resultText(enrollment) }}</p></li></ul></section><ConfirmDialog :open="Boolean(pendingWithdrawal)" :error="actionError" title="Confirmar baja de examen" :description="`Vas a dar de baja la inscripción a ${pendingWithdrawal?.materia.nombre ?? ''}.`" confirm-label="Dar de baja" :loading="saving" @cancel="pendingWithdrawal = null; actionError = &quot;&quot;" @confirm="withdraw" /></main>
 </template>

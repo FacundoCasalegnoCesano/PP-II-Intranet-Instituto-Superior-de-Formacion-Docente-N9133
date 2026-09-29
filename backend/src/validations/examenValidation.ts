@@ -178,6 +178,10 @@ export const listExamenSchema = Joi.object({
   estadoMesa: Joi.string().valid('ABIERTA', 'EN_PROCESO', 'FINALIZADA')
 });
 
+export const disponiblesExamenSchema = Joi.object({
+  includeNoHabilitadas: Joi.boolean().truthy('true').falsy('false').default(false)
+});
+
 export const expectedVersionQuerySchema = Joi.object({
   expectedVersion: Joi.number().integer().min(0)
 });

@@ -51,3 +51,19 @@ export const listAsistenciasQuerySchema = Joi.object({
     'date.base': 'fecha debe ser una fecha válida (YYYY-MM-DD)'
   })
 });
+
+export const listAsistenciasAlumnoQuerySchema = Joi.object({
+  cursadaId: Joi.number().integer().min(1),
+  carreraId: Joi.number().integer().min(1),
+  page: Joi.number().integer().min(1),
+  limit: Joi.number().integer().min(1).max(100)
+}).custom((value, helpers) => {
+  const detailRequested = ['cursadaId', 'carreraId', 'page', 'limit']
+    .some((key) => value[key] !== undefined);
+  if (detailRequested && (value.cursadaId === undefined || value.carreraId === undefined)) {
+    return helpers.error('any.custom');
+  }
+  return value;
+}).messages({
+  'any.custom': 'cursadaId y carreraId son requeridos juntos para consultar el detalle'
+});
