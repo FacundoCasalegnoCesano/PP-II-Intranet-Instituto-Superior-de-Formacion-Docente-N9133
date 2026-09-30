@@ -60,6 +60,7 @@ export interface ResultadoTrayectoria {
   alumnoUsuarioId: number;
   estado: Estado;
   regularHasta: string;
+  regularidadObtenida: boolean;
   regularidadVencida: boolean;
   parcialesEfectivos: ReturnType<typeof resumirCalificaciones>['parcialesEfectivos'];
   promedio: number | null;
@@ -162,6 +163,7 @@ export function evaluarCursada(
     31
   );
   const regularidadVencida = evaluadoEn > regularHasta;
+  const regularidadObtenida = esRegularizado(estado);
   if (estado === 'REGULAR' && regularidadVencida) {
     estado = 'LIBRE';
   }
@@ -170,6 +172,7 @@ export function evaluarCursada(
     alumnoUsuarioId: snapshot.alumnoUsuarioId,
     estado,
     regularHasta: regularHasta.toISOString().slice(0, 10),
+    regularidadObtenida,
     regularidadVencida,
     parcialesEfectivos: resumen.parcialesEfectivos,
     promedio: resumen.promedio,

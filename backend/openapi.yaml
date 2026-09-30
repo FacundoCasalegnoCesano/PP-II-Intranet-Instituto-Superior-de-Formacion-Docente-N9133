@@ -2610,6 +2610,7 @@ components:
       properties:
         materia: { $ref: '#/components/schemas/Subject' }
         estado: { type: string, enum: [PENDIENTE, EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO, APROBADA, HOMOLOGADA] }
+        categoriaTrayectoria: { type: string, enum: [APROBADA, REGULAR, SIN_CURSAR, CURSANDO, REGULARIDAD_VENCIDA, OTRA] }
         plan: { type: object, properties: { cursoId: { type: integer, nullable: true }, anio: { type: integer, nullable: true }, posicion: { type: integer } } }
         inscripcion: { type: object, nullable: true, additionalProperties: true }
         cursadas: { type: array, items: { $ref: '#/components/schemas/InscripcionMateriaAlumno' } }
