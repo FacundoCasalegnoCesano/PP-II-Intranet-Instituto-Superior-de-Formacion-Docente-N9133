@@ -45,6 +45,17 @@ describe('SubjectEnrollmentsView', () => {
     expect(api.verify).not.toHaveBeenCalled()
   })
 
+  it('explains pending correlatives and keeps enrollment blocked', async () => {
+    api.available.mockResolvedValue([{ id: 9, nombre: 'Residencia', modalidad: 'PRESENCIAL', yaInscripto: false, yaAprobada: false, cumpleCorrelativas: false, correlativasPendientes: [{ id: 3, nombre: 'Didáctica' }], habilitada: true }])
+    api.mine.mockResolvedValue([])
+    const user = userEvent.setup()
+    render(SubjectEnrollmentsView)
+
+    expect(await screen.findByText('Falta regularizar o aprobar: Didáctica')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Verificar e inscribirme' })).toBeDisabled()
+    expect(api.verify).not.toHaveBeenCalled()
+  })
+
   it('keeps the confirmation selection and exposes the API rejection above the dialog', async () => {
     api.available.mockResolvedValue([{ id: 7, nombre: 'Didáctica', modalidad: 'PRESENCIAL', yaInscripto: false, yaAprobada: false, cumpleCorrelativas: true, correlativasPendientes: [], habilitada: true }])
     api.mine.mockResolvedValue([])
