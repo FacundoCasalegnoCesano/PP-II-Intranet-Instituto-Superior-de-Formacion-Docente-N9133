@@ -102,6 +102,49 @@ async function trayectoriaConHomologaciones(homologaciones: Array<Overrides>) {
   );
 }
 
+async function trayectoriaConInscripciones(inscripciones: Array<Overrides>) {
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 4 }) as any);
+  replaceMethod(carreraRepository, 'getPlanEstudio', async () => ({
+    id: 1,
+    nombre: 'Carrera de prueba',
+    activo: true,
+    duracionAnios: 4,
+    materias: [materia({ id: 3, carreraId: 1, cursoId: null, curso: null })]
+  }) as any);
+  replaceMethod(prisma.inscripcionMateria, 'findMany', async (args: any) =>
+    (args?.where?.estado?.not === 'BAJA'
+      ? inscripciones.filter((inscripcion: any) => inscripcion.estado !== 'BAJA')
+      : inscripciones) as any
+  );
+  replaceMethod(prisma.inscripcionExamen, 'findMany', async () => []);
+  replaceMethod(prisma.homologacion, 'findMany', async () => []);
+  return estadoAcademicoService.getTrayectoriaIntegral(104, 1, { id: 1, rol: ROLES.ADMINISTRATIVO });
+}
+
+function inscripcionFixture(overrides: Overrides = {}) {
+  const anio = new Date().getFullYear();
+  const row: any = {
+    materiaId: 3,
+    estado: 'FINALIZADA',
+    cicloLectivo: anio,
+    fechaBaja: null,
+    cursadaId: null,
+    cursada: null,
+    ...overrides
+  };
+  if (overrides.cursada) {
+    row.cursada = {
+      ...cursada({ anioLectivo: anio }),
+      materia: materia({ id: 3, carreraId: 1 }),
+      calificaciones: [{ id: 1, alumnoId: 4, tipoCalificacion: 'PARCIAL', numero: 1, nota: 6 }],
+      asistencias: asistencia(4, 4),
+      ...overrides.cursada
+    };
+    row.cursadaId = row.cursada.id;
+  }
+  return row;
+}
+
 function homologacionAcademica(overrides: Overrides = {}) {
   return {
     id: 1,
@@ -159,6 +202,7 @@ test('usa la nota anterior de una total aprobada como definitiva', async () => {
     nota: 8,
     fecha: new Date('2026-09-15T12:00:00.000Z')
   });
+  assert.equal(resultado.materias[0].categoriaTrayectoria, 'APROBADA');
 });
 
 test('usa el complementario copiado de una parcial aprobada como definitiva', async () => {
@@ -172,6 +216,38 @@ test('usa el complementario copiado de una parcial aprobada como definitiva', as
 
   assert.equal(resultado.materias[0].definitiva?.via, 'HOMOLOGACION');
   assert.equal(resultado.materias[0].definitiva?.nota, 7);
+});
+
+test('clasifica la trayectoria con historial, bajas, recursadas y regularidad efectiva', async () => {
+  const actual = new Date().getFullYear();
+  const regularAnterior = inscripcionFixture({
+    cicloLectivo: actual - 1,
+    cursada: {
+      anioLectivo: actual - 1,
+      calificaciones: [
+        { id: 1, alumnoId: 4, tipoCalificacion: 'PARCIAL', numero: 1, nota: 8 },
+        { id: 2, alumnoId: 4, tipoCalificacion: 'TRABAJO_PRACTICO', numero: 1, nota: 8 }
+      ],
+      asistencias: asistencia(4, 4)
+    }
+  });
+  const vencida = inscripcionFixture({ cicloLectivo: actual - 4, cursada: { anioLectivo: actual - 4 } });
+  const recursada = inscripcionFixture({ estado: 'RECURSANDO', cicloLectivo: actual, cursada: { anioLectivo: actual, calificaciones: [], asistencias: [] } });
+  const escenarios: Array<[string, Array<Overrides>, string]> = [
+    ['sin inscripción', [], 'SIN_CURSAR'],
+    ['baja histórica', [inscripcionFixture({ estado: 'BAJA', fechaBaja: new Date() })], 'OTRA'],
+    ['actual activa', [inscripcionFixture({ estado: 'ACTIVA', cicloLectivo: actual, cursada: { anioLectivo: actual, calificaciones: [], asistencias: [] } })], 'CURSANDO'],
+    ['baja actual', [inscripcionFixture({ estado: 'BAJA', cicloLectivo: actual, fechaBaja: new Date() })], 'OTRA'],
+    ['regular anterior y última no regular', [inscripcionFixture({ cicloLectivo: actual, cursada: { anioLectivo: actual, calificaciones: [], asistencias: [] } }), regularAnterior], 'REGULAR'],
+    ['vencida verdadera', [vencida], 'REGULARIDAD_VENCIDA'],
+    ['antigua nunca regularizada', [inscripcionFixture({ cicloLectivo: actual - 4, cursada: { anioLectivo: actual - 4, calificaciones: [], asistencias: [] } })], 'OTRA'],
+    ['vencida con recursada', [recursada, vencida], 'CURSANDO']
+  ];
+
+  for (const [nombre, inscripciones, esperado] of escenarios) {
+    const resultado = await trayectoriaConInscripciones(inscripciones);
+    assert.equal(resultado.materias[0].categoriaTrayectoria, esperado, nombre);
+  }
 });
 
 test('ignora pendientes y rechazadas en trayectoria promedio y correlatividades', async () => {
@@ -361,8 +437,10 @@ test('la regularidad es vigente dentro del plazo y vence al superar el año lím
 
   assert.equal(vigente.regularHasta, `${anioActual}-12-31`);
   assert.equal(vigente.regularidadVencida, false);
+  assert.equal(vigente.regularidadObtenida, true);
   assert.equal(vigente.estado, 'REGULAR');
   assert.equal(vencida.regularidadVencida, true);
+  assert.equal(vencida.regularidadObtenida, true);
   assert.equal(vencida.estado, 'LIBRE');
 });
 

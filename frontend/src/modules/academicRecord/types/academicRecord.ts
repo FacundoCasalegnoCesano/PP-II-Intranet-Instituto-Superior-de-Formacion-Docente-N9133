@@ -15,6 +15,7 @@ export interface AcademicRecordSubject {
   materia: { id: number; nombre: string }
   plan?: { anio?: number | null; posicion?: number }
   estado: string
+  categoriaTrayectoria?: 'APROBADA' | 'REGULAR' | 'SIN_CURSAR' | 'CURSANDO' | 'REGULARIDAD_VENCIDA' | 'OTRA'
   inscripcion?: { modalidad?: string; cicloLectivo?: number; estado?: string; fechaBaja?: string | null } | null
   asistencia?: { porcentaje?: number; presente?: number; totalClases?: number } | null
   cursadas?: AcademicRecordCourse[]

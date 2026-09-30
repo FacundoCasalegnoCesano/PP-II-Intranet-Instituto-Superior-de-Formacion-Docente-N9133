@@ -8,6 +8,7 @@ import { prisma } from '../config/prisma.js';
 import { AppError } from '../utils/AppError.js';
 import { ROLES } from '../constants/roles.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
+import estadoAcademicoService from './estadoAcademicoService.js';
 import type { MateriaFilters, MateriaCreateData, MateriaUpdateData } from '../repositories/materiaRepository.js';
 import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
 import { verificarPermisoMateria } from '../utils/docenteHelper.js';
@@ -487,11 +488,20 @@ class MateriaService {
 
     // Agrupar por materia (si está en múltiples carreras)
     const materiasMap = new Map<number, MateriaDisponibleEvaluada>();
+    const estadosPorMateria = await estadoAcademicoService.getMapaEstadosPorMateria(idAlumno);
+    const materiasAprobadas = await estadoAcademicoService.getMateriasAprobadasSet(
+      idAlumno,
+      estadosPorMateria
+    );
+    const materiasCumplidas = new Set(materiasAprobadas);
+    for (const [materiaId, estado] of estadosPorMateria) {
+      if (estadoAcademicoService.esRegularizado(estado)) materiasCumplidas.add(materiaId);
+    }
     for (const materia of hechos.materias) {
       const resultadoCorrelatividades = evaluarCorrelatividades({
         modo: 'MOSTRAR_DISPONIBILIDAD',
         correlatividades: materia.correlatividadesOrigen,
-        materiasCumplidas: new Set(hechos.materiasAprobadasIds)
+        materiasCumplidas
       });
       const correlativasPendientes = resultadoCorrelatividades.cumple
         ? []
@@ -501,7 +511,7 @@ class MateriaService {
       const materiaEvaluada: MateriaDisponibleEvaluada = {
         ...materia,
         yaInscripto: hechos.materiasInscriptasIds.includes(materia.id),
-        yaAprobada: hechos.materiasAprobadasIds.includes(materia.id),
+        yaAprobada: materiasAprobadas.has(materia.id),
         cumpleCorrelativas: resultadoCorrelatividades.cumple,
         correlativasPendientes,
         carreras: [materia.carrera]
@@ -570,26 +580,16 @@ class MateriaService {
       throw new Error('El alumno ya está inscripto en esta materia');
     }
 
-    // Verificar que no esté aprobada
-    const aprobada = await prisma.calificacion.findFirst({
-      where: {
-        alumnoId: idAlumno,
-        cursada: {
-          materiaId
-        },
-        nota: { gte: 6 }
-      }
-    });
-    if (aprobada) {
-      throw new Error('El alumno ya aprobó esta materia');
-    }
-
     // Verificar correlatividades
     const materiasDisponibles = await this.getMateriasDisponibles(alumnoId, cicloLectivo);
     const materiaDisponible = materiasDisponibles.find((m: any) => m.id === materiaId);
     
     if (!materiaDisponible) {
       throw new Error('No se puede inscribir a esta materia');
+    }
+
+    if (materiaDisponible.yaAprobada) {
+      throw new Error('El alumno ya aprobó esta materia');
     }
 
     if (!materiaDisponible.cumpleCorrelativas) {

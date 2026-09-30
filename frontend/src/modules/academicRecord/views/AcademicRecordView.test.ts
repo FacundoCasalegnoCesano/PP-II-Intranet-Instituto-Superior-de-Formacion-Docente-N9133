@@ -38,6 +38,44 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers() })
 
 describe('AcademicRecordView', () => {
+  it('filters by the backend trajectory category and keeps the career summary', async () => {
+    vi.mocked(fetchAcademicRecordTrajectory).mockResolvedValue({
+      alumnoUsuarioId: 13,
+      carrera: { id: 3, nombre: 'Profesorado' },
+      promedioGeneral: 8.5,
+      cantidadMateriasAprobadas: 1,
+      materias: [
+        { materia: { id: 1, nombre: 'Aprobada' }, estado: 'APROBADA', categoriaTrayectoria: 'APROBADA', definitiva: { nota: 8, via: 'EXAMEN_FINAL' } },
+        { materia: { id: 2, nombre: 'Regular' }, estado: 'REGULAR', categoriaTrayectoria: 'REGULAR', definitiva: null },
+        { materia: { id: 3, nombre: 'Cursando' }, estado: 'EN_CURSO', categoriaTrayectoria: 'CURSANDO', definitiva: null },
+        { materia: { id: 4, nombre: 'Vencida' }, estado: 'LIBRE', categoriaTrayectoria: 'REGULARIDAD_VENCIDA', definitiva: null },
+        { materia: { id: 5, nombre: 'Otra' }, estado: 'LIBRE', categoriaTrayectoria: 'OTRA', definitiva: null },
+        { materia: { id: 6, nombre: 'Sin cursar' }, estado: 'PENDIENTE', categoriaTrayectoria: 'SIN_CURSAR', definitiva: null },
+      ],
+    } as never)
+    render(AcademicRecordView, { global: { stubs: routerStubs } })
+    expect(await screen.findByRole('heading', { name: 'Aprobada' })).toBeVisible()
+    expect(screen.getByText('Promedio general: 8.5')).toBeVisible()
+    const filter = screen.getByRole('combobox', { name: 'Filtrar materias' })
+    expect(screen.getByText('Mostrando 6 de 6 materias.')).toBeVisible()
+    await fireEvent.update(filter, 'VENCIDAS')
+    const subjectList = () => screen.getByRole('list', { name: 'Materias de la trayectoria' })
+    expect(within(subjectList()).getByRole('heading', { name: 'Vencida' })).toBeVisible()
+    expect(within(subjectList()).queryByText('Otra')).not.toBeInTheDocument()
+    await fireEvent.update(filter, 'CURSANDO')
+    expect(within(subjectList()).getByRole('heading', { name: 'Cursando' })).toBeVisible()
+    await fireEvent.update(filter, 'SIN_CURSAR')
+    expect(within(subjectList()).getByRole('heading', { name: 'Sin cursar' })).toBeVisible()
+  })
+
+  it('shows an empty state for a category without subjects', async () => {
+    render(AcademicRecordView, { global: { stubs: routerStubs } })
+    await screen.findByText('Pedagogía')
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Filtrar materias' }), 'APROBADAS')
+    expect(screen.getByText('No hay materias en esta categoría.')).toBeVisible()
+    expect(screen.getByText('Mostrando 0 de 1 materias.')).toBeVisible()
+  })
+
   it('shows only current regularities through 90 calendar days, ordered by deadline', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-09-29T00:30:00.000Z'))
@@ -77,8 +115,10 @@ describe('AcademicRecordView', () => {
     render(AcademicRecordView, { global: { stubs: routerStubs } })
     expect(await screen.findByRole('heading', { name: 'Sólo Profesorado', level: 2 })).toBeVisible()
     expect(screen.getByRole('region', { name: 'Regularidades próximas a vencer' })).toBeVisible()
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Filtrar materias' }), 'APROBADAS')
     await fireEvent.update(screen.getByLabelText('Carrera'), '4')
     await screen.findByText('Historia')
+    expect(screen.getByRole('combobox', { name: 'Filtrar materias' })).toHaveValue('TODAS')
     expect(screen.queryByRole('region', { name: 'Regularidades próximas a vencer' })).not.toBeInTheDocument()
     expect(screen.queryByText('Sólo Profesorado')).not.toBeInTheDocument()
   })

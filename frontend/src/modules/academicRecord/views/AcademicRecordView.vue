@@ -19,12 +19,24 @@ const attendancePagination = ref({ page: 1, limit: 20, total: 0, totalPages: 0 }
 const attendanceRequestedPage = ref(1)
 const attendanceLoading = ref(false)
 const attendanceError = ref('')
+type SubjectFilter = 'TODAS' | 'APROBADAS' | 'REGULARES' | 'SIN_CURSAR' | 'CURSANDO' | 'VENCIDAS'
+const subjectFilter = ref<SubjectFilter>('TODAS')
 let loadRequest = 0
 let attendanceRequest = 0
 let mounted = true
 const REGULARITY_ALERT_WINDOW_DAYS = 90
 
 const selectedCareer = computed(() => careers.value.find((career) => career.carreraId === selectedCareerId.value)?.carrera)
+const visibleSubjects = computed(() => {
+  const subjects = trajectory.value?.materias ?? []
+  if (subjectFilter.value === 'TODAS') return subjects
+  const category = subjectFilter.value === 'APROBADAS' ? 'APROBADA'
+    : subjectFilter.value === 'REGULARES' ? 'REGULAR'
+      : subjectFilter.value === 'SIN_CURSAR' ? 'SIN_CURSAR'
+        : subjectFilter.value === 'CURSANDO' ? 'CURSANDO'
+          : 'REGULARIDAD_VENCIDA'
+  return subjects.filter((subject) => subject.categoriaTrayectoria === category)
+})
 const regularityAlerts = computed(() => {
   if (!trajectory.value) return []
   const today = argentinaCalendarDate(new Date())
@@ -87,6 +99,7 @@ async function load(preserveCareer = false): Promise<void> {
   const request = ++loadRequest
   const previousCareerId = selectedCareerId.value
   invalidateAttendance()
+  subjectFilter.value = 'TODAS'
   trajectory.value = null
   selectedCareerId.value = null
   if (current.userId === null || current.role !== 'ALUMNO' || !mounted) {
@@ -165,6 +178,7 @@ function changeCareer(event: Event): void {
   if (careerId === selectedCareerId.value || !auth.user || auth.activeRole !== 'ALUMNO') return
   const request = ++loadRequest
   invalidateAttendance()
+  subjectFilter.value = 'TODAS'
   selectedCareerId.value = careerId
   trajectory.value = null
   error.value = ''
@@ -178,6 +192,13 @@ function changeAttendanceCourse(subject: AcademicRecordSubject, event: Event): v
   const target = event.target
   if (target instanceof HTMLSelectElement) void loadAttendance(subject, Number(target.value), 1)
 }
+
+function changeSubjectFilter(event: Event): void {
+  const target = event.target
+  if (target instanceof HTMLSelectElement) subjectFilter.value = target.value as SubjectFilter
+}
+
+watch(subjectFilter, () => invalidateAttendance())
 
 watch(() => [auth.user?.idUsuario ?? null, auth.activeRole ?? null], ([userId, role], previous) => {
   if (userId !== previous[0] || role !== previous[1]) void load()
@@ -225,8 +246,24 @@ onUnmounted(() => { mounted = false; loadRequest++; attendanceRequest++ })
         </ul>
       </section>
 
-      <ol class="mt-6 grid gap-4" aria-label="Materias de la trayectoria">
-        <li v-for="item in trajectory.materias" :key="item.materia.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5">
+      <section class="mt-6 rounded-lg border border-[var(--color-border)] bg-white p-5" aria-label="Filtrar materias">
+        <label for="academic-subject-filter" class="block font-semibold">Filtrar materias
+          <select id="academic-subject-filter" :value="subjectFilter" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="changeSubjectFilter">
+            <option value="TODAS">Todas</option>
+            <option value="APROBADAS">Aprobadas</option>
+            <option value="REGULARES">Regulares</option>
+            <option value="SIN_CURSAR">Sin cursar</option>
+            <option value="CURSANDO">Cursando</option>
+            <option value="VENCIDAS">Regularidad vencida</option>
+          </select>
+        </label>
+        <p class="mt-2 text-sm text-[var(--color-graphite)]">Mostrando {{ visibleSubjects.length }} de {{ trajectory.materias.length }} materias.</p>
+      </section>
+
+      <p v-if="!visibleSubjects.length" class="mt-6 rounded-lg border border-[var(--color-border)] bg-white p-5">No hay materias en esta categoría.</p>
+
+      <ol v-else class="mt-6 grid gap-4" aria-label="Materias de la trayectoria">
+        <li v-for="item in visibleSubjects" :key="item.materia.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div><h2 class="text-lg font-semibold">{{ item.materia.nombre }}</h2><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ item.plan?.anio ? `${item.plan.anio}.º año` : 'Año no informado' }}</p></div>
             <span class="rounded-full bg-[#f4e7e7] px-3 py-1 text-sm font-semibold text-[var(--color-brand)]">{{ academicLabel(item.estado) }}</span>

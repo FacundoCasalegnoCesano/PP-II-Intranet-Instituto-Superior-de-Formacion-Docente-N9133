@@ -143,7 +143,7 @@ class EstadoAcademicoService {
     }
 
     const idAlumno = await getAlumnoIdByUsuarioId(alumnoUsuarioId);
-    const [inscripciones, examenes, homologaciones] = await Promise.all([
+    const [inscripciones, examenes, homologaciones, inscripcionesHistoricas] = await Promise.all([
       prisma.inscripcionMateria.findMany({
         where: { alumnoId: idAlumno, materia: { carreraId }, estado: { not: 'BAJA' } },
         include: {
@@ -167,6 +167,17 @@ class EstadoAcademicoService {
         where: { alumnoId: idAlumno, estado: 'APROBADA', calificacion: { not: null }, materia: { carreraId } },
         include: { materia: true },
         orderBy: { updatedAt: 'desc' }
+      }),
+      prisma.inscripcionMateria.findMany({
+        where: { alumnoId: idAlumno, materia: { carreraId } },
+        select: {
+          materiaId: true,
+          estado: true,
+          cicloLectivo: true,
+          fechaBaja: true,
+          cursadaId: true,
+          cursada: { select: { activo: true, anioLectivo: true } }
+        }
       })
     ]);
 
@@ -184,7 +195,14 @@ class EstadoAcademicoService {
     for (const homologacion of homologaciones as any[]) {
       if (!homologacionPorMateria.has(homologacion.materiaId)) homologacionPorMateria.set(homologacion.materiaId, homologacion);
     }
+    const inscripcionesHistoricasPorMateria = new Map<number, any[]>();
+    for (const inscripcion of inscripcionesHistoricas) {
+      const filas = inscripcionesHistoricasPorMateria.get(inscripcion.materiaId) ?? [];
+      filas.push(inscripcion);
+      inscripcionesHistoricasPorMateria.set(inscripcion.materiaId, filas);
+    }
 
+    const cicloVigente = new Date().getFullYear();
     const materias = (carrera.materias ?? []).map((materia: any, indice: number) => {
       const historial = porMateria.get(materia.id) ?? [];
       const cursadas = historial
@@ -222,6 +240,28 @@ class EstadoAcademicoService {
         estado = 'PROMOCIONADO';
         definitiva = { via: 'PROMOCION_DIRECTA', nota: promocion.examenFinalNota, fecha: null };
       }
+      const historico = inscripcionesHistoricasPorMateria.get(materia.id) ?? [];
+      const cursandoActualmente = historico.some((inscripcion: any) =>
+        !inscripcion.fechaBaja &&
+        (inscripcion.estado === 'ACTIVA' || inscripcion.estado === 'RECURSANDO') &&
+        inscripcion.cicloLectivo === cicloVigente &&
+        inscripcion.cursadaId !== null &&
+        inscripcion.cursada?.activo === true &&
+        inscripcion.cursada?.anioLectivo === cicloVigente
+      );
+      const regularidadVigente = cursadas.some((cursada: any) => cursada.regularidadObtenida && !cursada.regularidadVencida);
+      const regularidadVencida = cursadas.some((cursada: any) => cursada.regularidadObtenida && cursada.regularidadVencida);
+      const categoriaTrayectoria = definitiva
+        ? 'APROBADA'
+        : regularidadVigente
+          ? 'REGULAR'
+          : cursandoActualmente
+            ? 'CURSANDO'
+            : regularidadVencida
+              ? 'REGULARIDAD_VENCIDA'
+              : historico.length === 0
+                ? 'SIN_CURSAR'
+                : 'OTRA';
 
       return {
         materia: { id: materia.id, nombre: materia.nombre },
@@ -243,7 +283,8 @@ class EstadoAcademicoService {
         promocionDirecta: promocion ? { habilitada: true, nota: promocion.examenFinalNota } : null,
         examenFinal: examenFinal ? { mesaId: examenFinal.mesaId, nota: examenFinal.notaFinal, aprobado: examenFinal.aprobado, fecha: examenFinal.mesa?.fecha ?? examenFinal.updatedAt } : null,
         homologacion: homologacion ? { id: homologacion.id, nota: homologacion.calificacion, tipo: homologacion.tipoHomologacion, fecha: homologacion.fechaHomologacion } : null,
-        definitiva
+        definitiva,
+        categoriaTrayectoria
       };
     });
 
