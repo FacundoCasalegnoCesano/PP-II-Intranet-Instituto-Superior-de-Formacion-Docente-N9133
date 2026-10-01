@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { defineComponent, h, nextTick, reactive } from 'vue'
 import type { Component } from 'vue'
 import type { AcademicSummary, GradeRecord, TeacherCourse, TeacherCourseListResult, TeacherCourseSection } from '../types/teacherCourses'
+import { apiErrorFromPayload } from '@/core/api/errors'
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -326,6 +327,38 @@ describe('TeacherCoursesView', () => {
         observacion: null,
       }],
     }))
+  })
+
+  it('shows the server limit error and preserves the unsaved grade draft', async () => {
+    mocks.route.name = 'teacher-course-grades'
+    mocks.route.params = { id: '12' }
+    mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
+    mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
+    mocks.listGrades.mockResolvedValue([])
+    mocks.saveGrades.mockRejectedValueOnce(apiErrorFromPayload(400, {
+      success: false,
+      message: 'Error de validación',
+      errors: [{ field: 'calificaciones', message: 'La carga no puede superar los 500 registros por solicitud' }],
+    }))
+    const user = userEvent.setup()
+
+    renderView()
+    await screen.findByRole('heading', { name: 'Calificaciones' })
+    fireEvent.update(screen.getByLabelText('Número de evaluación'), '1')
+    await nextTick()
+    fireEvent.update(screen.getByLabelText('Fecha de evaluación'), '2026-09-10')
+    fireEvent.update(screen.getByLabelText('Nota'), '9')
+    fireEvent.update(screen.getByLabelText('Observación'), 'Conservar para reintentar')
+    await user.click(screen.getByRole('button', { name: 'Guardar calificaciones' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('La carga no puede superar los 500 registros por solicitud')
+    expect(screen.getByLabelText('Fecha de evaluación')).toHaveValue('2026-09-10')
+    expect(screen.getByLabelText('Nota')).toHaveValue(9)
+    expect(screen.getByLabelText('Observación')).toHaveValue('Conservar para reintentar')
+    expect(screen.getByText('Hay cambios sin guardar.')).toBeVisible()
+    expect(mocks.saveGrades).toHaveBeenCalledTimes(1)
+    expect(mocks.saveGrades.mock.calls[0]?.[0].calificaciones).toHaveLength(1)
   })
 
   it('discards a stale grade refresh that resolves after the course changes', async () => {

@@ -154,12 +154,12 @@ describe('AdminHomologationsView', () => {
     await renderView('/app/administracion/homologaciones?search=aplicada&estado=PENDIENTE&page=2')
     await screen.findAllByText('Lucía Test')
 
-    await fireEvent.update(screen.getByLabelText('Buscar'), 'todavía sin aplicar')
+    await fireEvent.update(screen.getByLabelText('Tipo'), 'TOTAL')
     const link = (await screen.findAllByRole('link', { name: /Ver detalle/ }))[0]
     const target = new URL(link.getAttribute('href') ?? '', window.location.origin)
 
     expect(target.searchParams.get('returnTo')).toBe('/app/administracion/homologaciones?search=aplicada&estado=PENDIENTE&page=2')
-    expect(target.searchParams.get('returnTo')).not.toContain('todav%C3%ADa')
+    expect(target.searchParams.get('returnTo')).not.toContain('tipo=TOTAL')
   })
 
   it('presenta los mismos datos del registro en tabla y tarjetas', async () => {

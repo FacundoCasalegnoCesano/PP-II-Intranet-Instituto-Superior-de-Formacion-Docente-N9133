@@ -1,6 +1,7 @@
 import asistenciaRepository from '../repositories/asistenciaRepository.js';
 import cursadaRepository from '../repositories/cursadaRepository.js';
 import materiaRepository from '../repositories/materiaRepository.js';
+import alumnoRepository from '../repositories/alumnoRepository.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { AppError } from '../utils/AppError.js';
 import { ROLES } from '../constants/roles.js';
@@ -34,6 +35,11 @@ class AsistenciaService {
   ) {
     await verificarPermisoMutacionCursada(currentUser, data.cursadaId);
 
+    const idsUsuario = data.asistencias.map(fila => fila.alumnoId);
+    if (new Set(idsUsuario).size !== idsUsuario.length) {
+      throw new AppError(400, 'La carga contiene un alumno repetido');
+    }
+
     const fechaNormalizada = new Date(new Date(data.fecha).toISOString().slice(0, 10));
     const cursada = await cursadaRepository.findById(data.cursadaId);
     if (!cursada) throw new AppError(404, 'Cursada no encontrada');
@@ -41,26 +47,34 @@ class AsistenciaService {
       throw new AppError(400, 'La fecha debe pertenecer al año lectivo de la cursada');
     }
 
-    // Resolver id de cuenta → idAlumno y validar que esté inscripto a la cursada
-    const filasConIdAlumno = [];
-    for (const fila of data.asistencias) {
-      const idAlumno = await getAlumnoIdByUsuarioId(fila.alumnoId);
-
-      const inscripto = await asistenciaRepository.isAlumnoInscripto(data.cursadaId, idAlumno);
-      if (!inscripto) {
-        throw new AppError(
-          400,
-          `El alumno ${fila.alumnoId} no está inscripto a esta cursada`
-        );
+    // Resolver IDs de cuenta e internos con consultas agrupadas, sin seleccionar datos personales.
+    const alumnos = await alumnoRepository.findByUsuarioIds(idsUsuario);
+    const idAlumnoPorUsuario = new Map(alumnos.map(({ idCuenta, idAlumno }) => [idCuenta, idAlumno]));
+    const idsAlumno = data.asistencias
+      .map(fila => idAlumnoPorUsuario.get(fila.alumnoId))
+      .filter((idAlumno): idAlumno is number => idAlumno !== undefined);
+    if (idsAlumno.length !== data.asistencias.length) {
+      const cuentaInvalida = data.asistencias.find(fila => idAlumnoPorUsuario.get(fila.alumnoId) === undefined);
+      if (!cuentaInvalida) throw new AppError(400, 'La carga contiene un alumno inválido');
+      throw new AppError(400, `El alumno ${cuentaInvalida.alumnoId} no está inscripto a esta cursada`);
+    }
+    const inscriptos = await asistenciaRepository.findInscripcionesByCursadaAndAlumnoIds(
+      data.cursadaId,
+      idsAlumno
+    );
+    const alumnosInscriptos = new Set(inscriptos.map(({ alumnoId }) => alumnoId));
+    const filasConIdAlumno = data.asistencias.map(fila => {
+      const idAlumno = idAlumnoPorUsuario.get(fila.alumnoId);
+      if (idAlumno === undefined || !alumnosInscriptos.has(idAlumno)) {
+        throw new AppError(400, `El alumno ${fila.alumnoId} no está inscripto a esta cursada`);
       }
-
-      filasConIdAlumno.push({
+      return {
         idAlumno,
         presente: fila.presente,
         justificado: fila.justificado ?? false,
         observacion: fila.observacion ?? null
-      });
-    }
+      };
+    });
     const resultado = await asistenciaRepository.upsertClase(
       data.cursadaId,
       fechaNormalizada,

@@ -1,6 +1,4 @@
 import userRepository from '../repositories/userRepository.js';
-import alumnoRepository from '../repositories/alumnoRepository.js';
-import usuarioRolRepository from '../repositories/usuarioRolRepository.js';
 import { hashPassword, comparePassword } from '../utils/bcrypt.js';
 import {
   generateAccessToken,
@@ -83,6 +81,12 @@ class AuthService {
       : null;
 
     // Crear usuario
+    const alumnoData = userRolesPreview.includes(ROLES.ALUMNO) ? {
+      domicilio: domicilio ?? '',
+      anioEgreso: anioEgreso ?? new Date().getFullYear(),
+      institucionProcedencia: institucionProcedencia ?? null
+    } : undefined;
+
     const user = await userRepository.create({
       ...rest,
       email,
@@ -90,7 +94,7 @@ class AuthService {
       passwordHash,
       rol: rolString,
       backupCodes: backupCodesEncrypted
-    });
+    }, alumnoData);
 
     const publicUser = toPublicUser(user);
 
@@ -102,13 +106,9 @@ class AuthService {
       roles: userRoles
     };
 
-    // Si el rol incluye ALUMNO, crear (o actualizar) la ficha del alumno
+    // Devolver la ficha Alumno creada junto con el usuario.
     if (userRoles.includes(ROLES.ALUMNO)) {
-      result.alumno = await alumnoRepository.upsertByUsuarioId(user.idUsuario, {
-        domicilio: domicilio ?? null,
-        anioEgreso: anioEgreso ?? new Date().getFullYear(),
-        institucionProcedencia: institucionProcedencia ?? null
-      });
+      result.alumno = (user as typeof user & { alumno?: unknown }).alumno;
     }
 
     return result;
@@ -176,16 +176,10 @@ class AuthService {
 
   // Seleccionar rol para la sesión
   async selectRole(userId: number, roleName: string, sessionId: number) {
-    // Verificar que el usuario tiene ese rol
-    const userRol = await usuarioRolRepository.getRolesByNombre(userId, roleName);
-    if (!userRol) {
+    const user = await userRepository.findAuthById(userId);
+    const roles = user?.rol ? user.rol.split(',').map((role: string) => role.trim()) : [];
+    if (!user || !roles.includes(roleName)) {
       throw new Error(`El usuario no tiene el rol ${roleName}`);
-    }
-
-    // Obtener usuario
-    const user = await userRepository.findById(userId);
-    if (!user) {
-      throw new Error('Usuario no encontrado');
     }
 
     // Obtener la sesión actual para la familia
@@ -229,10 +223,6 @@ class AuthService {
         userAgent: session.userAgent ?? null,
       }
     });
-
-    // Obtener los roles del usuario para mostrar
-    const userRoles = await usuarioRolRepository.getRolesByUsuario(userId);
-    const roles = userRoles.map((ur: any) => ur.rol);
 
     return {
       accessToken,
@@ -323,13 +313,12 @@ class AuthService {
 
   // Obtener perfil (con roles)
   async getProfile(userId: number) {
-    const user = await userRepository.findById(userId);
+    const user = await userRepository.findProfileById(userId);
     if (!user) {
       throw new Error('Usuario no encontrado');
     }
 
-    const userRoles = await usuarioRolRepository.getRolesByUsuario(userId);
-    const roles = userRoles.map((ur: any) => ur.rol);
+    const roles = user.rol ? user.rol.split(',').map((role: string) => role.trim()) : [];
 
     return {
       ...toPublicUser(user),

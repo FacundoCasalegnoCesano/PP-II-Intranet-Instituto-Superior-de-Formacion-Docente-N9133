@@ -37,7 +37,8 @@ test('Gmail API usa OAuth y envía MIME RFC2822 como base64url', async () => {
   };
 
   try {
-    await sendEmail({ to: 'user@example.com', subject: 'Asunto de prueba', html: '<p>HTML de prueba</p>', text: 'Texto de prueba' });
+    const result = await sendEmail({ to: 'user@example.com', subject: 'Asunto de prueba', html: '<p>HTML de prueba</p>', text: 'Texto de prueba' });
+    assert.deepEqual(result, { accepted: ['user@example.com'], rejected: [], messageId: 'message-id-test' });
     assert.equal(new Headers(sendRequest?.headers).get('authorization'), 'Bearer access-token-test');
     const raw = Buffer.from(String((sendRequest?.body as string) && JSON.parse(String(sendRequest?.body)).raw), 'base64url').toString('utf8');
     assert.match(raw, /Subject: Asunto de prueba/);

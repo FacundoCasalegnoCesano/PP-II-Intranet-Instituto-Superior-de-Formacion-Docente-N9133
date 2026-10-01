@@ -41,7 +41,7 @@ async function authenticateRequest(
     const decoded = verifyAccessToken(token);
 
     // Verificar que el usuario existe y está activo
-    const user = await userRepository.findById(decoded.id);
+    const user = await userRepository.findAuthById(decoded.id);
     if (!user) {
       res.status(401).json({
         success: false,
@@ -129,7 +129,7 @@ export const authMiddleware = async (
 
   // Si el token no tiene rol, el usuario debe seleccionar uno
   if (!req.user!.rol) {
-    const user = await userRepository.findById(req.user!.id);
+    const user = await userRepository.findAuthById(req.user!.id);
     const userRoles = user?.rol ? user.rol.split(',').map((r: string) => r.trim()) : [];
     res.status(403).json({
       success: false,

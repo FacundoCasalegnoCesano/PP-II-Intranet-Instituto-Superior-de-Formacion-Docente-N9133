@@ -22,8 +22,6 @@ export interface Config {
   
   // JWT
   jwtSecret: string;
-  jwtExpire: string;
-  jwtRefreshExpire: string;
   
   // Email (Gmail API)
   gmailClientId: string;
@@ -40,7 +38,7 @@ export interface Config {
 const config: Config = {
   // App
   port: parseInt(process.env.PORT || '3000'),
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv: process.env.NODE_ENV || 'production',
   
   // Database
   databaseHost: process.env.DATABASE_HOST || 'localhost',
@@ -51,8 +49,6 @@ const config: Config = {
   
   // JWT
   jwtSecret: process.env.JWT_SECRET || '',
-  jwtExpire: process.env.JWT_EXPIRE || '7d',
-  jwtRefreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
   
   // Email (Gmail API). Se valida únicamente al intentar enviar.
   gmailClientId: process.env.GMAIL_CLIENT_ID || '',

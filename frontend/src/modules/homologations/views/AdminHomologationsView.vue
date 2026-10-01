@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import AdminFilters from '@/modules/admin/components/AdminFilters.vue'
 import AdminPagination from '@/modules/admin/components/AdminPagination.vue'
 import AdminState from '@/modules/admin/components/AdminState.vue'
@@ -300,7 +300,20 @@ async function loadDetail(retryConflict = true, preserveCurrent = false): Promis
 }
 
 function applyFilters(): void {
-  void router.replace({ query: listQuery(1) })
+  replaceListQuery(listQuery(1))
+}
+
+function replaceListQuery(query: Record<string, string | undefined>): void {
+  void router.replace({ query }).then((failure) => {
+    if (failure && isNavigationFailure(failure, NavigationFailureType.duplicated)) void loadList()
+  })
+}
+
+function invalidateListSearch(): void {
+  listRequestId += 1
+  loading.value = true
+  listError.value = null
+  rows.value = []
 }
 
 function changePage(page: number): void {
@@ -510,7 +523,7 @@ watch(() => [route.name, route.params.id, route.fullPath], () => {
     </template>
 
     <template v-else-if="isList">
-    <AdminFilters v-model:search="filters.search" aria-label="Filtros de homologaciones" search-label="Buscar" placeholder="Alumno, DNI o email" @submit="applyFilters">
+    <AdminFilters v-model:search="filters.search" aria-label="Filtros de homologaciones" search-label="Buscar" placeholder="Alumno, DNI o email" @searching="invalidateListSearch" @submit="applyFilters">
       <label class="min-w-0 text-sm font-semibold">Estado<select v-model="filters.estado" class="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 font-normal"><option value="">Todos</option><option value="PENDIENTE">Pendiente</option><option value="APROBADA">Aprobada</option><option value="RECHAZADA">Rechazada</option></select></label>
       <label class="min-w-0 text-sm font-semibold">Tipo<select v-model="filters.tipo" class="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 font-normal"><option value="">Todos</option><option value="TOTAL">Total</option><option value="PARCIAL">Parcial</option></select></label>
       <label class="min-w-0 text-sm font-semibold">Carrera<select v-model="filters.carreraId" class="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 font-normal" :disabled="careerCatalogLoading" :aria-busy="careerCatalogLoading" @change="onFilterCareerChange"><option value="">Todas las carreras</option><option v-if="careerCatalogLoading" disabled value="">Cargando carreras…</option><option v-else-if="careerCatalogError" disabled value="">No se pudieron cargar</option><option v-for="career in careerOptions" :key="career.id" :value="String(career.id)">{{ career.nombre }}{{ career.activo ? '' : ' (histórica)' }}</option></select><button v-if="careerCatalogError" type="button" class="mt-1 text-sm font-semibold text-[var(--color-brand)] underline" @click="loadFilterCareers">Reintentar carreras</button></label>

@@ -21,10 +21,12 @@ async function withServer<T>(operation: (baseUrl: string) => Promise<T>): Promis
 }
 
 test('el detalle de una mesa bloquea alumnos y admite administrativo y profesor', async () => {
-  const originalUser = (userRepository as any).findById;
+  const originalUser = (userRepository as any).findAuthById;
   const originalSession = (prisma as any).sesion.findFirst;
-  (userRepository as any).findById = async () => ({ idUsuario: 99, email: 'test@instituto.edu.ar', dni: 12345678, apellidoNombre: 'Usuario Test', activo: true });
+  const originalMesaFindFirst = (prisma as any).mesa.findFirst;
+  (userRepository as any).findAuthById = async () => ({ idUsuario: 99, email: 'test@instituto.edu.ar', dni: 12345678, apellidoNombre: 'Usuario Test', activo: true });
   (prisma as any).sesion.findFirst = async () => ({ id: 1 });
+  (prisma as any).mesa.findFirst = async () => null;
   try {
     await withServer(async (baseUrl) => {
       const request = (rol: string) => fetch(`${baseUrl}/api/examenes/7`, { headers: { Authorization: `Bearer ${token(rol)}` } });
@@ -33,7 +35,8 @@ test('el detalle de una mesa bloquea alumnos y admite administrativo y profesor'
       assert.equal((await request(ROLES.PROFESOR)).status, 404);
     });
   } finally {
-    (userRepository as any).findById = originalUser;
+    (userRepository as any).findAuthById = originalUser;
     (prisma as any).sesion.findFirst = originalSession;
+    (prisma as any).mesa.findFirst = originalMesaFindFirst;
   }
 });

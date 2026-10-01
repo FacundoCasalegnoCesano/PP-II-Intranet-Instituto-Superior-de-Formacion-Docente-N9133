@@ -172,7 +172,7 @@ describe('SchedulesView', () => {
       expect(screen.queryByText('Cargando horarios publicados…')).not.toBeInTheDocument()
     })
     expect(mocks.getCurrent).toHaveBeenCalledTimes(1)
-    expect(mocks.getCurrent).toHaveBeenCalledWith({ cicloLectivo: 2026, carreraId: 8, cursoAnio: 1 })
+    expect(mocks.getCurrent).toHaveBeenCalledWith({ cicloLectivo: 2026, carreraId: 8 })
   })
 
   it('shows empty and retryable error states without a PDF preview', async () => {
@@ -196,7 +196,7 @@ describe('SchedulesView', () => {
     const career = { id: 3, nombre: 'Matemática', duracionAnios: 4 }
     mocks.listOptions.mockResolvedValue({ carreras: [career], generalDisponible: false })
     mocks.getCurrent.mockRejectedValue(new ApiError('missing', 404))
-    mocks.publish.mockResolvedValue({ documento: { ...schedule(), carreraId: 3, cursoAnio: 2, carrera: career }, reutilizado: false })
+    mocks.publish.mockResolvedValue({ documento: { ...schedule(), carreraId: 3, cursoAnio: null, carrera: career }, reutilizado: false })
     mocks.download.mockResolvedValue(new Blob(['%PDF-1.7']))
     mocks.listHistory.mockResolvedValue([])
     vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
@@ -209,16 +209,15 @@ describe('SchedulesView', () => {
     expect(screen.getByRole('button', { name: 'Publicar horario' })).toBeVisible()
     const user = userEvent.setup()
     await user.selectOptions(screen.getAllByLabelText('Carrera')[1], '3')
-    await user.selectOptions(screen.getAllByLabelText('Año de cursado')[1], '2')
     const file = new File(['%PDF-1.7'], 'horario.pdf', { type: 'application/pdf' })
     await user.upload(screen.getByLabelText('Archivo PDF'), file)
     await fireEvent.submit(screen.getByRole('button', { name: 'Publicar horario' }).closest('form')!)
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('Matemática, 2.° año')
+    expect(dialog).toHaveTextContent('Matemática, horario completo')
     await user.click(within(dialog).getByRole('button', { name: 'Publicar horario' }))
-    await waitFor(() => expect(mocks.publish).toHaveBeenCalledWith({ archivo: file, cicloLectivo: 2026, carreraId: 3, cursoAnio: 2, titulo: '' }))
+    await waitFor(() => expect(mocks.publish).toHaveBeenCalledWith({ archivo: file, cicloLectivo: 2026, carreraId: 3, titulo: '' }))
     await screen.findByRole('heading', { name: 'Horario oficial 2026' })
-    expect(mocks.listHistory).toHaveBeenLastCalledWith({ cicloLectivo: 2026, carreraId: 3, cursoAnio: 2 })
+    expect(mocks.listHistory).toHaveBeenLastCalledWith({ cicloLectivo: 2026, carreraId: 3 })
   })
 
   it('keeps management controls and restore confirmation exclusive to administrative staff', async () => {
@@ -389,7 +388,7 @@ describe('SchedulesView', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('lets a student choose a career and course year independently of the institutional cycle', async () => {
+  it('lets a student choose a career independently of the institutional cycle', async () => {
     mockPublishedSchedule()
     vi.stubGlobal('URL', { createObjectURL: mocks.createObjectURL, revokeObjectURL: mocks.revokeObjectURL })
     const user = userEvent.setup()
@@ -397,12 +396,10 @@ describe('SchedulesView', () => {
 
     await screen.findByRole('heading', { name: 'Horario oficial 2026' })
     await user.selectOptions(screen.getByLabelText('Carrera'), '3')
-    expect(screen.getByLabelText('Año de cursado')).toBeVisible()
-    await user.selectOptions(screen.getByLabelText('Año de cursado'), '2')
-    await waitFor(() => expect(mocks.getCurrent).toHaveBeenLastCalledWith({ cicloLectivo: 2026, carreraId: 3, cursoAnio: 2 }))
+    await waitFor(() => expect(mocks.getCurrent).toHaveBeenLastCalledWith({ cicloLectivo: 2026, carreraId: 3 }))
   })
 
-  it('requires career and course year before an administrator can publish', async () => {
+  it('requires a career before an administrator can publish', async () => {
     mocks.activeRole = 'ADMINISTRATIVO'
     mocks.listYears.mockResolvedValue([2026])
     mocks.listOptions.mockResolvedValue({ carreras: [{ id: 3, nombre: 'Matemática', duracionAnios: 3 }], generalDisponible: false })
@@ -413,6 +410,6 @@ describe('SchedulesView', () => {
     await screen.findByRole('heading', { name: 'Publicar horario' })
     await user.upload(screen.getByLabelText('Archivo PDF'), new File(['%PDF-1.7'], 'horarios.pdf', { type: 'application/pdf' }))
     fireEvent.submit(screen.getByRole('button', { name: 'Publicar horario' }).closest('form')!)
-    expect(await screen.findByText('Seleccioná una carrera y un año de cursado.')).toBeVisible()
+    expect(await screen.findByText('Seleccioná una carrera.')).toBeVisible()
   })
 })

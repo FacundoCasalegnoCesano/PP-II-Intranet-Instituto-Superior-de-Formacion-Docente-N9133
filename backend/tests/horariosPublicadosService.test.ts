@@ -65,7 +65,7 @@ test('publicación inicial escribe un PDF con clave aleatoria y lo deja vigente'
   const { repo, storage, calls } = dependencias();
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1, titulo: 'Horarios oficiales' }, pdf(), administrador);
+  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, titulo: 'Horarios oficiales' }, pdf(), administrador);
 
   assert.equal(resultado.reutilizado, false);
   assert.equal(resultado.documento.vigente, true);
@@ -82,7 +82,7 @@ test('un reintento idéntico restaura el documento sin escribir otra versión', 
   const { repo, storage, calls } = dependencias({ buscarPorCicloYHash: async () => previo });
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1 }, pdf(), administrador);
+  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1 }, pdf(), administrador);
 
   assert.equal(resultado.reutilizado, true);
   assert.equal(resultado.documento.vigente, true);
@@ -99,7 +99,7 @@ test('una carrera de publicación reutiliza la versión ganadora y limpia el arc
   });
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1 }, pdf(), administrador);
+  const resultado = await service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1 }, pdf(), administrador);
 
   assert.equal(resultado.reutilizado, true);
   assert.equal(calls.writes.length, 1);
@@ -116,16 +116,22 @@ test('rechaza archivos vacíos, con MIME, firma o extensión inseguros', () => {
 });
 
 test('limita el título de publicación a 160 caracteres', () => {
-  const validacion = publicarHorarioSchema.validate({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1, titulo: 'x'.repeat(161) });
+  const validacion = publicarHorarioSchema.validate({ cicloLectivo: 2026, carreraId: 1, titulo: 'x'.repeat(161) });
   assert.ok(validacion.error);
   assert.match(validacion.error.message, /160/);
+});
+
+test('rechaza cursoAnio en publicaciones nuevas', () => {
+  const validacion = publicarHorarioSchema.validate({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 2 });
+  assert.ok(validacion.error);
+  assert.match(validacion.error.message, /sólo aplica a históricos/);
 });
 
 test('limpia el archivo nuevo si la transacción falla sin reemplazar la publicación anterior', async () => {
   const { repo, storage, calls } = dependencias({ crearYPublicar: async () => { throw new Error('DB caída'); } });
   const service = new HorarioPublicadoService(repo, storage, 'C:/private/horarios');
 
-  await assert.rejects(service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1, cursoAnio: 1 }, pdf(), administrador), /DB caída/);
+  await assert.rejects(service.publicarArchivo({ cicloLectivo: 2026, carreraId: 1 }, pdf(), administrador), /DB caída/);
   assert.equal(calls.writes.length, 1);
   assert.equal(calls.unlinks.length, 1);
 });

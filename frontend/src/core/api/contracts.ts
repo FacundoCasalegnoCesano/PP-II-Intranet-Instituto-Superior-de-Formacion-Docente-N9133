@@ -16,15 +16,21 @@ export interface ApiFailure {
   code?: string
   field?: string
   rolesDisponibles?: string[]
+  errors?: ApiValidationErrorDetail[]
 }
 
 export type ApiEnvelope<T> = ApiSuccess<T> | ApiFailure
 
-export interface ApiErrorPayload {
+export interface ApiValidationErrorDetail {
+  field?: string | number
   message: string
-  code?: string
+}
+
+export type ApiErrorPayload = ApiFailure
+
+export interface ApiErrorDetail {
   field?: string
-  rolesDisponibles?: string[]
+  message: string
 }
 
 export interface PaginationMeta {

@@ -103,6 +103,7 @@ test('el contrato HTTP real distingue 401, 403, ID estricto, 404, self-reset y 2
   const resetCalls: Array<[number, string]> = [];
   const originalAdminResetPassword = userService.adminResetPassword;
   replaceMethod(userRepository, 'findById', async (id: number) => records[id] ?? null);
+  replaceMethod(userRepository, 'findAuthById', async (id: number) => records[id] ?? null);
   replaceMethod(prisma.sesion, 'findFirst', async (args: any) => {
     const matchingUser = records[args.where.usuarioId];
     return matchingUser && args.where.cerradaEn === null && args.where.revocadaEn === null

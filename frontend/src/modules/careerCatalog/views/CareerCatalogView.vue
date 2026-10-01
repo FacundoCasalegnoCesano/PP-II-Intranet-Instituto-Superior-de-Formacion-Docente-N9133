@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { PaginationMeta } from '@/core/api/contracts'
 import AppButton from '@/ui/AppButton.vue'
 import { getCareerStudyPlan, listCareerCatalog } from '../api/careerCatalogApi'
@@ -17,6 +17,7 @@ const loadingPlan = ref(false)
 const planError = ref('')
 let catalogGeneration = 0
 let planGeneration = 0
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 const selectedCareer = computed(() => careers.value.find((career) => career.id === selectedCareerId.value) ?? null)
 const selectedCareerDetails = computed(() => selectedCareer.value ?? selectedPlan.value)
 const groupedSubjects = computed(() => {
@@ -95,10 +96,27 @@ async function loadCatalog(page = pagination.value.page) {
   }
 }
 
+function clearSearchTimer(): void {
+  if (searchTimer !== null) clearTimeout(searchTimer)
+  searchTimer = null
+}
 function submitSearch() {
+  clearSearchTimer()
   appliedSearch.value = searchInput.value.trim()
   pagination.value = { ...pagination.value, page: 1 }
   void loadCatalog(1)
+}
+function scheduleSearch(): void {
+  catalogGeneration += 1
+  careers.value = []
+  clearPlan(true)
+  loadingCatalog.value = true
+  catalogError.value = ''
+  clearSearchTimer()
+  searchTimer = setTimeout(() => {
+    searchTimer = null
+    submitSearch()
+  }, 300)
 }
 
 function changePage(page: number) {
@@ -112,6 +130,11 @@ function retryPlan() {
 
 onMounted(() => {
   void loadCatalog(1)
+})
+onBeforeUnmount(() => {
+  clearSearchTimer()
+  catalogGeneration += 1
+  planGeneration += 1
 })
 </script>
 
@@ -129,7 +152,7 @@ onMounted(() => {
         <form class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="submitSearch">
           <label class="flex-1 text-sm font-semibold" for="career-search">
             Buscar carrera
-            <input id="career-search" v-model="searchInput" type="search" class="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 font-normal text-[var(--color-text)]" />
+            <input id="career-search" v-model="searchInput" type="search" class="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 font-normal text-[var(--color-text)]" @input="scheduleSearch" />
           </label>
           <AppButton type="submit">Buscar</AppButton>
         </form>

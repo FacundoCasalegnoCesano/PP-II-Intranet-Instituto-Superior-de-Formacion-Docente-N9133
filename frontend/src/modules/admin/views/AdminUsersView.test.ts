@@ -141,4 +141,16 @@ describe('AdminUsersView', () => {
     expect(screen.queryByRole('button', { name: 'Asignar nueva contraseña' })).toBeNull()
     authState.user.idUsuario = 99
   })
+
+  it('reloads when applying the same query without duplicating changed navigations', async () => {
+    const router = await renderUsers()
+    const userEventApi = userEvent.setup()
+    const input = screen.getByLabelText('Buscar')
+    await userEventApi.type(input, ' Ana ')
+    await waitFor(() => expect(router.currentRoute.value.query.search).toBe(' Ana '))
+    const callsAfterTyping = mocks.listUsers.mock.calls.length
+
+    await userEventApi.click(screen.getByRole('button', { name: 'Aplicar' }))
+    await waitFor(() => expect(mocks.listUsers.mock.calls.length).toBe(callsAfterTyping + 1))
+  })
 })

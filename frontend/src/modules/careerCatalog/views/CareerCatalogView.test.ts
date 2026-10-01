@@ -130,6 +130,45 @@ describe('CareerCatalogView', () => {
     await waitFor(() => expect(mocks.listCareerCatalog).toHaveBeenLastCalledWith({ page: 1, limit: 20, search: 'Lengua' }))
   })
 
+  it('searches while typing and restores the unfiltered catalog when cleared', async () => {
+    const lengua = career(1, 'Profesorado de Lengua')
+    mocks.listCareerCatalog.mockResolvedValue(paginated([lengua]))
+    mocks.getCareerStudyPlan.mockResolvedValue(plan(lengua))
+
+    renderView()
+    await screen.findByText('Lengua I')
+    const input = screen.getByLabelText('Buscar carrera')
+    await fireEvent.update(input, 'Lengua')
+    expect(mocks.listCareerCatalog).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(mocks.listCareerCatalog).toHaveBeenCalledTimes(2))
+    expect(mocks.listCareerCatalog).toHaveBeenLastCalledWith({ page: 1, limit: 20, search: 'Lengua' })
+
+    await fireEvent.update(input, '')
+    await waitFor(() => expect(mocks.listCareerCatalog).toHaveBeenCalledTimes(3))
+    expect(mocks.listCareerCatalog).toHaveBeenLastCalledWith({ page: 1, limit: 20, search: '' })
+  })
+
+  it('hides the previous catalog during debounce and ignores its late response', async () => {
+    const oldCatalog = deferred<PaginatedResult<CatalogCareer>>()
+    const newCatalog = deferred<PaginatedResult<CatalogCareer>>()
+    const vieja = career(1, 'Carrera vieja')
+    const nueva = career(2, 'Carrera nueva')
+    mocks.listCareerCatalog.mockReturnValueOnce(oldCatalog.promise).mockReturnValueOnce(newCatalog.promise)
+    const user = userEvent.setup()
+    renderView()
+
+    await user.type(screen.getByLabelText('Buscar carrera'), 'nueva')
+    expect(screen.queryByText('Carrera vieja')).not.toBeInTheDocument()
+    oldCatalog.resolve(paginated([vieja]))
+    await Promise.resolve()
+    expect(screen.queryByText('Carrera vieja')).not.toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect(mocks.listCareerCatalog).toHaveBeenCalledTimes(2)
+    newCatalog.resolve(paginated([nueva]))
+    expect(await screen.findByRole('button', { name: /^Carrera nueva/ })).toBeVisible()
+    expect(screen.queryByText('Carrera vieja')).not.toBeInTheDocument()
+  })
+
   it('changes pages with the active search and disables pagination boundaries', async () => {
     const lengua = career(1, 'Profesorado de Lengua')
     const historia = career(2, 'Profesorado de Historia')

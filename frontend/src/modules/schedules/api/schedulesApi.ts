@@ -25,7 +25,6 @@ export const schedulesApi = {
     body.append('archivo', input.archivo)
     body.append('cicloLectivo', String(input.cicloLectivo))
     body.append('carreraId', String(input.carreraId))
-    body.append('cursoAnio', String(input.cursoAnio))
     if (input.titulo?.trim()) body.append('titulo', input.titulo.trim())
     return apiClient.post('/horarios-publicados', body)
   },

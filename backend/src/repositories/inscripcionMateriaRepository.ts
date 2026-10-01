@@ -107,9 +107,7 @@ class InscripcionMateriaRepository {
         },
         cursada: true
       },
-      orderBy: {
-        fechaInscripcion: 'desc'
-      }
+      orderBy: [{ fechaInscripcion: 'desc' }, { id: 'desc' }]
     }), prisma.inscripcionMateria.count({ where })]);
     return paginated(data, total, page, limit);
   }

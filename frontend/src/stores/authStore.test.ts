@@ -14,6 +14,7 @@ vi.mock('@/core/api/client', () => ({
 }))
 
 import { useAuthStore } from './authStore'
+import { useCareerSelectionStore } from './careerSelectionStore'
 
 const user = {
   idUsuario: 4,
@@ -109,11 +110,14 @@ describe('auth store', () => {
     post.mockResolvedValueOnce(selectedRole('PROFESOR'))
 
     const store = useAuthStore()
+    const careerSelection = useCareerSelectionStore()
     await store.restore()
+    careerSelection.selectCareer(3, { userId: 4, role: 'ALUMNO' })
     await store.selectRole('PROFESOR')
 
     expect(store.activeRole).toBe('PROFESOR')
     expect(store.status).toBe('authenticated')
+    expect(careerSelection.selectedCareerId).toBeNull()
   })
 
   it('keeps a valid local session when a role change is forbidden', async () => {
@@ -130,17 +134,33 @@ describe('auth store', () => {
     expect(sessionStorage.read()).toEqual(active)
   })
 
+  it('keeps the career selection when restoring the same identity', async () => {
+    const active: AuthSession = { ...loginResult(['ALUMNO']), role: 'ALUMNO' }
+    sessionStorage.save(active)
+    const store = useAuthStore()
+    const careerSelection = useCareerSelectionStore()
+    await store.restore()
+    careerSelection.selectCareer(3, { userId: 4, role: 'ALUMNO' })
+
+    await store.restore()
+
+    expect(careerSelection.selectedCareerId).toBe(3)
+  })
+
   it('always clears its local session when backend logout fails', async () => {
     const active: AuthSession = { ...loginResult(['ALUMNO']), role: 'ALUMNO' }
     sessionStorage.save(active)
     post.mockRejectedValueOnce(new Error('network unavailable'))
 
     const store = useAuthStore()
+    const careerSelection = useCareerSelectionStore()
     await store.restore()
+    careerSelection.selectCareer(3, { userId: 4, role: 'ALUMNO' })
 
     await expect(store.logout()).rejects.toThrow('network unavailable')
     expect(store.status).toBe('anonymous')
     expect(sessionStorage.read()).toBeNull()
+    expect(careerSelection.selectedCareerId).toBeNull()
   })
 
   it('clears the in-memory session when ApiClient invalidates an expired session', async () => {
@@ -148,7 +168,9 @@ describe('auth store', () => {
     sessionStorage.save(active)
 
     const store = useAuthStore()
+    const careerSelection = useCareerSelectionStore()
     await store.restore()
+    careerSelection.selectCareer(3, { userId: 4, role: 'ALUMNO' })
     const invalidate = setSessionInvalidationHandler.mock.calls[0]?.[0] as (() => void) | undefined
 
     expect(store.status).toBe('authenticated')
@@ -159,5 +181,6 @@ describe('auth store', () => {
     expect(store.status).toBe('anonymous')
     expect(store.isAuthenticated).toBe(false)
     expect(sessionStorage.read()).toBeNull()
+    expect(careerSelection.selectedCareerId).toBeNull()
   })
 })

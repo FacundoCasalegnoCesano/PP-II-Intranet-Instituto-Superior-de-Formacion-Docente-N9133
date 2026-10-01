@@ -57,5 +57,7 @@ export const claseWriteSchema = Joi.object({
   temaDesarrollado: Joi.string().trim().min(1).max(5000).required().messages({
     'string.empty': 'El tema desarrollado es requerido'
   }),
-  asistencias: Joi.array().min(1).required().items(asistenciaSchema)
+  asistencias: Joi.array().min(1).max(500).required().items(asistenciaSchema).messages({
+    'array.max': 'La asistencia no puede superar los 500 registros por solicitud'
+  })
 }).unknown(false);

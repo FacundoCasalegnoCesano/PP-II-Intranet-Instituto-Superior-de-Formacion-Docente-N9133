@@ -1553,6 +1553,7 @@ paths:
     post:
       tags: [Asistencias]
       summary: Registrar asistencia de una clase
+      description: Una solicitud admite hasta 500 filas y persiste el lote completo en una transacción. Ante una colisión concurrente de clave única de asistencia, el lote completo se reintenta hasta dos veces.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CargaAsistenciaRequest' } } } }
       responses: { '201': { $ref: '#/components/responses/OK' }, '400': { $ref: '#/components/responses/BadRequest' } }
@@ -1626,6 +1627,7 @@ paths:
     post:
       tags: [Calificaciones]
       summary: Registrar calificaciones en lote
+      description: Cada solicitud admite hasta 500 registros y representa un lote de evaluación de una cursada; el lote se valida y persiste como una sola operación.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CargaCalificacionesRequest' } } } }
       responses: { '201': { $ref: '#/components/responses/OK' }, '400': { $ref: '#/components/responses/BadRequest' } }
@@ -1794,7 +1796,7 @@ paths:
     get:
       tags: [Horarios Publicados]
       summary: Consultar el horario publicado vigente
-      description: "Sin `cicloLectivo`, busca el año actual y luego el último ciclo publicado."
+      description: "Al indicar sólo `carreraId`, devuelve el PDF completo de esa carrera y ciclo. Sin `cicloLectivo`, el fallback al último ciclo aplica únicamente al ámbito general."
       x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
       parameters:
         - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
@@ -1834,12 +1836,11 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [archivo, cicloLectivo, carreraId, cursoAnio]
+              required: [archivo, cicloLectivo, carreraId]
               properties:
                 archivo: { type: string, format: binary, description: PDF simple de hasta 10 MB }
                 cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
                 carreraId: { type: integer, minimum: 1 }
-                cursoAnio: { type: integer, minimum: 1 }
                 titulo: { type: string, maxLength: 160 }
       responses:
         '200':
@@ -2592,6 +2593,9 @@ components:
         aprobado: { type: boolean, nullable: true }
         notaMinima: { type: number }
         mesa: { type: object, properties: { id: { type: integer }, fecha: { type: string, format: date-time }, materia: { $ref: '#/components/schemas/Subject' } } }
+        llamado: { type: integer, minimum: 1 }
+        estadoMesa: { $ref: '#/components/schemas/EstadoMesa' }
+        activo: { type: boolean }
     InscripcionExamenMutationResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'
@@ -2697,7 +2701,7 @@ components:
                   estado: { type: string, enum: [EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO] }
     HorarioPublicado:
       type: object
-      required: [id, cicloLectivo, carreraId, cursoAnio, titulo, nombreOriginal, tamanio, fechaPublicacion, vigente]
+      required: [id, cicloLectivo, carreraId, titulo, nombreOriginal, tamanio, fechaPublicacion, vigente]
       properties:
         id: { type: integer }
         cicloLectivo: { type: integer }
@@ -3205,6 +3209,7 @@ components:
         asistencias:
           type: array
           minItems: 1
+          maxItems: 500
           items:
             type: object
             required: [alumnoId, presente]
@@ -3230,6 +3235,7 @@ components:
         asistencias:
           type: array
           minItems: 1
+          maxItems: 500
           uniqueItems: true
           items: { $ref: '#/components/schemas/ClaseAsistenciaInput' }
     ClaseResumen:
@@ -3305,6 +3311,7 @@ components:
         calificaciones:
           type: array
           minItems: 1
+          maxItems: 500
           items:
             oneOf:
               - type: object

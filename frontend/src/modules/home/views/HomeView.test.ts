@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
-import { render, screen } from '@testing-library/vue'
+import { createPinia, setActivePinia } from 'pinia'
+import { render, screen, within } from '@testing-library/vue'
+import userEvent from '@testing-library/user-event'
+import { useCareerSelectionStore } from '@/stores/careerSelectionStore'
 import HomeView from './HomeView.vue'
 import { fetchStudentCareers, fetchStudentTrajectory } from '../api/homeApi'
+import { fetchMyExamEnrollments } from '@/modules/exams/api/examsApi'
 
 const state = vi.hoisted(() => ({ activeRole: 'ALUMNO', user: { idUsuario: 13, apellidoNombre: 'Lucía Test' } }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => state }))
@@ -11,14 +15,27 @@ vi.mock('../api/homeApi', () => ({
   fetchStudentTrajectory: vi.fn().mockResolvedValue({ cantidadMateriasAprobadas: 1, promedioGeneral: 8, materias: [{}, {}] }),
   progressFromTrajectory: vi.fn().mockReturnValue({ approved: 1, total: 2, percent: 50 }),
 }))
+vi.mock('@/modules/exams/api/examsApi', () => ({ fetchMyExamEnrollments: vi.fn() }))
 
 const RouterLink = defineComponent({
   props: { to: { type: Object, required: true } },
   setup(props, { slots }) {
-    return () => h('a', {
-      'data-route-name': (props.to as { name?: string }).name,
-      'data-route-query': JSON.stringify((props.to as { query?: Record<string, string> }).query ?? {}),
-    }, slots.default?.())
+    return () => {
+      const name = (props.to as { name?: string }).name
+      const paths: Record<string, string> = {
+        'academic-record': '/app/alumno/trayectoria',
+        'subject-enrollments': '/app/alumno/materias',
+        'student-exams': '/app/alumno/examenes',
+        'student-careers': '/app/alumno/carreras',
+        schedules: '/app/horarios',
+        profile: '/app/perfil',
+      }
+      return h('a', {
+        href: paths[name ?? ''] ?? '#',
+        'data-route-name': name,
+        'data-route-query': JSON.stringify((props.to as { query?: Record<string, string> }).query ?? {}),
+      }, slots.default?.())
+    }
   },
 })
 
@@ -27,7 +44,6 @@ const renderHome = () => render(HomeView, { global: { stubs: { RouterLink } } })
 const studentModules = [
   ['Trayectoria', 'Consultá tus materias y tu progreso académico.', 'academic-record'],
   ['Mis materias', 'Gestioná tus inscripciones a cursadas.', 'subject-enrollments'],
-  ['Exámenes', 'Consultá mesas y tus inscripciones a examen.', 'student-exams'],
   ['Carreras y planes', 'Explorá la oferta y los planes de estudio.', 'student-careers'],
   ['Horarios', 'Consultá el horario institucional publicado.', 'schedules'],
   ['Mi perfil', 'Revisá y actualizá tus datos personales.', 'profile'],
@@ -67,11 +83,10 @@ const professorAvailabilityCopy = 'Las tarjetas marcadas como Próximamente aún
 
 const exclusiveContentByRole = {
   ALUMNO: {
-    labels: ['Trayectoria', 'Mis materias', 'Exámenes', 'Carreras y planes'],
+    labels: ['Trayectoria', 'Mis materias', 'Carreras y planes'],
     descriptions: [
       'Consultá tus materias y tu progreso académico.',
       'Gestioná tus inscripciones a cursadas.',
-      'Consultá mesas y tus inscripciones a examen.',
       'Explorá la oferta y los planes de estudio.',
     ],
   },
@@ -111,10 +126,12 @@ function expectNoCrossRoleContent(role: HomeRole) {
 
 describe('HomeView', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     state.activeRole = 'ALUMNO'
     vi.clearAllMocks()
     vi.mocked(fetchStudentCareers).mockResolvedValue([{ id: 7, carreraId: 3, carrera: { id: 3, nombre: 'Profesorado', materias: [{ id: 1 }, { id: 2 }] } }])
     vi.mocked(fetchStudentTrajectory).mockResolvedValue({ cantidadMateriasAprobadas: 1, promedioGeneral: 8, materias: [{}, {}] })
+    vi.mocked(fetchMyExamEnrollments).mockResolvedValue([])
   })
 
   it('shows real student career progress and average', async () => {
@@ -135,6 +152,40 @@ describe('HomeView', () => {
     expect(await screen.findByRole('option', { name: 'Carrera activa', selected: true })).toBeVisible()
   })
 
+  it('shares the selected active career with the academic modules', async () => {
+    vi.mocked(fetchStudentCareers).mockResolvedValueOnce([
+      { id: 3, carreraId: 3, activo: true, carrera: { id: 3, nombre: 'Profesorado', activo: true, materias: [] } },
+      { id: 4, carreraId: 4, activo: true, carrera: { id: 4, nombre: 'Tecnicatura', activo: true, materias: [] } },
+    ])
+    const user = userEvent.setup()
+    renderHome()
+
+    const career = await screen.findByLabelText('Carrera')
+    await user.selectOptions(career, '4')
+
+    expect(useCareerSelectionStore().selectedCareerId).toBe(4)
+  })
+
+  it('shows the three nearest future active exam enrollments', async () => {
+    vi.mocked(fetchMyExamEnrollments).mockResolvedValueOnce([
+      { id: 1, mesaId: 1, materia: { id: 1, nombre: 'Más tarde' }, fecha: '2027-12-10T12:00:00.000Z', llamado: 1, estadoMesa: 'ABIERTA', activo: true, condicion: 'REGULAR', estadoResultado: 'PENDIENTE', nota: null, aprobado: null, notaMinima: 6 },
+      { id: 2, mesaId: 2, materia: { id: 2, nombre: 'Primera' }, fecha: '2027-10-10T12:00:00.000Z', llamado: 2, estadoMesa: 'ABIERTA', activo: true, condicion: 'LIBRE', estadoResultado: 'PENDIENTE', nota: null, aprobado: null, notaMinima: 6 },
+      { id: 3, mesaId: 3, materia: { id: 3, nombre: 'Segunda' }, fecha: '2027-11-10T12:00:00.000Z', llamado: 1, estadoMesa: 'EN_PROCESO', activo: true, condicion: 'REGULAR', estadoResultado: 'EN_REVISION', nota: null, aprobado: null, notaMinima: 6 },
+      { id: 4, mesaId: 4, materia: { id: 4, nombre: 'Cuarta' }, fecha: '2027-12-01T12:00:00.000Z', llamado: 1, estadoMesa: 'ABIERTA', activo: true, condicion: 'REGULAR', estadoResultado: 'PENDIENTE', nota: null, aprobado: null, notaMinima: 6 },
+      { id: 5, mesaId: 5, materia: { id: 5, nombre: 'Finalizada' }, fecha: '2027-09-10T12:00:00.000Z', llamado: 1, estadoMesa: 'FINALIZADA', activo: true, condicion: 'REGULAR', estadoResultado: 'CALIFICADO', nota: 8, aprobado: true, notaMinima: 6 },
+      { id: 6, mesaId: 6, materia: { id: 6, nombre: 'Pasada' }, fecha: '2026-01-10T12:00:00.000Z', llamado: 1, estadoMesa: 'ABIERTA', activo: true, condicion: 'REGULAR', estadoResultado: 'PENDIENTE', nota: null, aprobado: null, notaMinima: 6 },
+    ])
+
+    renderHome()
+
+    const list = await screen.findByRole('list', { name: 'Próximos exámenes' })
+    expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('Primera'), expect.stringContaining('Segunda'), expect.stringContaining('Cuarta')]))
+    expect(within(list).queryByText('Más tarde')).not.toBeInTheDocument()
+    expect(within(list).queryByText('Finalizada')).not.toBeInTheDocument()
+    expect(within(list).queryByText('Pasada')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ver mis exámenes' })).toHaveAttribute('data-route-name', 'student-exams')
+  })
+
   it('shows the complete student access matrix and preserves its progress requests', async () => {
     renderHome()
     await screen.findByText('1 de 2 materias aprobadas')
@@ -142,9 +193,12 @@ describe('HomeView', () => {
     expect(screen.getByRole('heading', { level: 2, name: launcherTitles.ALUMNO })).toBeVisible()
     expect(screen.getByText(launcherCopy)).toBeVisible()
     expect(screen.queryByText(professorAvailabilityCopy)).not.toBeInTheDocument()
-    expect(screen.getAllByRole('link')).toHaveLength(studentModules.length)
+    expect(screen.getByRole('heading', { level: 2, name: 'Próximos exámenes' })).toBeVisible()
+    expect(screen.getByText(/No tenés próximos exámenes/)).toBeVisible()
+    const moduleLinks = screen.getAllByRole('link').filter((link) => link.textContent !== 'Ver mis exámenes')
+    expect(moduleLinks).toHaveLength(studentModules.length)
     expect(screen.queryAllByRole('article')).toHaveLength(0)
-    expect(screen.getAllByRole('link').map((link) => link.getAttribute('data-route-name'))).toEqual(studentModules.map(([, , routeName]) => routeName))
+    expect(moduleLinks.map((link) => link.getAttribute('data-route-name'))).toEqual(studentModules.map(([, , routeName]) => routeName))
     for (const [label, description, routeName] of studentModules) {
       expect(screen.getByRole('link', { name: new RegExp(label) })).toHaveAttribute('data-route-name', routeName)
       expect(screen.getByText(description)).toBeVisible()

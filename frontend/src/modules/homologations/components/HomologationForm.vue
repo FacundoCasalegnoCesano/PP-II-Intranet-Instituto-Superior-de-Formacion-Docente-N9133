@@ -288,7 +288,7 @@ onBeforeUnmount(() => {
         <div class="min-w-0">
           <label for="student-search" class="font-semibold">Buscar alumno</label>
           <input id="student-search" v-model="studentSearch" type="search" class="admin-input" placeholder="Nombre, DNI o email" aria-describedby="student-search-help" @input="scheduleStudentSearch" />
-          <p id="student-search-help" class="mt-1 text-sm text-[var(--color-graphite)]">La búsqueda consulta alumnos activos en el servidor.</p>
+          <p id="student-search-help" class="mt-1 text-sm text-[var(--color-graphite)]">La búsqueda incluye solo alumnos activos.</p>
         </div>
 
         <div class="min-w-0">

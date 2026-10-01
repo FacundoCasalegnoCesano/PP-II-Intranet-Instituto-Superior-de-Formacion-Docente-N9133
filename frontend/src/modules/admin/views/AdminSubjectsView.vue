@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { isNavigationFailure, NavigationFailureType, RouterLink, useRoute, useRouter } from 'vue-router'
 import AdminFilters from '../components/AdminFilters.vue'
 import AdminPagination from '../components/AdminPagination.vue'
 import AdminState from '../components/AdminState.vue'
@@ -40,6 +40,8 @@ const removalWarning = ref('')
 const hasCorrelatividades = ref(false)
 const hydratingEdit = ref(false)
 let prerequisiteRequestVersion = 0
+let listRequest = 0
+let disposed = false
 const search = ref(String(route.query.search ?? ''))
 const careerFilter = ref(String(route.query.carreraId ?? ''))
 const pagination = ref({ page: 1, limit: 20, total: 0, totalPages: 0 })
@@ -140,6 +142,7 @@ function isPrerequisiteSelected(subjectId: number): boolean {
 }
 
 async function loadList(): Promise<void> {
+  const request = ++listRequest
   loading.value = true
   error.value = ''
   try {
@@ -148,13 +151,20 @@ async function loadList(): Promise<void> {
       carreraId: careerFilter.value ? Number(careerFilter.value) : undefined,
       page: Number(route.query.page ?? 1),
     })
+    if (disposed || request !== listRequest || !isList.value) return
     subjects.value = result.data
     pagination.value = result.pagination
   } catch {
-    error.value = 'No pudimos cargar las materias.'
+    if (!disposed && request === listRequest && isList.value) error.value = 'No pudimos cargar las materias.'
   } finally {
-    loading.value = false
+    if (!disposed && request === listRequest && isList.value) loading.value = false
   }
+}
+
+function invalidateList(): void {
+  listRequest += 1
+  loading.value = true
+  error.value = ''
 }
 
 async function loadDetail(): Promise<void> {
@@ -183,7 +193,13 @@ async function loadDetail(): Promise<void> {
 }
 
 function apply(): void {
-  void router.replace({ query: { search: search.value || undefined, carreraId: careerFilter.value || undefined, page: undefined } }).then(loadList)
+  replaceListQuery({ search: search.value || undefined, carreraId: careerFilter.value || undefined, page: undefined })
+}
+
+function replaceListQuery(query: Record<string, string | undefined>): void {
+  void router.replace({ query }).then((failure) => {
+    if (failure && isNavigationFailure(failure, NavigationFailureType.duplicated)) void loadList()
+  })
 }
 
 function reset(): void {
@@ -329,6 +345,7 @@ onMounted(() => {
   else if (isDetail.value) void loadDetail()
   else reset()
 })
+onBeforeUnmount(() => { disposed = true; listRequest += 1 })
 
 watch(() => form.carreraId, (careerId, previousCareerId) => {
   if (hydratingEdit.value) return
@@ -351,13 +368,13 @@ watch(() => route.fullPath, () => {
     </div>
 
     <template v-if="isList">
-      <AdminFilters v-model:search="search" placeholder="Nombre de materia" @submit="apply">
+      <AdminFilters v-model:search="search" placeholder="Nombre de materia" @searching="invalidateList" @submit="apply">
         <label class="text-sm font-semibold">Carrera<select v-model="careerFilter" class="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-border)] px-3 font-normal"><option value="">Todas</option><option v-for="career in careers" :key="career.id" :value="career.id">{{ career.nombre }}</option></select></label>
       </AdminFilters>
       <div class="mt-5"><AdminState :loading="loading" :error="error" :empty="!loading && !error && !subjects.length" empty-text="No hay materias para mostrar." @retry="loadList"><AdminTable :columns="[{ key: 'name', label: 'Materia' }, { key: 'career', label: 'Carrera' }, { key: 'year', label: 'Año' }]">
         <template #rows><tr v-for="subject in subjects" :key="subject.id" class="border-t border-[var(--color-border)]"><td class="px-4 py-3"><RouterLink :to="{ name: 'admin-subject-detail', params: { id: subject.id } }" class="font-semibold text-[var(--color-brand)]">{{ subject.nombre }}</RouterLink></td><td class="px-4 py-3">{{ subject.carrera?.nombre ?? '—' }}</td><td class="px-4 py-3">{{ subject.curso?.anio ?? '—' }}°</td><td class="px-4 py-3 text-right"><RouterLink :to="{ name: 'admin-subject-edit', params: { id: subject.id } }" class="font-semibold text-[var(--color-brand)]">Editar</RouterLink></td></tr></template>
         <template #cards><article v-for="subject in subjects" :key="subject.id" class="rounded-lg border border-[var(--color-border)] p-4"><RouterLink :to="{ name: 'admin-subject-detail', params: { id: subject.id } }" class="font-semibold text-[var(--color-brand)]">{{ subject.nombre }}</RouterLink><p class="text-sm text-[var(--color-graphite)]">{{ subject.carrera?.nombre ?? '—' }} · {{ subject.curso?.anio ?? '—' }}° año</p></article></template>
-      </AdminTable><AdminPagination :pagination="pagination" @change="(page) => router.replace({ query: { ...route.query, page: String(page) } }).then(loadList)" /></AdminState></div>
+      </AdminTable><AdminPagination :pagination="pagination" @change="(page) => router.replace({ query: { ...route.query, page: String(page) } })" /></AdminState></div>
     </template>
 
     <template v-else-if="isDetail">

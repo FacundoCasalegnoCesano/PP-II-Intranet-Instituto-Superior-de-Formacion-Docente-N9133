@@ -81,15 +81,16 @@ export class HorarioPublicadoService {
   private scope(scope?: HorarioScope): HorarioScope {
     const carreraId = scope?.carreraId ?? null;
     const cursoAnio = scope?.cursoAnio ?? null;
-    if ((carreraId === null) !== (cursoAnio === null)) throw new AppError(400, 'carreraId y cursoAnio deben enviarse juntos');
+    if (carreraId === null && cursoAnio !== null) throw new AppError(400, 'cursoAnio requiere carreraId');
     return { carreraId, cursoAnio };
   }
 
   private async validarAmbito(cicloLectivo: number, scope: HorarioScope, usuario: UsuarioActual): Promise<void> {
     if (scope.carreraId === null) return;
-    if (!Number.isInteger(scope.cursoAnio) || scope.cursoAnio! < 1) throw new AppError(400, 'El año de curso debe ser positivo');
     const carrera = await this.repository.buscarCarrera(scope.carreraId!);
-    if (!carrera || !carrera.activo || scope.cursoAnio! > carrera.duracionAnios) throw new AppError(400, 'El año de curso no pertenece a la carrera');
+    if (!carrera || !carrera.activo) throw new AppError(400, 'La carrera no existe o está inactiva');
+    const cursoAnio = scope.cursoAnio;
+    if (cursoAnio != null && (!Number.isInteger(cursoAnio) || cursoAnio < 1 || cursoAnio > carrera.duracionAnios)) throw new AppError(400, 'El año de curso no pertenece a la carrera');
     if (usuario.rol !== ROLES.ADMINISTRATIVO && !(await this.repository.carreraElegible(cicloLectivo, scope.carreraId!, usuario))) {
       throw new AppError(403, 'No tienes permisos para consultar esta carrera');
     }
@@ -184,8 +185,9 @@ export class HorarioPublicadoService {
     usuario: UsuarioActual
   ) {
     this.exigirAdministrativo(usuario);
+    if (datos.cursoAnio != null) throw new AppError(400, 'Las nuevas publicaciones son por carrera; cursoAnio sólo aplica a históricos');
     const scope = this.scope(datos);
-    if (scope.carreraId === null) throw new AppError(400, 'Las nuevas publicaciones requieren carreraId y cursoAnio');
+    if (scope.carreraId === null) throw new AppError(400, 'Las nuevas publicaciones requieren carreraId');
     await this.validarAmbito(datos.cicloLectivo, scope, usuario);
     validarArchivoHorario(archivo);
     const sha256 = crypto.createHash('sha256').update(archivo.buffer).digest('hex');

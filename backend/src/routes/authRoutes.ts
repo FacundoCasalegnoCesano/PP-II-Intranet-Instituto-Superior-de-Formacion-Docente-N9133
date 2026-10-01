@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import authController from '../controllers/authController.js';
 import { authMiddleware, authOnly, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
@@ -14,8 +14,29 @@ import {
 import { ROLES } from '../constants/roles.js';
 import rateLimit from 'express-rate-limit';
 import config from '../config/env.js';
+import { createHash } from 'node:crypto';
 
 const router = Router();
+
+const limitKey = (identity: string, ip: string) =>
+  createHash('sha256').update(`${identity}\0${ip}`).digest('hex');
+
+const emailAndIpLimitKey = (req: Request) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const ip = req.ip ?? req.socket?.remoteAddress ?? '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return limitKey('ip-fallback', ip);
+  }
+  return limitKey(`email:${email}`, ip);
+};
+
+const userAndIpLimitKey = (req: Request) => {
+  const ip = req.ip ?? req.socket?.remoteAddress ?? '';
+  const user = req.user;
+  return user && Number.isSafeInteger(user.id)
+    ? limitKey(`user:${user.id}`, ip)
+    : limitKey('ip-fallback', ip);
+};
 
 const loginIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -39,6 +60,7 @@ const recoveryIpLimiter = rateLimit({
 const passwordResetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
+  keyGenerator: emailAndIpLimitKey,
   skip: () => config.nodeEnv === 'test',
   message: {
     success: false,
@@ -48,19 +70,23 @@ const passwordResetLimiter = rateLimit({
   legacyHeaders: false
 });
 
-// Rate limiter específico para backup codes (5 req/hora por IP)
+// Rate limiter específico para backup codes (5 req/hora por email e IP)
 const backupCodeLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hora
   max: 5,
+  skip: () => config.nodeEnv === 'test',
+  keyGenerator: emailAndIpLimitKey,
   message: { success: false, message: 'Demasiados intentos. Intente en 1 hora.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Rate limiter para ver/regenerar propios códigos (10 req/15 min)
+// Rate limiter para ver/regenerar propios códigos (10 req/15 min por usuario e IP)
 const backupCodesActionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
+  skip: () => config.nodeEnv === 'test',
+  keyGenerator: userAndIpLimitKey,
   message: { success: false, message: 'Demasiados intentos. Intente más tarde.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -75,6 +101,7 @@ router.get('/verify-reset-token/:token', recoveryIpLimiter, authController.verif
 
 // Backup code recovery (admin only, público pero rate-limited)
 router.post('/admin/backup-code',
+  recoveryIpLimiter,
   backupCodeLimiter,
   validationMiddleware(backupCodeSchema),
   authController.recoveryWithBackupCode

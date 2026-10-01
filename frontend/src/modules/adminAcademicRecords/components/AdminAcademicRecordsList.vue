@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:search': [value: string]
   'update:careerId': [value: number | undefined]
+  searching: []
   apply: []
   retry: []
   page: [value: number]
@@ -43,7 +44,7 @@ function detailQuery(student: AdminAcademicStudent): { name: string; params: { i
 </script>
 
 <template>
-  <AdminFilters :search="search" search-label="Alumno" placeholder="Nombre o DNI" @update:search="emit('update:search', $event)" @submit="emit('apply')">
+  <AdminFilters :search="search" search-label="Alumno" placeholder="Nombre o DNI" @update:search="emit('update:search', $event)" @searching="emit('searching')" @submit="emit('apply')">
     <label class="min-w-48 text-sm font-semibold text-[var(--color-text)]">Carrera
       <select :value="careerId ?? ''" class="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 font-normal" @change="emit('update:careerId', ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : undefined)">
         <option value="">Todas las carreras</option>

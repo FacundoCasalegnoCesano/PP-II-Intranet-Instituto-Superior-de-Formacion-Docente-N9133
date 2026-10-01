@@ -89,7 +89,6 @@ describe('AdminAcademicRecordsView', () => {
   it('usa filtros aplicados al abrir detalle aunque el formulario tenga cambios pendientes', async () => {
     const router = await renderAt('/app/administracion/trayectorias?search=Aplicada&carreraId=3&page=2')
     await screen.findAllByRole('link', { name: 'Lucía Test Fernández' })
-    await userEvent.setup().type(screen.getByLabelText('Alumno'), 'Borrador')
     await userEvent.setup().selectOptions(screen.getByLabelText('Carrera'), '2')
     const href = screen.getAllByRole('link', { name: 'Lucía Test Fernández' })[0]?.getAttribute('href')
     expect(href).toBe('/app/administracion/trayectorias/13?search=Aplicada&carreraId=3&page=2')

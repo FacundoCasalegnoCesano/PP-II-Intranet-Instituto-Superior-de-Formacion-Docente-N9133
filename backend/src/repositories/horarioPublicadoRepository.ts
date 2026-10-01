@@ -3,7 +3,9 @@ import type { Prisma } from '@prisma/client';
 import { ROLES } from '../constants/roles.js';
 
 export interface HorarioScope { carreraId?: number | null; cursoAnio?: number | null }
-export const ambitoClave = (scope: HorarioScope): string => scope.carreraId == null ? 'GENERAL' : `CARRERA:${scope.carreraId}:ANIO:${scope.cursoAnio}`;
+export const ambitoClave = (scope: HorarioScope): string => scope.carreraId == null
+  ? 'GENERAL'
+  : scope.cursoAnio == null ? `CARRERA:${scope.carreraId}` : `CARRERA:${scope.carreraId}:ANIO:${scope.cursoAnio}`;
 export interface DocumentoHorarioCreateData extends HorarioScope {
   cicloLectivo: number; titulo: string; nombreOriginal: string; claveInterna: string;
   tamanio: number; sha256: string; publicadorId: number;

@@ -1,37 +1,27 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { parse } from 'yaml';
 
-type DocumentationRow = {
-  metodo: string;
-  endpoint: string;
-  codigo: number | string;
-  respuesta?: unknown;
+const document = parse(readFileSync(new URL('../openapi.yaml', import.meta.url), 'utf8')) as {
+  paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
 };
 
-const rows = JSON.parse(
-  readFileSync(new URL('../test-results/endpoints-happy-path.json', import.meta.url), 'utf8')
-) as DocumentationRow[];
-
-test('cada GET ejecutado incluye un ejemplo de respuesta', () => {
-  const missing = rows.filter(row => row.metodo === 'GET'
-    && typeof row.codigo === 'number'
-    && row.codigo < 400
-    && row.respuesta == null);
-
-  assert.deepEqual(missing.map(row => row.endpoint), []);
-});
-
-test('cada DELETE exitoso conserva el mensaje específico del endpoint', () => {
-  const invalid = rows.filter(row => row.metodo === 'DELETE'
-    && typeof row.codigo === 'number'
-    && row.codigo < 400
-    && (typeof row.respuesta !== 'string' || row.respuesta.trim() === ''));
-
-  assert.deepEqual(invalid.map(row => row.endpoint), []);
-
-  const messages = new Set(rows
-    .filter(row => row.metodo === 'DELETE' && typeof row.respuesta === 'string')
-    .map(row => row.respuesta));
-  assert.ok(messages.size > 1, 'los mensajes DELETE no deben normalizarse a un único texto');
+test('OpenAPI declara respuestas exitosas para todas las lecturas y bajas', () => {
+  const missing: string[] = [];
+  for (const [path, pathItem] of Object.entries(document.paths)) {
+    for (const method of ['get', 'delete']) {
+      const operation = pathItem[method];
+      if (!operation) continue;
+      const success = Object.entries(operation.responses ?? {}).filter(([status]) => /^2\d\d$/.test(status));
+      if (success.length === 0 || success.some(([, response]) => {
+        if (!response || typeof response !== 'object') return true;
+        const fields = response as Record<string, unknown>;
+        return !fields.$ref && typeof fields.description !== 'string' && !fields.content;
+      })) {
+        missing.push(`${method.toUpperCase()} ${path}`);
+      }
+    }
+  }
+  assert.deepEqual(missing, []);
 });

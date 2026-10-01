@@ -15,7 +15,7 @@ export interface TokenPayload {
   iat?: number;
 }
 
-// Access token: 15 minutos
+// Duración fija del access token: 15 minutos.
 export const generateAccessToken = (payload: Omit<TokenPayload, 'type'>): string => {
   const { exp, iat, ...cleanPayload } = payload;
   return jwt.sign(
@@ -25,7 +25,7 @@ export const generateAccessToken = (payload: Omit<TokenPayload, 'type'>): string
   );
 };
 
-// Refresh token: 7 días
+// Duración fija del refresh token: 7 días.
 export const generateRefreshToken = (payload: Omit<TokenPayload, 'type'>): string => {
   const { exp, iat, ...cleanPayload } = payload;
   return jwt.sign(

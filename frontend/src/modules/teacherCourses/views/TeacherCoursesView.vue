@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppButton from '@/ui/AppButton.vue'
 import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 import { academicLabel } from '@/core/presentation/academicLabels'
+import { apiErrorMessage } from '@/core/api/errors'
 import { teacherCoursesApi } from '../api/teacherCoursesApi'
 import TeacherCourseList from '../components/TeacherCourseList.vue'
 import TeacherCourseSectionNav from '../components/TeacherCourseSectionNav.vue'
@@ -167,8 +168,8 @@ async function saveGrades(payload: SaveGradesPayload): Promise<void> {
   gradeRefreshCourseId.value = null
   try {
     await teacherCoursesApi.saveGrades(payload)
-  } catch {
-    if (request === selectionRequest) gradeActionError.value = 'No pudimos guardar las calificaciones. Revisá los datos e intentá nuevamente.'
+  } catch (cause) {
+    if (request === selectionRequest) gradeActionError.value = apiErrorMessage(cause, 'No pudimos guardar las calificaciones. Revisá los datos e intentá nuevamente.')
     if (request === selectionRequest) savingGrades.value = false
     return
   }

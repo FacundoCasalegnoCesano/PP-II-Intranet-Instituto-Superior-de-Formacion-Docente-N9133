@@ -2,6 +2,7 @@
 import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { teacherCoursesApi } from '../api/teacherCoursesApi'
+import { apiErrorMessage } from '@/core/api/errors'
 import type { ClassRecord, ClassSummary, EnrolledStudent, TeacherCourse } from '../types/teacherCourses'
 
 const props = withDefaults(defineProps<{
@@ -272,8 +273,8 @@ async function save(): Promise<void> {
   successMessage.value = ''
   try {
     await teacherCoursesApi.saveClass(props.course.id, date, payload)
-  } catch {
-    error.value = 'No pudimos guardar la clase. Revisá los datos e intentá nuevamente.'
+  } catch (cause) {
+    error.value = apiErrorMessage(cause, 'No pudimos guardar la clase. Revisá los datos e intentá nuevamente.')
     saving.value = false
     emit('saving-change', false)
     return

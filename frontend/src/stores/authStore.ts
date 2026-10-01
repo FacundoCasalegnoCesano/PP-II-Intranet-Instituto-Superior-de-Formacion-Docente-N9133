@@ -10,6 +10,7 @@ import type {
 } from '@/core/auth/contracts'
 import { ROLES } from '@/core/auth/contracts'
 import { sessionStorage } from '@/core/storage/sessionStorage'
+import { useCareerSelectionStore } from './careerSelectionStore'
 
 export type AuthStatus = 'anonymous' | 'role_pending' | 'authenticated'
 
@@ -31,6 +32,8 @@ function sessionStatus(session: AuthSession | null): AuthStatus {
 export const useAuthStore = defineStore('auth', () => {
   const currentSession = ref<AuthSession | null>(null)
   const status = ref<AuthStatus>('anonymous')
+  const careerSelection = useCareerSelectionStore()
+  let appliedIdentity: { userId: number; role?: Role } | null = null
 
   const user = computed(() => currentSession.value?.user)
   const roles = computed(() => currentSession.value?.roles ?? [])
@@ -40,6 +43,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   function applySession(session: AuthSession | null): void {
     if (!session) {
+      if (appliedIdentity) careerSelection.clear()
+      appliedIdentity = null
       currentSession.value = null
       status.value = 'anonymous'
       return
@@ -54,6 +59,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     if (!role || !roles.includes(role)) delete normalized.role
+    const nextIdentity = { userId: normalized.user.idUsuario, role: normalized.role }
+    if (appliedIdentity && (appliedIdentity.userId !== nextIdentity.userId || appliedIdentity.role !== nextIdentity.role)) careerSelection.clear()
+    appliedIdentity = nextIdentity
     currentSession.value = normalized
     status.value = sessionStatus(normalized)
   }

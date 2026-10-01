@@ -20,6 +20,7 @@ export const cargaMasivaSchema = Joi.object({
   asistencias: Joi.array()
     .required()
     .min(1)
+    .max(500)
     .items(
       Joi.object({
         alumnoId: Joi.number()
@@ -42,6 +43,7 @@ export const cargaMasivaSchema = Joi.object({
     )
     .messages({
       'array.min': 'Debe enviar al menos un registro de asistencia',
+      'array.max': 'La carga no puede superar los 500 registros por solicitud',
       'any.required': 'El array de asistencias es requerido'
     })
 });

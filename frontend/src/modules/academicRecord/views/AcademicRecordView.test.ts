@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, cleanup, within } from '@testing-library/vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises } from '@vue/test-utils'
 import AcademicRecordView from './AcademicRecordView.vue'
 import { fetchAcademicRecordAttendance, fetchAcademicRecordCareers, fetchAcademicRecordTrajectory } from '../api/academicRecordApi'
+import { useCareerSelectionStore } from '@/stores/careerSelectionStore'
 
 const authState = vi.hoisted(() => ({ user: { idUsuario: 13 } as { idUsuario: number } | null, activeRole: 'ALUMNO' as string | null }))
 const authHolder = vi.hoisted(() => ({ value: null as { user: { idUsuario: number } | null, activeRole: string | null } | null }))
@@ -28,6 +30,7 @@ function attendance(cursadaId: number, page = 1) {
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason?: unknown) => void; const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej }); return { promise, resolve, reject } }
 
 beforeEach(() => {
+  setActivePinia(createPinia())
   authHolder.value!.user = { idUsuario: 13 }
   authHolder.value!.activeRole = 'ALUMNO'
   vi.resetAllMocks()
@@ -38,6 +41,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers() })
 
 describe('AcademicRecordView', () => {
+  it('uses the career selected by Inicio when the enrollment is still active', async () => {
+    useCareerSelectionStore().selectCareer(4, { userId: 13, role: 'ALUMNO' })
+    render(AcademicRecordView, { global: routerStubs })
+
+    expect(await screen.findByRole('option', { name: 'Tecnicatura', selected: true })).toBeVisible()
+    expect(fetchAcademicRecordTrajectory).toHaveBeenCalledWith(13, 4)
+  })
+
   it('filters by the backend trajectory category and keeps the career summary', async () => {
     vi.mocked(fetchAcademicRecordTrajectory).mockResolvedValue({
       alumnoUsuarioId: 13,
