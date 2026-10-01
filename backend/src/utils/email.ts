@@ -1,4 +1,4 @@
-import type nodemailer from 'nodemailer';
+import type { SentMessageInfo } from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import config from '../config/env.js';
 
@@ -20,6 +20,8 @@ interface EmailOptions {
   html: string;
   text: string;
 }
+
+type GmailSentMessageInfo = Pick<SentMessageInfo, 'messageId' | 'accepted' | 'rejected'>;
 
 const GMAIL_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
@@ -98,7 +100,7 @@ const buildRawMessage = async ({ to, subject, html, text }: EmailOptions): Promi
     .replace(/=+$/g, '');
 };
 
-export const sendEmail = async ({ to, subject, html, text }: EmailOptions): Promise<nodemailer.SentMessageInfo> => {
+export const sendEmail = async ({ to, subject, html, text }: EmailOptions): Promise<GmailSentMessageInfo> => {
   try {
     const accessToken = await getAccessToken();
     const result = await fetchJson(GMAIL_SEND_URL, {
@@ -160,7 +162,7 @@ export const buildPasswordResetEmail = (resetToken: string, nombre: string): Pas
   return { html, text };
 };
 
-export const sendPasswordResetEmail = async (email: string, resetToken: string, nombre: string): Promise<nodemailer.SentMessageInfo> => {
+export const sendPasswordResetEmail = async (email: string, resetToken: string, nombre: string): Promise<GmailSentMessageInfo> => {
   const content = buildPasswordResetEmail(resetToken, nombre);
   return sendEmail({
     to: email,
