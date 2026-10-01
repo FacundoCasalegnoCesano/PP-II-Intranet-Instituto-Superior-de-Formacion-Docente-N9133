@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AppBackButton from '@/ui/AppBackButton.vue'
 import ConfirmDialog from '@/ui/ConfirmDialog.vue'
+import logoUrl from '@/assets/logo-calvario.jpg'
 
 const route = useRoute()
 const router = useRouter()
@@ -117,7 +118,7 @@ async function logout(): Promise<void> {
 <template>
   <div class="min-h-screen min-w-0 bg-[var(--color-background)] lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]">
     <aside class="app-sidebar hidden min-h-screen bg-[var(--color-sidebar)] px-4 py-6 text-white lg:block">
-      <div class="flex items-center gap-3 px-3"><BookOpen class="size-7" aria-hidden="true" /><span class="text-lg font-semibold">ISFD N.º 9133</span></div>
+      <div class="flex items-center gap-3 px-3"><img :src="logoUrl" alt="" class="size-10 shrink-0 rounded-md bg-white object-contain p-1" aria-hidden="true" /><span class="text-lg font-semibold">ISFD N.º 9133</span></div>
       <nav class="mt-10" aria-label="Navegación lateral">
         <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined">
           <component :is="item.icon" class="size-5" aria-hidden="true" />{{ item.label }}
