@@ -40,7 +40,7 @@ async function withServer<T>(operation: (baseUrl: string) => Promise<T>): Promis
 }
 
 function prepararAutenticacion(): () => void {
-  const restoreUser = replaceMethod(userRepository as any, 'findById', async () => ({
+  const restoreUser = replaceMethod(userRepository as any, 'findAuthById', async () => ({
     idUsuario: 99, email: 'test@instituto.edu.ar', dni: 12345678, apellidoNombre: 'Usuario Test', activo: true
   }));
   const restoreSesion = replaceMethod((prisma as any).sesion, 'findFirst', async () => ({ id: 1 }));

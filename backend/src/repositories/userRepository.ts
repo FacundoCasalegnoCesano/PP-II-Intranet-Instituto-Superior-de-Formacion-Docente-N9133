@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma.js';
 import { normalizePagination } from '../utils/pagination.js';
+import type { AlumnoData } from './alumnoRepository.js';
 
 export interface UserFilters {
   page?: number;
@@ -72,7 +73,7 @@ export type UsuarioResult = {
 };
 
 class UserRepository {
-  async create(data: UserCreateData) {
+  async create(data: UserCreateData, alumnoData?: AlumnoData) {
     return await prisma.usuario.create({
       data: {
         apellidoNombre: data.apellidoNombre,
@@ -85,8 +86,18 @@ class UserRepository {
         rol: data.rol,
         contactoEmergencia: data.contactoEmergencia ?? null,
         foto: data.foto ?? null,
-        backupCodes: data.backupCodes ?? null
-      }
+        backupCodes: data.backupCodes ?? null,
+        ...(alumnoData ? {
+          alumno: {
+            create: {
+              domicilio: alumnoData.domicilio ?? '',
+              institucionProcedencia: alumnoData.institucionProcedencia ?? null,
+              anioEgreso: alumnoData.anioEgreso ?? new Date().getFullYear()
+            }
+          }
+        } : {})
+      },
+      ...(alumnoData ? { include: { alumno: true } } : {})
     });
   }
 
@@ -94,18 +105,7 @@ class UserRepository {
     return await prisma.usuario.findUnique({
       where: { idUsuario: id },
       include: {
-        alumno: true,
-        sesiones: {
-          where: {
-            cerradaEn: null
-          },
-          select: {
-            id: true,
-            creadaEn: true,
-            expiraEn: true,
-            ipAddress: true
-          }
-        }
+        alumno: true
       }
     });
   }
@@ -374,6 +374,43 @@ class UserRepository {
       const count = user?.loginFailedCount ?? 0;
       const delayMs = count >= 5 ? Math.min(15 * 60_000, 30_000 * 2 ** (count - 5)) : 0;
       return tx.usuario.update({ where: { idUsuario: id }, data: { loginLockedUntil: delayMs ? new Date(now.getTime() + delayMs) : null } });
+    });
+  }
+
+  async findAuthById(id: number) {
+    return prisma.usuario.findUnique({
+      where: { idUsuario: id },
+      select: {
+        idUsuario: true,
+        email: true,
+        dni: true,
+        apellidoNombre: true,
+        activo: true,
+        rol: true
+      }
+    });
+  }
+
+  async findProfileById(id: number) {
+    return prisma.usuario.findUnique({
+      where: { idUsuario: id },
+      select: {
+        idUsuario: true,
+        apellidoNombre: true,
+        dni: true,
+        email: true,
+        fechaNacimiento: true,
+        telefono: true,
+        cuil: true,
+        activo: true,
+        rol: true,
+        contactoEmergencia: true,
+        foto: true,
+        ultimoAcceso: true,
+        createdAt: true,
+        updatedAt: true,
+        alumno: true
+      }
     });
   }
 

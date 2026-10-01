@@ -190,6 +190,15 @@ test('toPublicUser excluye también los contadores de bloqueo de login', () => {
   assert.equal('loginLockedUntil' in user, false);
 });
 
+test('toPublicUser excluye el historial y los metadatos de sesiones', () => {
+  const user = toPublicUser({
+    idUsuario: 20,
+    sesiones: [{ id: 1, ipAddress: '192.0.2.1', creadaEn: new Date() }]
+  });
+
+  assert.equal('sesiones' in user, false);
+});
+
 test('cambio de rol no expone credenciales internas del usuario', async () => {
   replaceMethod(userRepository, 'findById', async () => ({
     idUsuario: 20,
