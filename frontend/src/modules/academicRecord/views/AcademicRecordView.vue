@@ -3,10 +3,12 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { fetchAcademicRecordAttendance, fetchAcademicRecordCareers, fetchAcademicRecordTrajectory } from '../api/academicRecordApi'
 import type { AcademicRecordAttendance, AcademicRecordCareer, AcademicRecordSubject, AcademicRecordTrajectory } from '../types/academicRecord'
 import { useAuthStore } from '@/stores/authStore'
+import { useCareerSelectionStore } from '@/stores/careerSelectionStore'
 import AppButton from '@/ui/AppButton.vue'
 import { academicLabel, formatAcademicDate } from '@/core/presentation/academicLabels'
 
 const auth = useAuthStore()
+const careerSelection = useCareerSelectionStore()
 const careers = ref<AcademicRecordCareer[]>([])
 const selectedCareerId = ref<number | null>(null)
 const trajectory = ref<AcademicRecordTrajectory | null>(null)
@@ -98,6 +100,7 @@ async function load(preserveCareer = false): Promise<void> {
   const current = identity()
   const request = ++loadRequest
   const previousCareerId = selectedCareerId.value
+  const savedCareerId = careerSelection.isOwnedBy(current) ? careerSelection.selectedCareerId : null
   invalidateAttendance()
   subjectFilter.value = 'TODAS'
   trajectory.value = null
@@ -116,11 +119,15 @@ async function load(preserveCareer = false): Promise<void> {
     const result = (await fetchAcademicRecordCareers(current.userId)).filter((career) => career.activo !== false && career.carrera.activo !== false)
     if (!mounted || request !== loadRequest || identity().userId !== current.userId || identity().role !== current.role) return
     careers.value = result
-    const careerId = preserveCareer && result.some((career) => career.carreraId === previousCareerId)
-      ? previousCareerId
+    const preferredCareerId = savedCareerId ?? (preserveCareer ? previousCareerId : null)
+    const careerId = preferredCareerId !== null && result.some((career) => career.carreraId === preferredCareerId)
+      ? preferredCareerId
       : result[0]?.carreraId ?? null
     selectedCareerId.value = careerId
-    if (careerId !== null) await loadTrajectory(current.userId, careerId, request)
+    if (careerId !== null) {
+      careerSelection.selectCareer(careerId, current)
+      await loadTrajectory(current.userId, careerId, request)
+    } else careerSelection.clear()
   } catch {
     if (mounted && request === loadRequest && identity().userId === current.userId && identity().role === current.role) { careers.value = []; error.value = 'No pudimos cargar tu trayectoria académica.' }
   } finally {
@@ -179,6 +186,7 @@ function changeCareer(event: Event): void {
   const request = ++loadRequest
   invalidateAttendance()
   subjectFilter.value = 'TODAS'
+  careerSelection.selectCareer(careerId, { userId: auth.user.idUsuario, role: auth.activeRole })
   selectedCareerId.value = careerId
   trajectory.value = null
   error.value = ''
