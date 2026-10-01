@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { isNavigationFailure, NavigationFailureType, RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import AdminAcademicRecordsList from '../components/AdminAcademicRecordsList.vue'
 import AdminAcademicRecordDetail from '../components/AdminAcademicRecordDetail.vue'
@@ -45,6 +45,13 @@ async function loadList(): Promise<void> {
   } finally { if (!disposed && request === listRequest && !isDetail.value) loading.value = false }
 }
 
+function invalidateList(): void {
+  listRequest += 1
+  loading.value = true
+  error.value = ''
+  students.value = []
+}
+
 async function loadDetail(): Promise<void> {
   const request = ++detailRequest
   student.value = null; enrolledCareers.value = []; trajectory.value = null; selectedCareerId.value = null; loading.value = true; error.value = ''
@@ -68,7 +75,12 @@ async function loadDetail(): Promise<void> {
   } finally { if (!disposed && request === detailRequest && isDetail.value) loading.value = false }
 }
 
-function applyFilters(): void { void router.replace({ query: { ...listQuery(), page: undefined } }) }
+function applyFilters(): void { replaceListQuery({ ...listQuery(), page: undefined }) }
+function replaceListQuery(query: Record<string, string | undefined>): void {
+  void router.replace({ query }).then((failure) => {
+    if (failure && isNavigationFailure(failure, NavigationFailureType.duplicated)) void loadList()
+  })
+}
 function changePage(page: number): void { void router.replace({ query: { ...route.query, page: page > 1 ? String(page) : undefined } }) }
 function detailListLocation(): { name: string; query: Record<string, string> } { return { name: 'admin-academic-records', query: { ...(route.query.search ? { search: queryString(route.query.search) } : {}), ...(route.query.carreraId ? { carreraId: queryString(route.query.carreraId) } : {}), ...(route.query.page ? { page: queryString(route.query.page) } : {}) } } }
 async function chooseCareer(id: number): Promise<void> {
@@ -84,7 +96,7 @@ onBeforeUnmount(() => { disposed = true; listRequest += 1; detailRequest += 1 })
 <template>
   <main class="mx-auto max-w-6xl" aria-labelledby="admin-academic-records-title">
     <div class="flex flex-wrap items-end justify-between gap-4"><div><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Administración</p><h1 id="admin-academic-records-title" class="mt-2 text-3xl font-semibold">Trayectorias académicas</h1><p class="mt-2 text-[var(--color-graphite)]">Consultá el recorrido académico completo de cualquier alumno.</p></div><RouterLink v-if="isDetail" :to="detailListLocation()" class="min-h-11 rounded-lg border border-[var(--color-brand)] px-4 py-2.5 font-semibold text-[var(--color-brand)]">Volver al listado</RouterLink></div>
-    <AdminAcademicRecordsList v-if="!isDetail" :students="students" :careers="catalog" :search="search" :career-id="careerId" :pagination="pagination" :loading="loading" :error="error" @update:search="search = $event" @update:career-id="careerId = $event" @apply="applyFilters" @retry="loadList" @page="changePage" />
+    <AdminAcademicRecordsList v-if="!isDetail" :students="students" :careers="catalog" :search="search" :career-id="careerId" :pagination="pagination" :loading="loading" :error="error" @update:search="search = $event" @searching="invalidateList" @update:career-id="careerId = $event" @apply="applyFilters" @retry="loadList" @page="changePage" />
     <AdminAcademicRecordDetail v-else :student="student" :careers="enrolledCareers" :selected-career-id="selectedCareerId" :trajectory="trajectory" :loading="loading" :error="error" @retry="loadDetail" @select-career="chooseCareer" />
   </main>
 </template>

@@ -32,6 +32,12 @@ const students = { data: [{ idUsuario: 13, apellidoNombre: 'Lucía Test', dni: '
 const careers = { data: [{ id: 3, nombre: 'Profesorado de Inicial', duracionAnios: 4, activo: true }, { id: 4, nombre: 'Profesorado de Primaria', duracionAnios: 4, activo: true }], pagination: { page: 1, limit: 100, total: 2, totalPages: 1 } }
 const enrollment = { id: 8, usuario: { idUsuario: 13, apellidoNombre: 'Lucía Test', dni: '42666888', email: 'lucia@test.edu' }, cicloLectivo: 2026, fechaInscripcion: '2026-03-10T12:00:00.000Z', activo: true }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((complete) => { resolve = complete })
+  return { promise, resolve }
+}
+
 describe('CareerEnrollmentsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -86,7 +92,30 @@ describe('CareerEnrollmentsView', () => {
     render(CareerEnrollmentsView)
     await screen.findAllByText('Lucía Test')
     await fireEvent.update(screen.getByLabelText('Buscar alumno'), 'Zoe')
+    expect(adminApi.listActiveStudents).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(adminApi.listActiveStudents).toHaveBeenCalledWith('Zoe', { limit: 50 }))
+  })
+
+  it('keeps only the newest debounced student search response', async () => {
+    const oldSearch = deferred<typeof students>()
+    const newSearch = deferred<typeof students>()
+    vi.mocked(adminApi.listActiveStudents)
+      .mockResolvedValueOnce(students)
+      .mockReturnValueOnce(oldSearch.promise)
+      .mockReturnValueOnce(newSearch.promise)
+    render(CareerEnrollmentsView)
+    await screen.findAllByText('Lucía Test')
+
+    await fireEvent.update(screen.getByLabelText('Buscar alumno'), 'vieja')
+    await waitFor(() => expect(adminApi.listActiveStudents).toHaveBeenCalledTimes(2))
+    await fireEvent.update(screen.getByLabelText('Buscar alumno'), 'nueva')
+    await waitFor(() => expect(adminApi.listActiveStudents).toHaveBeenCalledTimes(3))
+
+    newSearch.resolve({ data: [{ ...students.data[0], apellidoNombre: 'Respuesta nueva' }], pagination: students.pagination })
+    await waitFor(() => expect(screen.getByRole('option', { name: /^Respuesta nueva/ })).toBeVisible())
+    oldSearch.resolve({ data: [{ ...students.data[0], apellidoNombre: 'Respuesta vieja' }], pagination: students.pagination })
+    await Promise.resolve()
+    expect(screen.queryByText('Respuesta vieja')).not.toBeInTheDocument()
   })
 
   it('synchronizes an invalid URL career fallback after loading the active catalog', async () => {

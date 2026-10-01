@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminPagination from '../components/AdminPagination.vue'
 import AdminState from '../components/AdminState.vue'
@@ -19,6 +19,7 @@ const enrollments = ref<CareerEnrollment[]>([])
 const studentSearch = ref('')
 const selectedCareerId = ref<number | null>(null)
 const loadingCatalogs = ref(false)
+const loadingStudents = ref(false)
 const loadingEnrollments = ref(false)
 const catalogError = ref('')
 const enrollmentError = ref('')
@@ -28,6 +29,8 @@ const form = reactive({ alumnoId: '', cicloLectivo: new Date().getFullYear() })
 let enrollmentRequestId = 0
 let studentSearchRequestId = 0
 let rosterRouteKey = ''
+let studentSearchTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
 
 function queryValue(key: string): string | undefined {
   const value = route.query[key]
@@ -50,13 +53,16 @@ function errorMessage(error: unknown): string {
 }
 
 async function loadCatalogs(): Promise<void> {
+  const studentRequestId = ++studentSearchRequestId
+  loadingStudents.value = true
   loadingCatalogs.value = true
   catalogError.value = ''
   careers.value = []
   try {
     const studentResult = await adminApi.listActiveStudents(undefined, { limit: 50 })
     const careerResult = await adminApi.listActiveCareers()
-    students.value = studentResult.data.filter((student) => student.activo)
+    if (disposed) return
+    if (studentRequestId === studentSearchRequestId) students.value = studentResult.data.filter((student) => student.activo)
     careers.value = careerResult.data
     selectedCareerId.value = routeCareerId()
     if (!careers.value.some((career) => career.id === selectedCareerId.value)) {
@@ -64,19 +70,34 @@ async function loadCatalogs(): Promise<void> {
       if (selectedCareerId.value) await router.replace({ query: { ...route.query, carreraId: String(selectedCareerId.value), page: undefined } })
     }
   } catch (error) {
+    if (disposed) return
     careers.value = []
     catalogError.value = errorMessage(error)
-  } finally { loadingCatalogs.value = false }
+  } finally {
+    loadingCatalogs.value = false
+    if (studentRequestId === studentSearchRequestId) loadingStudents.value = false
+  }
 }
 
-async function searchStudents(): Promise<void> {
-  const requestId = ++studentSearchRequestId
+async function searchStudents(requestId: number): Promise<void> {
   try {
     const result = await adminApi.listActiveStudents(studentSearch.value.trim() || undefined, { limit: 50 })
     if (requestId === studentSearchRequestId) students.value = result.data.filter((student) => student.activo)
   } catch (error) {
     if (requestId === studentSearchRequestId) feedback.error(errorMessage(error))
+  } finally {
+    if (requestId === studentSearchRequestId) loadingStudents.value = false
   }
+}
+
+function scheduleStudentSearch(): void {
+  if (studentSearchTimer !== null) clearTimeout(studentSearchTimer)
+  const requestId = ++studentSearchRequestId
+  loadingStudents.value = true
+  studentSearchTimer = setTimeout(() => {
+    studentSearchTimer = null
+    void searchStudents(requestId)
+  }, 300)
 }
 
 async function loadEnrollments(page = routePage(), careerId = selectedCareerId.value): Promise<void> {
@@ -165,6 +186,11 @@ onMounted(async () => {
   await loadCatalogs()
   await syncRosterFromRoute()
 })
+onBeforeUnmount(() => {
+  disposed = true
+  if (studentSearchTimer !== null) clearTimeout(studentSearchTimer)
+  studentSearchRequestId += 1
+})
 </script>
 
 <template>
@@ -175,7 +201,7 @@ onMounted(async () => {
       <form class="rounded-xl border border-[var(--color-border)] bg-white p-5" aria-labelledby="new-enrollment-title" @submit.prevent="enroll">
         <h2 id="new-enrollment-title" class="sr-only">Inscribir alumno</h2>
         <fieldset :disabled="saving" class="grid gap-5 lg:grid-cols-[1fr_1fr_12rem_auto]"><legend class="sr-only">Datos de la inscripción</legend>
-          <div><label for="student-search" class="font-semibold">Buscar alumno</label><input id="student-search" v-model="studentSearch" type="search" class="admin-input" placeholder="Nombre, DNI o email" @input="searchStudents" /></div>
+          <div><label for="student-search" class="font-semibold">Buscar alumno</label><input id="student-search" v-model="studentSearch" type="search" class="admin-input" placeholder="Nombre, DNI o email" :aria-busy="loadingStudents" @input="scheduleStudentSearch" /></div>
           <div><label for="active-student" class="font-semibold">Alumno activo</label><select id="active-student" v-model="form.alumnoId" class="admin-input"><option value="">Seleccioná un alumno</option><option v-for="student in students" :key="student.idUsuario" :value="String(student.idUsuario)">{{ student.apellidoNombre }} · DNI {{ student.dni }}</option></select></div>
           <div><label for="enrollment-year" class="font-semibold">Ciclo lectivo</label><input id="enrollment-year" v-model.number="form.cicloLectivo" type="number" min="2000" max="2100" class="admin-input" /></div>
           <div><label for="career-select" class="font-semibold">Carrera activa</label><select id="career-select" v-model.number="selectedCareerId" class="admin-input" @change="selectCareer"><option :value="null">Seleccioná una carrera</option><option v-for="career in careers" :key="career.id" :value="career.id">{{ career.nombre }}</option></select></div>
