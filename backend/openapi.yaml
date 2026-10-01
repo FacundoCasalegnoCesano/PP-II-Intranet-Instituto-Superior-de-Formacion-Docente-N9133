@@ -2594,6 +2594,9 @@ components:
         aprobado: { type: boolean, nullable: true }
         notaMinima: { type: number }
         mesa: { type: object, properties: { id: { type: integer }, fecha: { type: string, format: date-time }, materia: { $ref: '#/components/schemas/Subject' } } }
+        llamado: { type: integer, minimum: 1 }
+        estadoMesa: { $ref: '#/components/schemas/EstadoMesa' }
+        activo: { type: boolean }
     InscripcionExamenMutationResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessResponse'

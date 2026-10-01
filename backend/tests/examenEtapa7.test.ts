@@ -107,6 +107,8 @@ test('la consulta del alumno devuelve EN_REVISION sin nota provisional', async (
     ausentePublicado: false,
     mesa: {
       estadoMesa: 'EN_PROCESO',
+      llamado: 2,
+      activo: true,
       publicadaEn: new Date('2026-09-10T12:00:00.000Z'),
       fecha: new Date('2026-09-01T12:00:00.000Z'),
       materia: { id: 7, nombre: 'Didáctica' }
@@ -123,6 +125,9 @@ test('la consulta del alumno devuelve EN_REVISION sin nota provisional', async (
     mesaId: 9,
     materia: { id: 7, nombre: 'Didáctica' },
     fecha: new Date('2026-09-01T12:00:00.000Z'),
+    llamado: 2,
+    estadoMesa: 'EN_PROCESO',
+    activo: true,
     condicion: 'REGULAR',
     estadoResultado: 'EN_REVISION',
     nota: null,

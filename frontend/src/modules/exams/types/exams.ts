@@ -37,6 +37,9 @@ export interface ExamEnrollment {
   condicion: ExamCondition
   materia: { id: number; nombre: string }
   fecha: string
+  llamado?: number
+  estadoMesa?: 'ABIERTA' | 'EN_PROCESO' | 'FINALIZADA'
+  activo?: boolean
   estadoResultado: ExamResultStatus
   nota: number | null
   aprobado: boolean | null

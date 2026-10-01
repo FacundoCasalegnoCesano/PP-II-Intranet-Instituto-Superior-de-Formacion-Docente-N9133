@@ -1,6 +1,6 @@
 import { nextTick, reactive } from 'vue'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/vue'
+import { render, screen, waitFor, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import ExamsView from './ExamsView.vue'
 import type { AvailableExam } from '../types/exams'
@@ -79,7 +79,74 @@ describe('ExamsView', () => {
     expect(screen.getByText('Condición: Libre')).toBeVisible()
     expect(screen.getByText(/Ana Profesor \(Presidente\)/)).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Inscribirme' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Confirmar inscripción a mesa' })
+    expect(dialog).toHaveTextContent('Materia: Pedagogía')
+    expect(dialog).toHaveTextContent(/10 dic 2026/)
+    expect(dialog).toHaveTextContent(/0?9:00/)
+    expect(dialog).toHaveTextContent('Llamado: 2')
+    expect(dialog).toHaveTextContent('Condición: Libre')
+    expect(api.enroll).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Inscribirme' }))
     expect(api.enroll).toHaveBeenCalledWith(9, 'LIBRE', 4)
+    expect(await screen.findByRole('status')).toHaveTextContent('Te inscribiste a Pedagogía.')
+  })
+
+  it('shows success feedback after withdrawing an exam enrollment', async () => {
+    api.available.mockResolvedValue([{ ...availableExam(10, 'Pedagogía'), inscripto: true, estadoDisponibilidad: 'YA_INSCRIPTO', motivos: [] }])
+    api.mine.mockResolvedValue([])
+    api.withdraw.mockResolvedValue({ id: 10 })
+    const user = userEvent.setup()
+    render(ExamsView)
+
+    await user.click(await screen.findByRole('button', { name: 'Dar de baja' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Confirmar baja de examen' })
+    await user.click(within(dialog).getByRole('button', { name: 'Dar de baja' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Diste de baja tu inscripción a Pedagogía.')
+  })
+
+  it('ignores a withdrawal response after the authenticated user changes', async () => {
+    const pending = deferred<unknown>()
+    api.available.mockResolvedValue([{ ...availableExam(10, 'Pedagogía'), inscripto: true, estadoDisponibilidad: 'YA_INSCRIPTO', motivos: [] }])
+    api.mine.mockResolvedValue([])
+    api.withdraw.mockReturnValueOnce(pending.promise)
+    const user = userEvent.setup()
+    render(ExamsView)
+
+    await user.click(await screen.findByRole('button', { name: 'Dar de baja' }))
+    await user.click(within(screen.getByRole('alertdialog', { name: 'Confirmar baja de examen' })).getByRole('button', { name: 'Dar de baja' }))
+    authState.user = { idUsuario: 99 }
+    await nextTick()
+    pending.resolve({ id: 10 })
+    await Promise.resolve()
+
+    expect(screen.queryByText('Diste de baja tu inscripción a Pedagogía.')).not.toBeInTheDocument()
+  })
+
+  it('cancels exam enrollment without a request and ignores a stale response after user change', async () => {
+    api.available.mockResolvedValue([availableExam(12, 'Mesa confirmable')])
+    api.mine.mockResolvedValue([])
+    const pending = deferred<unknown>()
+    api.enroll.mockReturnValueOnce(pending.promise)
+    const user = userEvent.setup()
+    render(ExamsView)
+
+    await user.click(await screen.findByRole('button', { name: 'Inscribirme' }))
+    const cancelButtons = within(screen.getByRole('alertdialog', { name: 'Confirmar inscripción a mesa' })).getAllByRole('button', { name: 'Cancelar' })
+    const footerCancel = cancelButtons.find((button) => button.textContent?.trim() === 'Cancelar')
+    expect(footerCancel).toBeDefined()
+    await user.click(footerCancel!)
+    expect(api.enroll).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Inscribirme' }))
+    const confirmButton = within(screen.getByRole('alertdialog', { name: 'Confirmar inscripción a mesa' })).getByRole('button', { name: 'Inscribirme' })
+    await user.dblClick(confirmButton)
+    expect(api.enroll).toHaveBeenCalledTimes(1)
+    authState.user = { idUsuario: 99 }
+    await nextTick()
+    pending.resolve({})
+    await Promise.resolve()
+    expect(screen.queryByRole('alert', { name: 'No pudimos registrar la inscripción a la mesa.' })).not.toBeInTheDocument()
   })
 
   it('renders available exams in chronological order', async () => {

@@ -2,6 +2,7 @@ export interface StudentCareer {
   id: number
   carreraId: number
   cicloLectivo?: number
+  activo?: boolean
   carrera: {
     id: number
     nombre: string
