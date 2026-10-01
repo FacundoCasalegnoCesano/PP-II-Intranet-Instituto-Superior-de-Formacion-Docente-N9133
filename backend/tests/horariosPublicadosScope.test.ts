@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { HorarioPublicadoService } from '../src/services/horarioPublicadoService.js';
 import { ROLES } from '../src/constants/roles.js';
 import { prisma } from '../src/config/prisma.js';
+import { ambitoClave } from '../src/repositories/horarioPublicadoRepository.js';
 
 const admin = { id: 1, rol: ROLES.ADMINISTRATIVO };
 const alumno = { id: 2, rol: ROLES.ALUMNO };
@@ -43,9 +44,16 @@ test('el profesor no puede consultar un ámbito de carrera no asignado', async (
   await assert.rejects(service.obtenerActual(2026, { carreraId: 99, cursoAnio: 1 }, profesor), (error: any) => error.statusCode === 403);
 });
 
-test('las nuevas publicaciones requieren carrera y año de curso', async () => {
+test('las nuevas publicaciones requieren carrera y rechazan año curricular', async () => {
   const service = new HorarioPublicadoService(repo(), {} as any, 'C:/private');
   await assert.rejects(service.publicarArchivo({ cicloLectivo: 2026 }, undefined, admin), (error: any) => error.statusCode === 400);
+  await assert.rejects(service.publicarArchivo({ cicloLectivo: 2026, carreraId: 10, cursoAnio: 1 }, undefined, admin), /sólo aplica a históricos/);
+});
+
+test('separar ámbitos completos y legacy conserva ciclos independientes', () => {
+  assert.equal(ambitoClave({ carreraId: 10 }), 'CARRERA:10');
+  assert.equal(ambitoClave({ carreraId: 10, cursoAnio: 2 }), 'CARRERA:10:ANIO:2');
+  assert.notEqual(ambitoClave({ carreraId: 10 }), ambitoClave({ carreraId: 11 }));
 });
 
 test('la descarga por ID rechaza una carrera ajena antes de tocar el archivo', async () => {

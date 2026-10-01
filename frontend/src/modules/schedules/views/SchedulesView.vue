@@ -14,7 +14,6 @@ const years = ref<number[]>([])
 const selectedYear = ref<number | null>(null)
 const options = ref<ScheduleOptions>({ carreras: [], generalDisponible: false })
 const selectedCareerId = ref<number | null>(null)
-const selectedCourseYear = ref<number | null>(null)
 const current = ref<PublishedSchedule | null>(null)
 const history = ref<PublishedSchedule[]>([])
 const loading = ref(true)
@@ -26,7 +25,6 @@ const documentBlob = ref<Blob | null>(null)
 const selectedFile = ref<File | null>(null)
 const uploadCycle = ref(new Date().getFullYear())
 const uploadCareerId = ref<number | null>(null)
-const uploadCourseYear = ref<number | null>(null)
 const uploadTitle = ref('')
 const pendingAction = ref<{ kind: 'publish' } | { kind: 'restore'; document: PublishedSchedule } | null>(null)
 const saving = ref(false)
@@ -47,22 +45,15 @@ const actionDescription = computed(() => pendingAction.value?.kind === 'restore'
   : `El nuevo PDF reemplazará la publicación vigente para ${uploadScopeLabel()}.`)
 const selectedCareer = computed(() => options.value.carreras.find(career => career.id === selectedCareerId.value) ?? null)
 const uploadCareer = computed(() => options.value.carreras.find(career => career.id === uploadCareerId.value) ?? null)
-const selectedCourseYears = computed(() => yearsForCareer(selectedCareer.value))
-const uploadCourseYears = computed(() => yearsForCareer(uploadCareer.value))
-const hasSpecificSelection = computed(() => selectedCareerId.value !== null && selectedCourseYear.value !== null)
-const hasUploadSelection = computed(() => uploadCareerId.value !== null && uploadCourseYear.value !== null)
+const hasUploadSelection = computed(() => uploadCareerId.value !== null)
 const hasScheduleAvailability = computed(() => options.value.generalDisponible || options.value.carreras.length > 0)
 
-function yearsForCareer(career: ScheduleCareer | null): number[] {
-  return career ? Array.from({ length: career.duracionAnios }, (_, index) => index + 1) : []
-}
-
 function scopeLabel(schedule: PublishedSchedule): string {
-  return schedule.carrera && schedule.cursoAnio ? `${schedule.carrera.nombre}, ${schedule.cursoAnio}.° año del ciclo ${schedule.cicloLectivo}` : `el horario general del ciclo ${schedule.cicloLectivo}`
+  return schedule.carrera ? (schedule.cursoAnio ? `${schedule.carrera.nombre}, ${schedule.cursoAnio}.° año del ciclo ${schedule.cicloLectivo}` : `${schedule.carrera.nombre}, horario completo del ciclo ${schedule.cicloLectivo}`) : `el horario general del ciclo ${schedule.cicloLectivo}`
 }
 
 function uploadScopeLabel(): string {
-  return uploadCareer.value && uploadCourseYear.value ? `${uploadCareer.value.nombre}, ${uploadCourseYear.value}.° año del ciclo ${uploadCycle.value}` : `el ciclo ${uploadCycle.value}`
+  return uploadCareer.value ? `${uploadCareer.value.nombre}, horario completo del ciclo ${uploadCycle.value}` : `el ciclo ${uploadCycle.value}`
 }
 
 function clearDocumentResources(): void {
@@ -106,8 +97,8 @@ async function loadDocument(schedule: PublishedSchedule, generation: number): Pr
 async function loadHistory(cicloLectivo: number, generation: number): Promise<void> {
   if (!isAdmin.value || !isCurrentRequest(generation)) return
   try {
-    const filters = hasSpecificSelection.value
-      ? { cicloLectivo, carreraId: selectedCareerId.value!, cursoAnio: selectedCourseYear.value! }
+    const filters = selectedCareerId.value !== null
+      ? { cicloLectivo, carreraId: selectedCareerId.value }
       : { cicloLectivo }
     const versions = await schedulesApi.listHistory(filters)
     if (isCurrentRequest(generation)) history.value = versions
@@ -127,7 +118,7 @@ async function loadSchedule(generation = nextRequestGeneration()): Promise<void>
   clearDocumentResources()
   loadingDocument.value = true
   try {
-    const schedule = await schedulesApi.getCurrent({ cicloLectivo, ...(hasSpecificSelection.value ? { carreraId: selectedCareerId.value!, cursoAnio: selectedCourseYear.value! } : {}) })
+    const schedule = await schedulesApi.getCurrent({ cicloLectivo, ...(selectedCareerId.value !== null ? { carreraId: selectedCareerId.value } : {}) })
     if (!isCurrentRequest(generation)) return
     current.value = schedule
     uploadCycle.value = schedule.cicloLectivo
@@ -185,12 +176,8 @@ async function loadOptions(parentGeneration?: number): Promise<void> {
     if (!isCurrentRequest(generation)) return
     options.value = result
     if (!options.value.carreras.some(career => career.id === selectedCareerId.value)) selectedCareerId.value = options.value.carreras[0]?.id ?? null
-    if (!selectedCareerId.value) selectedCourseYear.value = null
-    else if (!yearsForCareer(selectedCareer.value).includes(selectedCourseYear.value ?? 0)) selectedCourseYear.value = 1
     if (!options.value.carreras.some(career => career.id === uploadCareerId.value)) uploadCareerId.value = null
-    if (!uploadCareerId.value) uploadCourseYear.value = null
-    else if (!yearsForCareer(uploadCareer.value).includes(uploadCourseYear.value ?? 0)) uploadCourseYear.value = 1
-    if (!hasSpecificSelection.value && !options.value.generalDisponible) {
+    if (selectedCareerId.value === null && !options.value.generalDisponible) {
       current.value = null
       history.value = []
       clearDocumentResources()
@@ -204,12 +191,10 @@ async function loadOptions(parentGeneration?: number): Promise<void> {
 
 async function changeYear(): Promise<void> {
   selectedCareerId.value = null
-  selectedCourseYear.value = null
   await loadOptions()
 }
 
 async function changeCareer(): Promise<void> {
-  selectedCourseYear.value = selectedCareerId.value === null ? null : 1
   await loadSchedule()
 }
 
@@ -219,9 +204,7 @@ watch(() => [auth.activeRole, auth.user?.idUsuario], () => {
   options.value = { carreras: [], generalDisponible: false }
   selectedYear.value = null
   selectedCareerId.value = null
-  selectedCourseYear.value = null
   uploadCareerId.value = null
-  uploadCourseYear.value = null
   selectedFile.value = null
   uploadTitle.value = ''
   actionError.value = ''
@@ -232,10 +215,6 @@ watch(() => [auth.activeRole, auth.user?.idUsuario], () => {
   clearDocumentResources()
   void load()
 })
-
-async function changeCourseYear(): Promise<void> {
-  await loadSchedule()
-}
 
 function retryDocument(): void {
   if (!current.value) return
@@ -250,7 +229,7 @@ function preparePublish(): void {
     return
   }
   if (!hasUploadSelection.value) {
-    actionError.value = 'Seleccioná una carrera y un año de cursado.'
+    actionError.value = 'Seleccioná una carrera.'
     return
   }
   pendingAction.value = { kind: 'publish' }
@@ -275,7 +254,6 @@ async function confirmAction(): Promise<void> {
     action,
     uploadCycle: uploadCycle.value,
     uploadCareerId: uploadCareerId.value,
-    uploadCourseYear: uploadCourseYear.value,
     uploadTitle: uploadTitle.value,
     file: selectedFile.value,
   }
@@ -285,7 +263,7 @@ async function confirmAction(): Promise<void> {
   try {
     let published: PublishedSchedule
     if (snapshot.action.kind === 'publish') {
-      const result = await schedulesApi.publish({ archivo: snapshot.file!, cicloLectivo: snapshot.uploadCycle, carreraId: snapshot.uploadCareerId!, cursoAnio: snapshot.uploadCourseYear!, titulo: snapshot.uploadTitle })
+      const result = await schedulesApi.publish({ archivo: snapshot.file!, cicloLectivo: snapshot.uploadCycle, carreraId: snapshot.uploadCareerId!, titulo: snapshot.uploadTitle })
       published = result.documento
     } else {
       published = await schedulesApi.restore(snapshot.action.document.id)
@@ -299,9 +277,7 @@ async function confirmAction(): Promise<void> {
     documentError.value = ''
     selectedYear.value = published.cicloLectivo
     selectedCareerId.value = published.carreraId
-    selectedCourseYear.value = published.cursoAnio
     uploadCareerId.value = published.carreraId
-    uploadCourseYear.value = published.cursoAnio
     if (!years.value.includes(published.cicloLectivo)) years.value = [published.cicloLectivo, ...years.value].sort((a, b) => b - a)
     void loadDocument(published, generation)
     void loadHistory(published.cicloLectivo, generation)
@@ -341,11 +317,6 @@ onBeforeUnmount(() => {
         <select v-model.number="selectedCareerId" :disabled="loading || saving" class="min-h-11 w-full min-w-0 max-w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="changeCareer">
           <option v-if="options.generalDisponible" :value="null">Horario general</option>
           <option v-for="career in options.carreras" :key="career.id" :value="career.id">{{ career.nombre }}</option>
-        </select>
-      </label>
-      <label v-if="selectedCareer" class="grid min-w-0 max-w-full gap-1 text-sm font-semibold text-[var(--color-text)]">Año de cursado
-        <select v-model.number="selectedCourseYear" :disabled="loading || saving" class="min-h-11 min-w-0 max-w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="changeCourseYear">
-          <option v-for="year in selectedCourseYears" :key="year" :value="year">{{ year }}.° año</option>
         </select>
       </label>
     </div>
@@ -396,14 +367,9 @@ onBeforeUnmount(() => {
               <input v-model.number="uploadCycle" type="number" min="2000" max="2100" required class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @change="selectedYear = uploadCycle; void loadOptions()" />
             </label>
             <label class="min-w-0 text-sm font-semibold">Carrera
-              <select v-model.number="uploadCareerId" class="mt-1 min-h-11 w-full min-w-0 max-w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @change="uploadCourseYear = uploadCareerId === null ? null : 1">
+              <select v-model.number="uploadCareerId" class="mt-1 min-h-11 w-full min-w-0 max-w-full rounded-md border border-[var(--color-border)] px-3 font-normal">
                 <option :value="null">Seleccionar carrera</option>
                 <option v-for="career in options.carreras" :key="career.id" :value="career.id">{{ career.nombre }}</option>
-              </select>
-            </label>
-            <label v-if="uploadCareer" class="min-w-0 text-sm font-semibold">Año de cursado
-              <select v-model.number="uploadCourseYear" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal">
-                <option v-for="year in uploadCourseYears" :key="year" :value="year">{{ year }}.° año</option>
               </select>
             </label>
             <label class="min-w-0 text-sm font-semibold">Título
@@ -417,7 +383,7 @@ onBeforeUnmount(() => {
           <p v-if="actionError" class="mt-4 text-sm text-[#a31118]" role="alert">{{ actionError }}</p>
           <AppButton class="mt-5" type="submit">Publicar horario</AppButton>
         </form>
-        <section class="rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" aria-labelledby="history-title"><div class="flex items-center gap-2"><History class="size-5 text-[var(--color-brand)]" /><h2 id="history-title" class="text-xl font-semibold">Historial</h2></div><p v-if="!history.length" class="mt-4 text-sm text-[var(--color-graphite)]">No hay versiones anteriores para mostrar.</p><ul v-else class="mt-4 grid gap-3"><li v-for="version in history" :key="version.id" class="rounded-md border border-[var(--color-border)] p-3"><p class="font-semibold">{{ version.titulo }}</p><p class="text-sm text-[var(--color-graphite)]">{{ new Date(version.fechaPublicacion).toLocaleDateString('es-AR') }} · {{ Math.max(1, Math.round(version.tamanio / 1024)) }} KB</p><p class="mt-1 text-sm text-[var(--color-graphite)]">Publicado por: {{ version.publicadoPor?.nombre ?? 'Sin dato de publicación' }}</p><AppButton v-if="!version.vigente" class="mt-3" variant="secondary" @click="prepareRestore(version)">Volver a publicar</AppButton><span v-else class="mt-3 inline-block text-sm font-semibold text-[var(--color-brand)]">Vigente</span></li></ul></section>
+        <section class="rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" aria-labelledby="history-title"><div class="flex items-center gap-2"><History class="size-5 text-[var(--color-brand)]" /><h2 id="history-title" class="text-xl font-semibold">Historial de la carrera</h2></div><p v-if="!history.length" class="mt-4 text-sm text-[var(--color-graphite)]">No hay versiones anteriores para mostrar.</p><ul v-else class="mt-4 grid gap-3"><li v-for="version in history" :key="version.id" class="rounded-md border border-[var(--color-border)] p-3"><p class="font-semibold">{{ version.titulo }}</p><p class="text-sm text-[var(--color-graphite)]">{{ new Date(version.fechaPublicacion).toLocaleDateString('es-AR') }} · {{ Math.max(1, Math.round(version.tamanio / 1024)) }} KB</p><p class="mt-1 text-sm text-[var(--color-graphite)]">Publicado por: {{ version.publicadoPor?.nombre ?? 'Sin dato de publicación' }}</p><AppButton v-if="!version.vigente" class="mt-3" variant="secondary" @click="prepareRestore(version)">Volver a publicar</AppButton><span v-else class="mt-3 inline-block text-sm font-semibold text-[var(--color-brand)]">Vigente</span></li></ul></section>
       </section>
     </template>
     <ConfirmDialog :open="Boolean(pendingAction)" :title="actionTitle" :description="actionDescription" :confirm-label="pendingAction?.kind === 'restore' ? 'Volver a publicar' : 'Publicar horario'" :loading="saving" @cancel="pendingAction = null" @confirm="confirmAction" />

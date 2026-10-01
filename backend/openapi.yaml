@@ -1796,7 +1796,7 @@ paths:
     get:
       tags: [Horarios Publicados]
       summary: Consultar el horario publicado vigente
-      description: "Sin `cicloLectivo`, busca el año actual y luego el último ciclo publicado."
+      description: "Al indicar sólo `carreraId`, devuelve el PDF completo de esa carrera y ciclo. Sin `cicloLectivo`, el fallback al último ciclo aplica únicamente al ámbito general."
       x-roles: [ALUMNO, PROFESOR, ADMINISTRATIVO]
       parameters:
         - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
@@ -1836,12 +1836,11 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [archivo, cicloLectivo, carreraId, cursoAnio]
+              required: [archivo, cicloLectivo, carreraId]
               properties:
                 archivo: { type: string, format: binary, description: PDF simple de hasta 10 MB }
                 cicloLectivo: { type: integer, minimum: 2000, maximum: 2100 }
                 carreraId: { type: integer, minimum: 1 }
-                cursoAnio: { type: integer, minimum: 1 }
                 titulo: { type: string, maxLength: 160 }
       responses:
         '200':
@@ -2702,7 +2701,7 @@ components:
                   estado: { type: string, enum: [EN_CURSO, LIBRE, REGULAR, HABILITADO_PROMOCION, PROMOCIONADO] }
     HorarioPublicado:
       type: object
-      required: [id, cicloLectivo, carreraId, cursoAnio, titulo, nombreOriginal, tamanio, fechaPublicacion, vigente]
+      required: [id, cicloLectivo, carreraId, titulo, nombreOriginal, tamanio, fechaPublicacion, vigente]
       properties:
         id: { type: integer }
         cicloLectivo: { type: integer }

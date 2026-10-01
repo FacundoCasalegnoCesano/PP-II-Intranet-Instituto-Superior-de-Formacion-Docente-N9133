@@ -37,6 +37,5 @@ export interface PublishScheduleInput {
   archivo: File
   cicloLectivo: number
   carreraId: number
-  cursoAnio: number
   titulo?: string
 }
