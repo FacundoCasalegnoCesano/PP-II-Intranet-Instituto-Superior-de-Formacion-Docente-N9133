@@ -1553,6 +1553,7 @@ paths:
     post:
       tags: [Asistencias]
       summary: Registrar asistencia de una clase
+      description: Una solicitud admite hasta 500 filas y persiste el lote completo en una transacción. Ante una colisión concurrente de clave única de asistencia, el lote completo se reintenta hasta dos veces.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CargaAsistenciaRequest' } } } }
       responses: { '201': { $ref: '#/components/responses/OK' }, '400': { $ref: '#/components/responses/BadRequest' } }
@@ -1626,6 +1627,7 @@ paths:
     post:
       tags: [Calificaciones]
       summary: Registrar calificaciones en lote
+      description: Cada solicitud admite hasta 500 registros y representa un lote de evaluación de una cursada; el lote se valida y persiste como una sola operación.
       x-roles: [ADMINISTRATIVO, PROFESOR]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CargaCalificacionesRequest' } } } }
       responses: { '201': { $ref: '#/components/responses/OK' }, '400': { $ref: '#/components/responses/BadRequest' } }
@@ -3205,6 +3207,7 @@ components:
         asistencias:
           type: array
           minItems: 1
+          maxItems: 500
           items:
             type: object
             required: [alumnoId, presente]
@@ -3230,6 +3233,7 @@ components:
         asistencias:
           type: array
           minItems: 1
+          maxItems: 500
           uniqueItems: true
           items: { $ref: '#/components/schemas/ClaseAsistenciaInput' }
     ClaseResumen:
@@ -3305,6 +3309,7 @@ components:
         calificaciones:
           type: array
           minItems: 1
+          maxItems: 500
           items:
             oneOf:
               - type: object

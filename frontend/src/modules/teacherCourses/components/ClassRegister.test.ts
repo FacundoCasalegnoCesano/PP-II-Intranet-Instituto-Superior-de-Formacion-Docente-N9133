@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue
 import userEvent from '@testing-library/user-event'
 import type { Component } from 'vue'
 import type { ClassRecord, ClassSummary, EnrolledStudent, TeacherCourse } from '../types/teacherCourses'
+import { apiErrorFromPayload } from '@/core/api/errors'
 
 const mocks = vi.hoisted(() => ({
   listClasses: vi.fn(),
@@ -253,7 +254,7 @@ describe('ClassRegister', () => {
     await user.type(within(ana).getByLabelText('Observación'), 'Conservar')
 
     await user.click(screen.getByRole('button', { name: 'Guardar clase' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(/no pudimos guardar/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos guardar la clase.')
     expect(screen.getByLabelText('Fecha de clase')).toHaveValue('2026-09-10')
     expect(screen.getByLabelText('Tema desarrollado')).toHaveValue('Ecuaciones')
     expect(within(ana).getByLabelText('Ausente')).toBeChecked()
@@ -263,6 +264,30 @@ describe('ClassRegister', () => {
     await waitFor(() => expect(mocks.saveClass).toHaveBeenCalledTimes(2))
     expect(mocks.listClasses).toHaveBeenCalled()
     expect(mocks.getClass).toHaveBeenCalledWith(12, '2026-09-10')
+  })
+
+  it('shows the server limit error without rewriting the submitted attendance batch', async () => {
+    const user = userEvent.setup()
+    mocks.saveClass.mockRejectedValueOnce(apiErrorFromPayload(400, {
+      success: false,
+      message: 'Error de validación',
+      errors: [{ field: 'asistencias', message: 'La carga no puede superar los 500 registros por solicitud' }],
+    }))
+    renderRegister()
+    fillNewClass()
+    const ana = screen.getByRole('group', { name: /Ana Pérez/ })
+    await user.click(within(ana).getByLabelText('Ausente'))
+    await user.type(within(ana).getByLabelText('Observación'), 'Conservar para reintentar')
+
+    await user.click(screen.getByRole('button', { name: 'Guardar clase' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('La carga no puede superar los 500 registros por solicitud')
+    expect(screen.getByLabelText('Fecha de clase')).toHaveValue('2026-09-10')
+    expect(screen.getByLabelText('Tema desarrollado')).toHaveValue('Ecuaciones')
+    expect(within(ana).getByLabelText('Ausente')).toBeChecked()
+    expect(within(ana).getByLabelText('Observación')).toHaveValue('Conservar para reintentar')
+    expect(mocks.saveClass).toHaveBeenCalledTimes(1)
+    expect(mocks.saveClass.mock.calls[0]?.[2].asistencias).toHaveLength(students.length)
   })
 
   it('keeps historical classes consultable but disables every editing control and delete is absent', async () => {

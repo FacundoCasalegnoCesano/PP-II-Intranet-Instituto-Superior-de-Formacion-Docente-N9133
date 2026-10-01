@@ -36,6 +36,7 @@ export const cargaCalificacionesSchema = Joi.object({
   calificaciones: Joi.array()
     .required()
     .min(1)
+    .max(500)
     .items(
       Joi.object({
         alumnoId: Joi.number()
@@ -103,6 +104,7 @@ export const cargaCalificacionesSchema = Joi.object({
     )
     .messages({
       'array.min': 'Debe enviar al menos una calificación',
+      'array.max': 'No se pueden cargar más de 500 calificaciones por solicitud',
       'any.required': 'El array de calificaciones es requerido'
     })
 });

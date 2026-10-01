@@ -9,36 +9,56 @@ interface FilaUpsert {
 }
 
 class AsistenciaRepository {
+  async findInscripcionesByCursadaAndAlumnoIds(cursadaId: number, alumnoIds: number[]) {
+    if (alumnoIds.length === 0) return [];
+    return prisma.inscripcionMateria.findMany({
+      where: {
+        cursadaId,
+        estado: { not: 'BAJA' },
+        alumnoId: { in: alumnoIds }
+      },
+      select: { alumnoId: true }
+    });
+  }
+
   /**
    * Carga/actualiza asistencias de una clase (upsert por alumno+fecha).
    */
   async upsertClase(cursadaId: number, fecha: Date, filas: FilaUpsert[]) {
-    const operaciones = filas.map(fila =>
-      prisma.asistencia.upsert({
-        where: {
-          cursadaId_alumnoId_fecha: {
+    const filasOrdenadas = [...filas].sort((a, b) => a.idAlumno - b.idAlumno);
+    for (let intento = 0; ; intento += 1) {
+      const operaciones = filasOrdenadas.map(fila =>
+        prisma.asistencia.upsert({
+          where: {
+            cursadaId_alumnoId_fecha: {
+              cursadaId,
+              alumnoId: fila.idAlumno,
+              fecha
+            }
+          },
+          create: {
             cursadaId,
             alumnoId: fila.idAlumno,
-            fecha
+            fecha,
+            presente: fila.presente,
+            justificado: fila.justificado ?? false,
+            observacion: fila.observacion ?? null
+          },
+          update: {
+            presente: fila.presente,
+            justificado: fila.justificado ?? false,
+            observacion: fila.observacion ?? null
           }
-        },
-        create: {
-          cursadaId,
-          alumnoId: fila.idAlumno,
-          fecha,
-          presente: fila.presente,
-          justificado: fila.justificado ?? false,
-          observacion: fila.observacion ?? null
-        },
-        update: {
-          presente: fila.presente,
-          justificado: fila.justificado ?? false,
-          observacion: fila.observacion ?? null
-        }
-      })
-    );
+        })
+      );
 
-    return await prisma.$transaction(operaciones);
+      try {
+        return await prisma.$transaction(operaciones);
+      } catch (error) {
+        // MySQL/MariaDB uses Prisma's read-then-write upsert path; retry only this batch's unique-key race.
+        if (intento >= 2 || !esConflictoUnicoAsistencia(error)) throw error;
+      }
+    }
   }
 
   async findByCursada(cursadaId: number, fecha?: Date) {
@@ -173,6 +193,16 @@ class AsistenciaRepository {
     });
     return inscripcion !== null;
   }
+}
+
+function esConflictoUnicoAsistencia(error: unknown): boolean {
+  const prismaError = error as { code?: string; meta?: { target?: string | string[] } };
+  const target = prismaError?.meta?.target;
+  return prismaError?.code === 'P2002' && (
+    target === 'asistencias_cursada_id_alumno_id_fecha_key' ||
+    (Array.isArray(target) && target.length === 3 &&
+      ['cursada_id', 'alumno_id', 'fecha'].every(field => target.includes(field)))
+  );
 }
 
 export default new AsistenciaRepository();

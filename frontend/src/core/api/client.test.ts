@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AuthSession } from '@/core/auth/contracts'
 import { SessionStorage } from '@/core/storage/sessionStorage'
 import { ApiClient } from './client'
-import type { ApiSuccess } from './contracts'
-import { ApiError, normalizeApiError } from './errors'
+import type { ApiErrorPayload, ApiSuccess } from './contracts'
+import { ApiError, apiErrorFromPayload, apiErrorMessage, normalizeApiError } from './errors'
 
 const session: AuthSession = {
   accessToken: 'expired-access',
@@ -42,6 +42,29 @@ afterEach(() => {
 })
 
 describe('ApiClient', () => {
+  it('maps only non-empty validation details from the server payload', () => {
+    const payload: ApiErrorPayload = {
+      success: false,
+      message: 'Error de validación',
+      errors: [
+        { field: 'asistencias', message: 'La carga no puede superar los 500 registros por solicitud' },
+        { field: 2, message: '   ' },
+      ],
+    }
+    const error = apiErrorFromPayload(400, payload)
+
+    expect(error.details).toEqual([{
+      field: 'asistencias',
+      message: 'La carga no puede superar los 500 registros por solicitud',
+    }])
+    expect(apiErrorMessage(error, 'No pudimos guardar.')).toBe('La carga no puede superar los 500 registros por solicitud')
+    expect(apiErrorMessage(apiErrorFromPayload(400, {
+      success: false,
+      message: 'Error de validación',
+      errors: [{ field: [], message: '  ' }],
+    } as unknown as ApiErrorPayload), 'No pudimos guardar.')).toBe('No pudimos guardar.')
+  })
+
   it('normalizes network and invalid JSON failures to ApiError', async () => {
     const networkError = normalizeApiError(new TypeError('Failed to fetch'))
     expect(networkError).toMatchObject({ status: 0, code: 'NETWORK_ERROR' })
