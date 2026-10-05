@@ -28,6 +28,13 @@ function yearFromRoute(): number {
   return Number.isInteger(year) && year > 0 ? year : currentYear
 }
 
+function studentIdFromRoute(): number | null {
+  const raw = route.query.alumnoId
+  if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) return null
+  const id = Number(raw)
+  return Number.isSafeInteger(id) ? id : null
+}
+
 const selectedYear = ref(yearFromRoute())
 const courses = ref<TeacherCourse[]>([])
 const selectedCourse = ref<TeacherCourse | null>(null)
@@ -65,6 +72,9 @@ const routeSection = computed<TeacherCourseSection>(() => {
   return 'students'
 })
 const isList = computed(() => route.params.id === undefined)
+const selectedStudent = computed(() => students.value.find(student => student.alumnoId === studentIdFromRoute()) ?? null)
+const gradeStudents = computed(() => selectedStudent.value ? [selectedStudent.value] : [])
+const invalidStudentSelection = computed(() => routeSection.value === 'grades' && studentIdFromRoute() !== null && selectedStudent.value === null)
 const courseStatus = computed(() => selectedCourse.value && courseIsCurrent(selectedCourse.value) ? 'Cursada actual' : 'Cursada histórica')
 const sectionTitle = computed(() => ({ students: 'Alumnos inscriptos', classes: 'Clases', grades: 'Calificaciones', summary: 'Resumen académico' })[routeSection.value])
 const sectionRoutes: Record<TeacherCourseSection, string> = {
@@ -105,6 +115,7 @@ async function loadSelection(): Promise<void> {
   const id = Number(route.params.id)
   if (!id) return
   const request = ++selectionRequest
+  const routeStudentId = studentIdFromRoute()
   loadingSelection.value = true
   selectionError.value = ''
   selectedCourse.value = null
@@ -124,16 +135,13 @@ async function loadSelection(): Promise<void> {
     }
     selectedCourse.value = course
     if (routeSection.value === 'students' || routeSection.value === 'classes' || routeSection.value === 'grades' || routeSection.value === 'summary') {
-      const [enrolledStudents, history, loadedGrades, loadedSummary] = await Promise.all([
+      const [enrolledStudents, history, loadedSummary] = await Promise.all([
         routeSection.value === 'students' || routeSection.value === 'classes' || routeSection.value === 'grades'
           ? teacherCoursesApi.listStudents(id)
           : Promise.resolve<EnrolledStudent[]>([]),
         routeSection.value === 'classes' && typeof teacherCoursesApi.listClasses === 'function'
           ? teacherCoursesApi.listClasses(id)
           : Promise.resolve<ClassSummary[]>([]),
-        routeSection.value === 'grades'
-          ? teacherCoursesApi.listGrades(id)
-          : Promise.resolve<GradeRecord[]>([]),
         routeSection.value === 'summary'
           ? teacherCoursesApi.getAcademicSummary(id)
           : Promise.resolve<AcademicSummary | null>(null),
@@ -143,8 +151,20 @@ async function loadSelection(): Promise<void> {
         return
       }
       students.value = enrolledStudents ?? []
+      if (routeSection.value === 'grades' && routeStudentId !== null && !students.value.some(student => student.alumnoId === routeStudentId)) {
+        selectionError.value = ''
+        loadingSelection.value = false
+        return
+      }
+      const loadedGrades = routeSection.value === 'grades' && routeStudentId !== null
+        ? await teacherCoursesApi.listGrades(id, { alumnoId: routeStudentId })
+        : []
+      if (request !== selectionRequest) {
+        staleResponsesDiscarded.value += 1
+        return
+      }
+      grades.value = (loadedGrades ?? []).filter(grade => routeSection.value !== 'grades' || grade.alumno.alumnoId === routeStudentId)
       classHistory.value = history ?? []
-      grades.value = loadedGrades ?? []
       academicSummary.value = loadedSummary
     }
   } catch {
@@ -160,7 +180,16 @@ async function loadSelection(): Promise<void> {
 
 async function saveGrades(payload: SaveGradesPayload): Promise<void> {
   const course = selectedCourse.value
-  if (!course || !courseIsCurrent(course) || savingGrades.value) return
+  const studentId = studentIdFromRoute()
+  if (
+    !course
+    || payload.cursadaId !== course.id
+    || !courseIsCurrent(course)
+    || savingGrades.value
+    || studentId === null
+    || !students.value.some(student => student.alumnoId === studentId)
+    || payload.calificaciones.some(grade => grade.alumnoId !== studentId)
+  ) return
   const request = selectionRequest
   savingGrades.value = true
   gradeActionError.value = ''
@@ -175,12 +204,12 @@ async function saveGrades(payload: SaveGradesPayload): Promise<void> {
   }
 
   try {
-    const refreshedGrades = await teacherCoursesApi.listGrades(payload.cursadaId)
+    const refreshedGrades = await teacherCoursesApi.listGrades(payload.cursadaId, { alumnoId: studentId })
     if (request !== selectionRequest || selectedCourse.value?.id !== payload.cursadaId) {
       staleResponsesDiscarded.value += 1
       return
     }
-    grades.value = refreshedGrades
+    grades.value = refreshedGrades.filter(grade => grade.alumno.alumnoId === studentId)
     gradeSaveMessage.value = 'Calificaciones guardadas.'
   } catch {
     if (request === selectionRequest && selectedCourse.value?.id === payload.cursadaId) {
@@ -195,16 +224,23 @@ async function saveGrades(payload: SaveGradesPayload): Promise<void> {
 async function retryGradeRefresh(): Promise<void> {
   const courseId = gradeRefreshCourseId.value
   const request = selectionRequest
-  if (courseId === null || selectedCourse.value?.id !== courseId || savingGrades.value) return
+  const studentId = studentIdFromRoute()
+  if (
+    courseId === null
+    || studentId === null
+    || !students.value.some(student => student.alumnoId === studentId)
+    || selectedCourse.value?.id !== courseId
+    || savingGrades.value
+  ) return
   savingGrades.value = true
   gradeActionError.value = ''
   try {
-    const refreshedGrades = await teacherCoursesApi.listGrades(courseId)
+    const refreshedGrades = await teacherCoursesApi.listGrades(courseId, { alumnoId: studentId })
     if (request !== selectionRequest || selectedCourse.value?.id !== courseId) {
       staleResponsesDiscarded.value += 1
       return
     }
-    grades.value = refreshedGrades
+    grades.value = refreshedGrades.filter(grade => grade.alumno.alumnoId === studentId)
     gradeRefreshCourseId.value = null
   } catch {
     if (request === selectionRequest && selectedCourse.value?.id === courseId) {
@@ -324,15 +360,24 @@ onBeforeUnmount(() => removeRouteGuard?.())
         <template v-else-if="selectedCourse">
           <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="selected-course-title" class="text-2xl font-semibold">{{ selectedCourse.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ selectedCourse.materia.carrera?.nombre ?? 'Carrera no informada' }} · Año {{ selectedCourse.anioLectivo }} · {{ academicLabel(selectedCourse.periodo) }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]" aria-live="polite">Contexto: {{ students.length || academicSummary?.alumnos.length || 0 }} alumnos inscriptos</p></div><p class="font-semibold" :class="courseIsCurrent(selectedCourse) ? 'text-[var(--color-brand)]' : 'text-[var(--color-graphite)]'">{{ courseStatus }}</p></div>
           <TeacherCourseSectionNav class="mt-6" :course-id="selectedCourse.id" :section="routeSection" :anio-lectivo="selectedYear" />
-          <section v-if="routeSection === 'students'" aria-labelledby="students-title"><h3 id="students-title" class="mt-6 text-xl font-semibold">Alumnos inscriptos</h3><div v-if="!students.length" class="mt-5 rounded-lg border border-dashed border-[var(--color-border)] p-5 text-[var(--color-graphite)]" role="status">No hay alumnos inscriptos en esta cursada.</div><TeacherStudentsTable v-else :students="students" :course-id="selectedCourse.id" :anio-lectivo="selectedYear" /></section>
+          <section v-if="routeSection === 'students' || (routeSection === 'grades' && studentIdFromRoute() === null)" aria-labelledby="students-title">
+            <h3 id="students-title" class="mt-6 text-xl font-semibold">Alumnos inscriptos</h3>
+            <p v-if="routeSection === 'grades'" class="mt-2 text-[var(--color-graphite)]" role="status">Elegí un alumno desde la nómina para consultar sus calificaciones.</p>
+            <div v-if="!students.length" class="mt-5 rounded-lg border border-dashed border-[var(--color-border)] p-5 text-[var(--color-graphite)]" role="status">No hay alumnos inscriptos en esta cursada.</div>
+            <TeacherStudentsTable v-else :students="students" :course-id="selectedCourse.id" :anio-lectivo="selectedYear" />
+          </section>
           <ClassRegister v-else-if="routeSection === 'classes'" :course="selectedCourse" :students="students" :classes="classHistory" @dirty-change="setUnsavedChanges" @saving-change="setSavingSection" />
           <template v-else-if="routeSection === 'grades'">
-            <GradesGrid :course="selectedCourse" :students="students" :grades="grades" :saving="savingGrades" @save="saveGrades" @dirty-change="setUnsavedChanges" />
-            <p v-if="gradeSaveMessage" class="mt-3 text-sm text-[#245c32]" role="status" aria-live="polite">{{ gradeSaveMessage }}</p>
-            <div v-if="gradeActionError" class="mt-4 rounded-md border border-[#edb8b8] bg-[#fff4f4] p-3 text-sm text-[#8b151b]" role="alert">
-              <p>{{ gradeActionError }}</p>
-              <AppButton v-if="gradeRefreshCourseId === selectedCourse.id" class="mt-3" variant="secondary" @click="retryGradeRefresh">Reintentar actualización</AppButton>
-            </div>
+            <p v-if="invalidStudentSelection" class="mt-6 rounded-lg border border-dashed border-[var(--color-border)] bg-white p-5 text-[var(--color-graphite)]" role="status">{{ selectionError || 'El alumno seleccionado no está inscripto en esta cursada.' }}</p>
+            <template v-else-if="selectedStudent">
+              <p class="mt-6 font-semibold">{{ selectedStudent?.apellidoNombre }} · DNI {{ selectedStudent?.dni }}</p>
+              <GradesGrid :course="selectedCourse" :students="gradeStudents" :grades="grades" :saving="savingGrades" @save="saveGrades" @dirty-change="setUnsavedChanges" />
+              <p v-if="gradeSaveMessage" class="mt-3 text-sm text-[#245c32]" role="status" aria-live="polite">{{ gradeSaveMessage }}</p>
+              <div v-if="gradeActionError" class="mt-4 rounded-md border border-[#edb8b8] bg-[#fff4f4] p-3 text-sm text-[#8b151b]" role="alert">
+                <p>{{ gradeActionError }}</p>
+                <AppButton v-if="gradeRefreshCourseId === selectedCourse.id" class="mt-3" variant="secondary" @click="retryGradeRefresh">Reintentar actualización</AppButton>
+              </div>
+            </template>
           </template>
           <AcademicSummaryTable v-else-if="routeSection === 'summary' && academicSummary" :summary="academicSummary" />
           <p v-else-if="routeSection === 'summary'" class="mt-6 rounded-lg border border-dashed border-[var(--color-border)] p-5 text-[var(--color-graphite)]" role="status">No hay resumen académico disponible.</p>
