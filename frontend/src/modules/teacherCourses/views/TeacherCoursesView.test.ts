@@ -206,16 +206,44 @@ describe('TeacherCoursesView', () => {
     mocks.route.name = 'teacher-course-grades'
     mocks.route.params = { id: '12' }
     mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.route.query = { alumnoId: '13' }
     mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
     mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
-    mocks.listGrades.mockResolvedValue([gradeFixture])
+    mocks.listGrades.mockResolvedValue([gradeFixture, { ...gradeFixture, id: 102, alumno: { alumnoId: 22, apellidoNombre: 'Otro alumno', dni: 40111222 } }])
 
     renderView()
 
     expect((await screen.findAllByText('Lucia Test'))[0]).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Calificaciones' })).toBeVisible()
     expect(screen.getByLabelText('Nota')).toHaveValue(8)
-    expect(mocks.listGrades).toHaveBeenCalledWith(12)
+    expect(screen.queryByText('Otro alumno')).not.toBeInTheDocument()
+    expect(mocks.listGrades).toHaveBeenCalledWith(12, { alumnoId: 13 })
+  })
+
+  it.each([undefined, '0', '13x', ['13', '22']])('does not load grades without one valid selected student: %s', async alumnoId => {
+    mocks.route.name = 'teacher-course-grades'
+    mocks.route.params = { id: '12' }
+    mocks.route.query = alumnoId === undefined ? {} : { alumnoId }
+    mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
+    mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
+    renderView()
+    expect(await screen.findByText('Elegí un alumno desde la nómina para consultar sus calificaciones.')).toHaveAttribute('role', 'status')
+    expect(mocks.listGrades).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Guardar calificaciones' })).not.toBeInTheDocument()
+  })
+
+  it('does not load grades when the selected student is outside the roster', async () => {
+    mocks.route.name = 'teacher-course-grades'
+    mocks.route.params = { id: '12' }
+    mocks.route.query = { alumnoId: '22' }
+    mocks.route.fullPath = '/profesor/cursadas/12/calificaciones?alumnoId=22'
+    mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
+    mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
+    renderView()
+    expect(await screen.findByText('El alumno seleccionado no está inscripto en esta cursada.')).toHaveAttribute('role', 'status')
+    expect(mocks.listGrades).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Guardar calificaciones' })).not.toBeInTheDocument()
   })
 
   it('loads the backend-only academic summary and leaves it read-only', async () => {
@@ -238,6 +266,7 @@ describe('TeacherCoursesView', () => {
     mocks.route.name = 'teacher-course-grades'
     mocks.route.params = { id: '12' }
     mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.route.query = { alumnoId: '13' }
     mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
     mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
     mocks.listGrades.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([gradeFixture])
@@ -284,13 +313,14 @@ describe('TeacherCoursesView', () => {
     mocks.route.name = 'teacher-course-grades'
     mocks.route.params = { id: '12' }
     mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.route.query = { alumnoId: '13' }
     mocks.get.mockResolvedValueOnce(course(12, new Date().getFullYear(), true)).mockResolvedValueOnce(course(13, new Date().getFullYear(), true))
     mocks.listStudents.mockResolvedValueOnce([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }]).mockResolvedValueOnce([{ alumnoId: 22, apellidoNombre: 'Alumno nuevo', dni: 40111222, email: 'nuevo@example.test' }])
     let resolveFirst!: (grades: GradeRecord[]) => void
     mocks.listGrades.mockReturnValueOnce(new Promise<GradeRecord[]>(resolve => { resolveFirst = resolve })).mockResolvedValueOnce([])
     renderView()
-    await waitFor(() => expect(mocks.listGrades).toHaveBeenCalledWith(12))
-    await mocks.push({ name: 'teacher-course-grades', params: { id: '13' } })
+    await waitFor(() => expect(mocks.listGrades).toHaveBeenCalledWith(12, { alumnoId: 13 }))
+    await mocks.push({ name: 'teacher-course-grades', params: { id: '13' }, query: { alumnoId: '22' } })
     await waitFor(() => expect(screen.getByText('Alumno nuevo')).toBeVisible())
     resolveFirst([gradeFixture])
 
@@ -303,8 +333,12 @@ describe('TeacherCoursesView', () => {
     mocks.route.name = 'teacher-course-grades'
     mocks.route.params = { id: '12' }
     mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.route.query = { alumnoId: '13' }
     mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
-    mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
+    mocks.listStudents.mockResolvedValue([
+      { alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' },
+      { alumnoId: 22, apellidoNombre: 'Otro alumno', dni: 40111222, email: 'otro@example.test' },
+    ])
     mocks.listGrades.mockResolvedValue([])
     const user = userEvent.setup()
 
@@ -333,6 +367,7 @@ describe('TeacherCoursesView', () => {
     mocks.route.name = 'teacher-course-grades'
     mocks.route.params = { id: '12' }
     mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.route.query = { alumnoId: '13' }
     mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
     mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
     mocks.listGrades.mockResolvedValue([])
@@ -365,6 +400,7 @@ describe('TeacherCoursesView', () => {
     mocks.route.name = 'teacher-course-grades'
     mocks.route.params = { id: '12' }
     mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.route.query = { alumnoId: '13' }
     mocks.get.mockResolvedValueOnce(course(12, new Date().getFullYear(), true)).mockResolvedValueOnce(course(13, new Date().getFullYear(), true))
     mocks.listStudents.mockResolvedValueOnce([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }]).mockResolvedValueOnce([{ alumnoId: 22, apellidoNombre: 'Alumno nuevo', dni: 40111222, email: 'nuevo@example.test' }])
     let resolveRefresh!: (grades: GradeRecord[]) => void
@@ -383,7 +419,7 @@ describe('TeacherCoursesView', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar calificaciones' }))
     await waitFor(() => expect(mocks.listGrades).toHaveBeenCalledTimes(2))
 
-    await mocks.push({ name: 'teacher-course-grades', params: { id: '13' } })
+    await mocks.push({ name: 'teacher-course-grades', params: { id: '13' }, query: { alumnoId: '22' } })
     await waitFor(() => expect(screen.getByText('Alumno nuevo')).toBeVisible())
     resolveRefresh([gradeFixture])
 
@@ -391,10 +427,38 @@ describe('TeacherCoursesView', () => {
     expect(screen.getByText('No hay calificaciones cargadas todavía. Podés cargar la primera evaluación.')).toBeVisible()
   })
 
+  it('discards notes from the previously selected student on a same-course switch', async () => {
+    mocks.route.name = 'teacher-course-grades'
+    mocks.route.params = { id: '12' }
+    mocks.route.query = { alumnoId: '13' }
+    mocks.route.fullPath = '/profesor/cursadas/12/calificaciones?alumnoId=13'
+    mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
+    mocks.listStudents.mockResolvedValue([
+      { alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' },
+      { alumnoId: 22, apellidoNombre: 'Alumno nuevo', dni: 40111222, email: 'nuevo@example.test' },
+    ])
+    let resolveFirst!: (grades: GradeRecord[]) => void
+    mocks.listGrades
+      .mockReturnValueOnce(new Promise<GradeRecord[]>(resolve => { resolveFirst = resolve }))
+      .mockResolvedValueOnce([{ ...gradeFixture, id: 102, alumno: { alumnoId: 22, apellidoNombre: 'Alumno nuevo', dni: 40111222 } }])
+
+    renderView()
+    await waitFor(() => expect(mocks.listGrades).toHaveBeenCalledWith(12, { alumnoId: 13 }))
+    await mocks.push({ name: 'teacher-course-grades', params: { id: '12' }, query: { alumnoId: '22' } })
+    await waitFor(() => expect(mocks.listGrades).toHaveBeenCalledWith(12, { alumnoId: 22 }))
+    resolveFirst([gradeFixture])
+
+    expect(await screen.findByText('Alumno nuevo')).toBeVisible()
+    expect(await screen.findByLabelText('Nota')).toHaveValue(8)
+    await waitFor(() => expect(screen.getByText(/Solicitudes obsoletas descartadas: 1/)).toBeVisible())
+    expect(screen.queryByText('Lucia Test')).not.toBeInTheDocument()
+  })
+
   it('separates a successful save from a failed grade refresh and offers retry', async () => {
     mocks.route.name = 'teacher-course-grades'
     mocks.route.params = { id: '12' }
     mocks.route.fullPath = '/profesor/cursadas/12/calificaciones'
+    mocks.route.query = { alumnoId: '13' }
     mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
     mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
     mocks.listGrades.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('refresh offline')).mockResolvedValueOnce([gradeFixture])

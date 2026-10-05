@@ -339,7 +339,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload)
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h3 id="grades-grid-title" class="text-xl font-semibold">Calificaciones</h3>
-        <p class="mt-1 text-sm text-[var(--color-graphite)]">Elegí una evaluación y cargá las notas de los alumnos inscriptos.</p>
+        <p class="mt-1 text-sm text-[var(--color-graphite)]">Elegí una evaluación y cargá la nota del alumno seleccionado.</p>
       </div>
       <p v-if="!editable" class="font-semibold text-[var(--color-graphite)]">Solo lectura: cursada histórica</p>
       <p v-if="dirty" class="text-sm text-[var(--color-graphite)]" role="status" aria-live="polite">Hay cambios sin guardar.</p>
@@ -355,7 +355,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload)
         <label v-if="selectedType !== 'RECUPERATORIO'" class="block text-sm font-semibold" for="grade-number">Número de evaluación
           <input id="grade-number" :value="selectedNumber" type="number" min="1" max="99" step="1" :aria-required="selectedType !== 'RECUPERATORIO' ? 'true' : undefined" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @input="setNumber(($event.target as HTMLInputElement).value, $event)" />
         </label>
-        <p v-else class="rounded-md border border-dashed border-[var(--color-border)] p-3 text-sm text-[var(--color-graphite)]">El número se deriva del parcial original de cada alumno.</p>
+        <p v-else class="rounded-md border border-dashed border-[var(--color-border)] p-3 text-sm text-[var(--color-graphite)]">El número se deriva del parcial original seleccionado.</p>
         <label class="block text-sm font-semibold" for="grade-date">Fecha de evaluación
           <input id="grade-date" :value="selectedDate" type="date" :aria-required="selectedType === 'PARCIAL' ? 'true' : undefined" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @input="setDate(($event.target as HTMLInputElement).value)" @change="setDate(($event.target as HTMLInputElement).value)" />
         </label>

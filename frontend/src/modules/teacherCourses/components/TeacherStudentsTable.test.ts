@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import TeacherStudentsTable from './TeacherStudentsTable.vue'
 
 describe('TeacherStudentsTable', () => {
-  it('conserva el año lectivo en los seis accesos de desktop y móvil', () => {
+  it('conserva el año lectivo y limita Calificaciones al alumno en desktop y móvil', () => {
     const RouterLink = defineComponent({
       props: { to: { type: Object, required: true } },
       setup: (props, { slots }) => () => h('a', {
@@ -26,6 +26,10 @@ describe('TeacherStudentsTable', () => {
     expect(links).toHaveLength(6)
     for (const link of links) {
       expect(link).toHaveAttribute('data-to', expect.stringContaining('"anioLectivo":"2025"'))
+    }
+    expect(screen.getAllByRole('link', { name: 'Calificaciones' })).toHaveLength(2)
+    for (const link of screen.getAllByRole('link', { name: 'Calificaciones' })) {
+      expect(link).toHaveAttribute('data-to', expect.stringContaining('"alumnoId":"13"'))
     }
   })
 })
