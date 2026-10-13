@@ -75,7 +75,12 @@ export const subjectSchema = z.object({
   correlativasIds: prerequisiteIdsSchema.optional(),
 })
 
-export const courseSchema = z.object({ materiaId: z.coerce.number().int().min(1), anioLectivo: z.coerce.number().int().min(2000).max(2100), periodo: z.string().min(1), docenteId: z.coerce.number().int().min(1).nullable().optional() })
+export const courseSchema = z.object({
+  materiaId: z.coerce.number({ invalid_type_error: 'Seleccioná una materia válida.' }).int('Seleccioná una materia válida.').min(1, 'Seleccioná una materia.'),
+  anioLectivo: z.coerce.number({ invalid_type_error: 'Ingresá un año lectivo válido.' }).int('Ingresá un año lectivo válido.').min(2000, 'El año lectivo debe ser 2000 o posterior.').max(2100, 'El año lectivo no puede superar 2100.'),
+  periodo: z.string({ required_error: 'Seleccioná un período.', invalid_type_error: 'Seleccioná un período válido.' }).min(1, 'Seleccioná un período.'),
+  docenteId: z.union([z.coerce.number({ invalid_type_error: 'Seleccioná un docente válido.' }).int('Seleccioná un docente válido.').min(1, 'Seleccioná un docente válido.'), z.null()]).optional(),
+})
 
 export const periodSchema = z.object({ tipo: z.enum(['MATERIA', 'EXAMEN']), cicloLectivo: z.coerce.number().int().min(2000).max(2100), fechaInicio: z.string().min(1), fechaFin: z.string().min(1), materiasIds: z.array(z.coerce.number().int().min(1)), mesasIds: z.array(z.coerce.number().int().min(1)), descripcion: z.string().max(255).optional() }).superRefine((value, ctx) => {
   if (new Date(value.fechaFin) <= new Date(value.fechaInicio)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['fechaFin'], message: 'La fecha final debe ser posterior.' })

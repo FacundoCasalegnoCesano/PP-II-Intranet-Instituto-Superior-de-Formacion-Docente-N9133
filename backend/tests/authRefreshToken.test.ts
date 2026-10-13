@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { prisma } from '../src/config/prisma.js';
 import authService from '../src/services/authService.js';
 import userRepository from '../src/repositories/userRepository.js';
-import { generateRefreshToken, hashRefreshToken } from '../src/utils/jwt.js';
+import { generateRefreshToken, hashSessionToken } from '../src/utils/jwt.js';
 
 function replaceMethod(target: Record<string, unknown>, key: string, replacement: unknown): () => void {
   const original = target[key];
@@ -23,7 +23,7 @@ test('refresh replay revoca y cierra la familia antes de lanzar el error', async
   const now = new Date();
   const session = {
     id: 7,
-    refreshTokenHash: hashRefreshToken(refreshToken),
+    refreshTokenHash: hashSessionToken(refreshToken),
     refreshTokenExpira: new Date(now.getTime() + 60_000),
     familiaId: 'familia-1',
     usuarioId: 21,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adminUserCreateSchema, adminUserSchema, subjectSchema } from './adminSchemas'
+import { adminUserCreateSchema, adminUserSchema, courseSchema, subjectSchema } from './adminSchemas'
 
 const common = {
   apellidoNombre: 'Ada Lovelace',
@@ -43,5 +43,24 @@ describe('subject schema', () => {
 
   it('rejects duplicate prerequisite ids', () => {
     expect(() => subjectSchema.parse({ ...validSubject, correlativasIds: [3, 3] })).toThrow()
+  })
+})
+
+describe('course schema', () => {
+  it('rejects incomplete or malformed data with actionable Spanish feedback', () => {
+    const result = courseSchema.safeParse({ materiaId: 0, anioLectivo: 2026, periodo: 'ANUAL' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['materiaId'])
+      expect(result.error.issues[0]?.message).toMatch(/materia/i)
+    }
+    const malformed = courseSchema.safeParse({ materiaId: 4, anioLectivo: 'año', periodo: '' })
+    expect(malformed.success).toBe(false)
+    if (!malformed.success) expect(malformed.error.issues.every(({ message }) => !message.includes('Invalid input'))).toBe(true)
+  })
+
+  it('accepts an unassigned teacher while keeping one as the minimum subject id', () => {
+    expect(courseSchema.safeParse({ materiaId: 1, anioLectivo: 2026, periodo: 'ANUAL', docenteId: null }).success).toBe(true)
+    expect(courseSchema.safeParse({ materiaId: 0, anioLectivo: 2026, periodo: 'ANUAL' }).success).toBe(false)
   })
 })

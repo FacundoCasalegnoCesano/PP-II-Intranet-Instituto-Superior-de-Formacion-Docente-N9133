@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { verifyAccessToken, extractTokenFromHeader } from '../utils/jwt.js';
+import { verifyAccessToken, extractTokenFromHeader, hashSessionToken } from '../utils/jwt.js';
 import userRepository from '../repositories/userRepository.js';
 import { prisma } from '../config/prisma.js';
 
@@ -61,7 +61,7 @@ async function authenticateRequest(
     // Verificar que la sesión existe, no está cerrada ni revocada
     const session = await prisma.sesion.findFirst({
       where: {
-        token,
+        token: hashSessionToken(token),
         usuarioId: user.idUsuario,
         cerradaEn: null,
         revocadaEn: null

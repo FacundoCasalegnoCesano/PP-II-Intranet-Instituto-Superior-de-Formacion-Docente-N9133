@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AdminExamsList from '../components/ExamTableList.vue'
 import ExamResultPanel from '../components/ExamResultPanel.vue'
@@ -24,6 +24,8 @@ import {
 } from '../api/examsApi'
 import { academicLabel } from '@/core/presentation/academicLabels'
 import { useFeedback } from '@/ui/feedback'
+import { adminApi } from '@/modules/admin/api/adminApi'
+import type { ActiveStudent } from '@/modules/admin/types/admin'
 import { examDateInputValue, examDateLabel, toInstitutionalIso } from '../presentation'
 import { isTribunalComplete } from '../tribunalRules'
 import type {
@@ -64,7 +66,14 @@ const saving = ref(false)
 const requestId = ref(0)
 const fieldError = ref('')
 const enrollmentError = ref('')
-const studentId = ref('')
+const studentSearch = ref('')
+const studentOptions = ref<ActiveStudent[]>([])
+const selectedStudentId = ref<number | null>(null)
+const selectedStudent = ref<ActiveStudent | null>(null)
+const studentSearchLoading = ref(false)
+const studentSearchError = ref(false)
+let studentSearchTimer: ReturnType<typeof setTimeout> | undefined
+let studentSearchRequest = 0
 const studentCondition = ref<'REGULAR' | 'LIBRE'>('REGULAR')
 const formReady = ref(false)
 const formVersion = ref<number | null>(null)
@@ -290,24 +299,69 @@ async function removeTribunal(member: TribunalMember): Promise<void> {
 }
 
 async function addEnrollment(): Promise<void> {
-  if (!workspace.value || !Number(studentId.value)) { enrollmentError.value = 'Indicá el ID de cuenta del alumno.'; return }
+  if (!workspace.value || !selectedStudent.value) { enrollmentError.value = 'Seleccioná un alumno de la lista.'; return }
   enrollmentError.value = ''
   saving.value = true
   try {
-    await enrollStudent(examId.value, Number(studentId.value), studentCondition.value, workspace.value.detail.version)
-    studentId.value = ''
+    await enrollStudent(examId.value, selectedStudent.value.idUsuario, studentCondition.value, workspace.value.detail.version)
+    selectedStudentId.value = null
+    studentSearch.value = ''
     await loadWorkspace()
   } catch (cause) {
     if (isConflict(cause)) {
       enrollmentError.value = 'Otra persona modificó las inscripciones. Recargamos la versión actual; podés reintentar.'
       await loadWorkspace()
     } else {
-      enrollmentError.value = 'No se pudo registrar la inscripción. Verificá la mesa y el ID del alumno.'
+      enrollmentError.value = 'No se pudo registrar la inscripción. Verificá la mesa y el alumno seleccionado.'
     }
   } finally {
     saving.value = false
   }
 }
+
+function searchActiveStudents(search: string): void {
+  clearTimeout(studentSearchTimer)
+  const request = ++studentSearchRequest
+  studentSearchError.value = false
+  studentSearchLoading.value = false
+  studentOptions.value = []
+  const term = search.trim()
+  if (term.length < 2) {
+    studentSearchLoading.value = false
+    return
+  }
+  studentSearchTimer = setTimeout(async () => {
+    studentSearchLoading.value = true
+    try {
+      const result = await adminApi.listActiveStudents(term, { limit: 20 })
+      if (request !== studentSearchRequest) return
+      studentOptions.value = result.data
+    } catch {
+      if (request === studentSearchRequest) studentSearchError.value = true
+    } finally {
+      if (request === studentSearchRequest) studentSearchLoading.value = false
+    }
+  }, 300)
+}
+
+function resetStudentSearch(): void {
+  clearTimeout(studentSearchTimer)
+  studentSearchTimer = undefined
+  studentSearchRequest += 1
+  studentSearch.value = ''
+  studentOptions.value = []
+  selectedStudentId.value = null
+  selectedStudent.value = null
+  studentSearchLoading.value = false
+  studentSearchError.value = false
+}
+
+watch(studentSearch, searchActiveStudents)
+watch(selectedStudentId, (id) => {
+  selectedStudent.value = id === null
+    ? null
+    : studentOptions.value.find(student => student.idUsuario === id) ?? selectedStudent.value
+})
 
 async function removeEnrollment(row: { alumno: { idUsuario: number; apellidoNombre: string } }): Promise<void> {
   if (!workspace.value || !window.confirm(`¿Dar de baja a ${row.alumno.apellidoNombre} de esta mesa?`)) return
@@ -346,8 +400,15 @@ function routeReady(): void {
   else void loadForm()
 }
 
-watch(() => route.fullPath, routeReady)
+watch(() => route.fullPath, () => {
+  resetStudentSearch()
+  routeReady()
+})
 onMounted(routeReady)
+onBeforeUnmount(() => {
+  clearTimeout(studentSearchTimer)
+  studentSearchRequest += 1
+})
 </script>
 
 <template>
@@ -369,7 +430,7 @@ onMounted(routeReady)
     </template>
 
     <template v-else>
-      <div class="mt-5"><RouterLink :to="{ name: 'admin-exams', query: route.query }" class="font-semibold text-[var(--color-brand)]">← Volver a mesas</RouterLink></div><div v-if="loading" class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-10 text-center" role="status">Cargando mesa…</div><div v-else-if="error" class="mt-5 rounded-xl border border-red-200 bg-red-50 p-6 text-red-800" role="alert"><p>{{ error }}</p><button type="button" class="mt-3 min-h-11 rounded-md bg-[var(--color-brand)] px-4 font-semibold text-white" @click="loadWorkspace">Reintentar</button></div><template v-else-if="workspace"><section class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6"><div class="flex flex-wrap items-start justify-between gap-4"><div><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Detalle de mesa</p><h2 class="mt-2 text-2xl font-semibold">{{ workspace.detail.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ workspace.detail.materia.carrera?.nombre ?? 'Carrera no informada' }} · {{ examDateLabel(workspace.detail.fecha) }} · {{ academicLabel(workspace.detail.tipoExamen) }} · llamado {{ workspace.detail.llamado }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]">Estado: <strong>{{ academicLabel(workspace.detail.estadoMesa) }}</strong> · Versión {{ workspace.detail.version }}</p></div><RouterLink v-if="workspace.detail.estadoMesa !== 'FINALIZADA'" :to="{ name: 'admin-exam-edit', params: { id: examId }, query: route.query }" class="inline-flex min-h-11 items-center justify-center rounded-md bg-[var(--color-brand)] px-4 py-2 font-semibold text-white">Editar configuración</RouterLink></div><dl class="mt-5 grid gap-3 text-sm sm:grid-cols-3"><div><dt class="font-semibold">Libro</dt><dd>{{ workspace.detail.libroExamen || 'Sin informar' }}</dd></div><div><dt class="font-semibold">Folio</dt><dd>{{ workspace.detail.folioExamen || 'Sin informar' }}</dd></div><div><dt class="font-semibold">Publicación</dt><dd>{{ workspace.detail.publicadaEn ? examDateLabel(workspace.detail.publicadaEn) : 'Pendiente' }}</dd></div></dl></section><div class="mt-5"><ExamTribunalEditor :members="workspace.detail.tribunales" :teachers="teachers" :disabled="workspace.detail.estadoMesa === 'FINALIZADA'" :saving="saving" @add="addTribunal" @remove="removeTribunal" /></div><section class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" aria-labelledby="enrollments-title"><h2 id="enrollments-title" class="text-xl font-semibold">Inscriptos</h2><form v-if="workspace.detail.estadoMesa !== 'FINALIZADA'" class="mt-4 grid gap-3 sm:grid-cols-[1fr_12rem_auto] sm:items-end" @submit.prevent="addEnrollment"><label class="text-sm font-semibold">ID de cuenta del alumno<input v-model="studentId" inputmode="numeric" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" placeholder="Ej. 13" /></label><label class="text-sm font-semibold">Condición<select v-model="studentCondition" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal"><option value="REGULAR">Regular</option><option value="LIBRE">Libre</option></select></label><button type="submit" class="min-h-11 rounded-md bg-[var(--color-brand)] px-4 py-2 font-semibold text-white" :disabled="saving">Inscribir</button></form><p v-if="enrollmentError" class="mt-3 text-sm text-[#a31118]" role="alert">{{ enrollmentError }}</p><ul class="mt-4 divide-y divide-[var(--color-border)]"> <li v-for="row in workspace.results" :key="row.id" class="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span><strong>{{ row.alumno.apellidoNombre }}</strong><span class="ml-2 text-[var(--color-graphite)]">{{ academicLabel(row.condicion) }}</span></span><button v-if="workspace.detail.estadoMesa !== 'FINALIZADA'" type="button" class="font-semibold text-[var(--color-brand)]" @click="removeEnrollment(row)">Dar de baja</button></li></ul><p v-if="!workspace.results.length" class="mt-4 text-sm text-[var(--color-graphite)]">No hay inscriptos activos.</p></section><ExamResultPanel :results="workspace.results" :version="workspace.detail.version" :status="workspace.detail.estadoMesa" :save-result="saveResult" :reload-results="reloadResults" :can-close="tribunalComplete(workspace.detail.tribunales)" :close-table="(version) => closeExamTable(examId, version)" :reopen-table="(reason, version) => reopenExamTable(examId, reason, version)" can-reopen @changed="loadWorkspace" /></template></template>
+      <div class="mt-5"><RouterLink :to="{ name: 'admin-exams', query: route.query }" class="font-semibold text-[var(--color-brand)]">← Volver a mesas</RouterLink></div><div v-if="loading" class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-10 text-center" role="status">Cargando mesa…</div><div v-else-if="error" class="mt-5 rounded-xl border border-red-200 bg-red-50 p-6 text-red-800" role="alert"><p>{{ error }}</p><button type="button" class="mt-3 min-h-11 rounded-md bg-[var(--color-brand)] px-4 font-semibold text-white" @click="loadWorkspace">Reintentar</button></div><template v-else-if="workspace"><section class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6"><div class="flex flex-wrap items-start justify-between gap-4"><div><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Detalle de mesa</p><h2 class="mt-2 text-2xl font-semibold">{{ workspace.detail.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ workspace.detail.materia.carrera?.nombre ?? 'Carrera no informada' }} · {{ examDateLabel(workspace.detail.fecha) }} · {{ academicLabel(workspace.detail.tipoExamen) }} · llamado {{ workspace.detail.llamado }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]">Estado: <strong>{{ academicLabel(workspace.detail.estadoMesa) }}</strong> · Versión {{ workspace.detail.version }}</p></div><RouterLink v-if="workspace.detail.estadoMesa !== 'FINALIZADA'" :to="{ name: 'admin-exam-edit', params: { id: examId }, query: route.query }" class="inline-flex min-h-11 items-center justify-center rounded-md bg-[var(--color-brand)] px-4 py-2 font-semibold text-white">Editar configuración</RouterLink></div><dl class="mt-5 grid gap-3 text-sm sm:grid-cols-3"><div><dt class="font-semibold">Libro</dt><dd>{{ workspace.detail.libroExamen || 'Sin informar' }}</dd></div><div><dt class="font-semibold">Folio</dt><dd>{{ workspace.detail.folioExamen || 'Sin informar' }}</dd></div><div><dt class="font-semibold">Publicación</dt><dd>{{ workspace.detail.publicadaEn ? examDateLabel(workspace.detail.publicadaEn) : 'Pendiente' }}</dd></div></dl></section><div class="mt-5"><ExamTribunalEditor :members="workspace.detail.tribunales" :teachers="teachers" :disabled="workspace.detail.estadoMesa === 'FINALIZADA'" :saving="saving" @add="addTribunal" @remove="removeTribunal" /></div><section class="mt-5 rounded-xl border border-[var(--color-border)] bg-white p-5 sm:p-6" aria-labelledby="enrollments-title"><h2 id="enrollments-title" class="text-xl font-semibold">Inscriptos</h2><form v-if="workspace.detail.estadoMesa !== 'FINALIZADA'" class="mt-4 grid gap-3 sm:grid-cols-[1fr_12rem_auto] sm:items-end" @submit.prevent="addEnrollment"><div><label for="student-search" class="text-sm font-semibold">Buscar alumno por nombre o DNI</label><input id="student-search" v-model="studentSearch" type="search" autocomplete="off" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" placeholder="Nombre o DNI" aria-controls="student-options" /></div><label class="text-sm font-semibold">Alumno<select id="student-options" v-model.number="selectedStudentId" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" :disabled="studentSearchLoading || studentSearchError || !studentOptions.length"><option :value="null">Seleccioná una persona</option><option v-for="student in studentOptions" :key="student.idUsuario" :value="student.idUsuario">{{ student.apellidoNombre }} · DNI {{ student.dni }}</option></select></label><label class="text-sm font-semibold">Condición<select v-model="studentCondition" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal"><option value="REGULAR">Regular</option><option value="LIBRE">Libre</option></select></label><button type="submit" class="min-h-11 rounded-md bg-[var(--color-brand)] px-4 py-2 font-semibold text-white" :disabled="saving">Inscribir</button></form><p v-if="studentSearchLoading" class="mt-2 text-sm" role="status">Buscando alumnos…</p><div v-else-if="studentSearchError" id="student-lookup-error" class="mt-2 text-sm text-[#a31118]" role="alert"><p>No pudimos buscar alumnos.</p><button type="button" class="mt-1 underline" @click="searchActiveStudents(studentSearch)">Reintentar búsqueda</button></div><p v-else-if="studentSearch.trim().length >= 2 && !studentOptions.length" class="mt-2 text-sm text-[var(--color-graphite)]" role="status">No encontramos alumnos activos con ese nombre o DNI.</p><p v-if="selectedStudent" class="mt-2 text-sm text-[var(--color-graphite)]" role="status">Seleccionado: {{ selectedStudent.apellidoNombre }} · DNI {{ selectedStudent.dni }}</p><p v-if="enrollmentError" class="mt-3 text-sm text-[#a31118]" role="alert">{{ enrollmentError }}</p><ul class="mt-4 divide-y divide-[var(--color-border)]"> <li v-for="row in workspace.results" :key="row.id" class="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span><strong>{{ row.alumno.apellidoNombre }}</strong><span class="ml-2 text-[var(--color-graphite)]">{{ academicLabel(row.condicion) }}</span></span><button v-if="workspace.detail.estadoMesa !== 'FINALIZADA'" type="button" class="font-semibold text-[var(--color-brand)]" @click="removeEnrollment(row)">Dar de baja</button></li></ul><p v-if="!workspace.results.length" class="mt-4 text-sm text-[var(--color-graphite)]">No hay inscriptos activos.</p></section><ExamResultPanel :results="workspace.results" :version="workspace.detail.version" :status="workspace.detail.estadoMesa" :save-result="saveResult" :reload-results="reloadResults" :can-close="tribunalComplete(workspace.detail.tribunales)" :close-table="(version) => closeExamTable(examId, version)" :reopen-table="(reason, version) => reopenExamTable(examId, reason, version)" can-reopen @changed="loadWorkspace" /></template></template>
   </main>
 </template>
 
