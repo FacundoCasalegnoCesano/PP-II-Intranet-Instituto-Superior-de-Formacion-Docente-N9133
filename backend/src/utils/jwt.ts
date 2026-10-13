@@ -35,8 +35,8 @@ export const generateRefreshToken = (payload: Omit<TokenPayload, 'type'>): strin
   );
 };
 
-// Hash del refresh token para almacenar en BD (sha256)
-export const hashRefreshToken = (token: string): string => {
+// Huella SHA-256 de access y refresh tokens para almacenar en BD.
+export const hashSessionToken = (token: string): string => {
   return crypto.createHash('sha256').update(token).digest('hex');
 };
 

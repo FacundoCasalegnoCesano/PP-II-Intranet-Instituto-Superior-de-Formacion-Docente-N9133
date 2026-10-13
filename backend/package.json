@@ -18,6 +18,8 @@
     "create:admin:dev": "tsx src/scripts/createAdmin.ts",
     "admin:reset-password": "tsx src/scripts/resetAdminPassword.ts",
     "admin:list": "tsx src/scripts/listAdmins.ts",
+    "sessions:migrate-hashes": "node dist/scripts/migrateSessionTokenHashes.js",
+    "sessions:purge": "node dist/scripts/purgeExpiredSessions.js",
     "demo:seed": "npm run build && node dist/scripts/seedInstitutionalDemo.js"
   },
   "engines": {

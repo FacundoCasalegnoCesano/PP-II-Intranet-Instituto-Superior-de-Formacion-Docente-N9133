@@ -3,7 +3,7 @@ import { hashPassword, comparePassword } from '../utils/bcrypt.js';
 import {
   generateAccessToken,
   generateRefreshToken,
-  hashRefreshToken,
+  hashSessionToken,
   verifyAccessToken,
   verifyRefreshToken,
   type TokenPayload
@@ -148,14 +148,14 @@ class AuthService {
 
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
-    const refreshTokenHash = hashRefreshToken(refreshToken);
+    const refreshTokenHash = hashSessionToken(refreshToken);
 
     const decodedAccess = verifyAccessToken(accessToken);
     const decodedRefresh = verifyRefreshToken(refreshToken);
 
     const session = await prisma.sesion.create({
       data: {
-        token: accessToken,
+        token: hashSessionToken(accessToken),
         refreshTokenHash,
         refreshTokenExpira: new Date(decodedRefresh.exp! * 1000),
         usuarioId: user.idUsuario,
@@ -200,7 +200,7 @@ class AuthService {
 
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
-    const refreshTokenHash = hashRefreshToken(refreshToken);
+    const refreshTokenHash = hashSessionToken(refreshToken);
 
     const decodedAccess = verifyAccessToken(accessToken);
     const decodedRefresh = verifyRefreshToken(refreshToken);
@@ -213,7 +213,7 @@ class AuthService {
 
     const newSession = await prisma.sesion.create({
       data: {
-        token: accessToken,
+        token: hashSessionToken(accessToken),
         refreshTokenHash,
         refreshTokenExpira: new Date(decodedRefresh.exp! * 1000),
         familiaId: session.familiaId,
@@ -267,7 +267,7 @@ class AuthService {
       }
 
       // Buscar la sesión por hash del refresh token
-      const refreshTokenHash = hashRefreshToken(refreshToken);
+      const refreshTokenHash = hashSessionToken(refreshToken);
       const session = await prisma.sesion.findFirst({ where: { refreshTokenHash } });
       if (!session || !session.refreshTokenExpira || session.refreshTokenExpira < new Date()) throw new Error('Refresh token inválido o expirado');
 
@@ -283,7 +283,7 @@ class AuthService {
 
       const newAccessToken = generateAccessToken(payload);
       const newRefreshToken = generateRefreshToken(payload);
-      const newRefreshTokenHash = hashRefreshToken(newRefreshToken);
+      const newRefreshTokenHash = hashSessionToken(newRefreshToken);
 
       const decodedAccess = verifyAccessToken(newAccessToken);
       const decodedRefresh = verifyRefreshToken(newRefreshToken);
@@ -294,7 +294,7 @@ class AuthService {
           await tx.sesion.updateMany({ where: { familiaId: session.familiaId, revocadaEn: null }, data: { revocadaEn: new Date(), cerradaEn: new Date() } });
           return true;
         }
-        await tx.sesion.create({ data: { token: newAccessToken, refreshTokenHash: newRefreshTokenHash, refreshTokenExpira: new Date(decodedRefresh.exp! * 1000), familiaId: session.familiaId, usuarioId: user.idUsuario, expiraEn: new Date(decodedAccess.exp! * 1000), ipAddress: session.ipAddress ?? null, userAgent: session.userAgent ?? null } });
+        await tx.sesion.create({ data: { token: hashSessionToken(newAccessToken), refreshTokenHash: newRefreshTokenHash, refreshTokenExpira: new Date(decodedRefresh.exp! * 1000), familiaId: session.familiaId, usuarioId: user.idUsuario, expiraEn: new Date(decodedAccess.exp! * 1000), ipAddress: session.ipAddress ?? null, userAgent: session.userAgent ?? null } });
         return false;
       });
 

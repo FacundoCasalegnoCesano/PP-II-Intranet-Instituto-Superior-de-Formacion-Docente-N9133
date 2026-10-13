@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import config from '../config/env.js';
 import { sanitizeRequestPath } from '../utils/requestPrivacy.js';
+import { AppError } from '../utils/AppError.js';
 
 const SENSITIVE_FIELDS = [
   'password', 'passwordHash', 'currentPassword', 'newPassword',
@@ -28,8 +28,8 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
     : sanitizeRequestPath(req.path);
 
   console.error('❌ Error:', {
-    message: err.message,
-    stack: config.nodeEnv === 'development' ? err.stack : undefined,
+    name: typeof err?.name === 'string' ? err.name : 'Error',
+    code: typeof err?.code === 'string' ? err.code : undefined,
     path: requestPath,
     method: req.method,
     body: sanitizeBody(req.body),
@@ -37,6 +37,11 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
     params: sanitizeBody(req.params),
     user: req.user?.id
   });
+
+  if (err instanceof AppError) {
+    res.status(err.statusCode).json({ success: false, message: err.message });
+    return;
+  }
 
   // Prisma errors
   if (err.code === 'P2002') {
@@ -82,11 +87,5 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
     return;
   }
 
-  // Generic error
-  const statusCode = err.statusCode || 500;
-  res.status(statusCode).json({
-    success: false,
-    message: err.message || 'Error interno del servidor',
-    ...(config.nodeEnv === 'development' && { stack: err.stack })
-  });
+  res.status(500).json({ success: false, message: 'Error interno del servidor' });
 };
