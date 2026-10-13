@@ -40,6 +40,11 @@ function statusClass(status: string): string {
   if (status === 'EN_PROCESO') return 'bg-amber-100 text-amber-900'
   return 'bg-[#f5eaea] text-[var(--color-brand)]'
 }
+
+function enrollmentCount(count: number): string {
+  if (count === 1) return '1 inscripto'
+  return `${count} inscriptos`
+}
 </script>
 
 <template>
@@ -50,13 +55,13 @@ function statusClass(status: string): string {
           <td class="px-4 py-4"><RouterLink :to="{ name: props.detailRouteName, params: { id: exam.id }, query: props.routeQuery }" class="inline-flex min-h-11 items-center font-semibold text-[var(--color-brand)]">{{ exam.materia.nombre }}</RouterLink><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ exam.materia.carrera?.nombre ?? 'Carrera no informada' }}</p></td>
           <td class="px-4 py-4 text-sm"><p>{{ examDateLabel(exam.fecha) }}</p><p class="mt-1 text-[var(--color-graphite)]">{{ academicLabel(exam.tipoExamen) }} · llamado {{ exam.llamado }}</p></td>
           <td class="px-4 py-4 text-sm"><p>{{ tribunalSummary(exam) }}</p><p class="mt-1" :class="tribunalComplete(exam) ? 'text-[#245c32]' : 'text-amber-800'">{{ tribunalComplete(exam) ? 'Completo' : 'Incompleto' }}</p></td>
-          <td class="px-4 py-4"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(exam.estadoMesa)">{{ academicLabel(exam.estadoMesa) }}</span><p class="mt-2 text-xs text-[var(--color-graphite)]">{{ exam._count.inscripciones }} inscripto(s)</p></td>
+          <td class="px-4 py-4"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(exam.estadoMesa)">{{ academicLabel(exam.estadoMesa) }}</span><p class="mt-2 text-xs text-[var(--color-graphite)]">{{ enrollmentCount(exam._count.inscripciones) }}</p></td>
           <td class="px-4 py-4 text-right"><RouterLink :to="{ name: props.detailRouteName, params: { id: exam.id }, query: props.routeQuery }" class="inline-flex min-h-11 items-center font-semibold text-[var(--color-brand)]">Ver detalle</RouterLink></td>
         </tr>
       </template>
       <template #cards>
         <article v-for="exam in props.exams" :key="exam.id" class="rounded-lg border border-[var(--color-border)] p-4">
-          <RouterLink :to="{ name: props.detailRouteName, params: { id: exam.id }, query: props.routeQuery }" class="font-semibold text-[var(--color-brand)]">{{ exam.materia.nombre }}</RouterLink><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ exam.materia.carrera?.nombre ?? 'Carrera no informada' }}</p><dl class="mt-3 grid gap-2 text-sm"><div><dt class="font-semibold">Fecha</dt><dd>{{ examDateLabel(exam.fecha) }}</dd></div><div><dt class="font-semibold">Tipo / llamado</dt><dd>{{ academicLabel(exam.tipoExamen) }} · llamado {{ exam.llamado }}</dd></div><div><dt class="font-semibold">Tribunal</dt><dd>{{ tribunalSummary(exam) }}</dd></div><div><dt class="font-semibold">Estado</dt><dd><span class="font-semibold">{{ academicLabel(exam.estadoMesa) }}</span> · {{ exam._count.inscripciones }} inscripto(s)</dd></div></dl><RouterLink :to="{ name: props.detailRouteName, params: { id: exam.id }, query: props.routeQuery }" class="mt-4 inline-flex min-h-11 items-center font-semibold text-[var(--color-brand)]">Ver detalle</RouterLink>
+          <RouterLink :to="{ name: props.detailRouteName, params: { id: exam.id }, query: props.routeQuery }" class="font-semibold text-[var(--color-brand)]">{{ exam.materia.nombre }}</RouterLink><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ exam.materia.carrera?.nombre ?? 'Carrera no informada' }}</p><dl class="mt-3 grid gap-2 text-sm"><div><dt class="font-semibold">Fecha</dt><dd>{{ examDateLabel(exam.fecha) }}</dd></div><div><dt class="font-semibold">Tipo / llamado</dt><dd>{{ academicLabel(exam.tipoExamen) }} · llamado {{ exam.llamado }}</dd></div><div><dt class="font-semibold">Tribunal</dt><dd>{{ tribunalSummary(exam) }}</dd></div><div><dt class="font-semibold">Estado</dt><dd><span class="font-semibold">{{ academicLabel(exam.estadoMesa) }}</span> · {{ enrollmentCount(exam._count.inscripciones) }}</dd></div></dl><RouterLink :to="{ name: props.detailRouteName, params: { id: exam.id }, query: props.routeQuery }" class="mt-4 inline-flex min-h-11 items-center font-semibold text-[var(--color-brand)]">Ver detalle</RouterLink>
         </article>
       </template>
     </AdminTable>

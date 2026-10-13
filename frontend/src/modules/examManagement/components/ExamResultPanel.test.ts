@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/vue'
+import { render, screen, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import ExamResultPanel from './ExamResultPanel.vue'
@@ -77,6 +77,19 @@ describe('ExamResultPanel', () => {
     expect(saveResult).toHaveBeenCalledWith({ alumnoId: 13, nota: 0, expectedVersion: 7 })
   })
 
+  it('associates an invalid grade with its field for assistive technology', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    const grade = screen.getByLabelText('Nota de Lucía Fernández')
+
+    await user.click(screen.getByRole('button', { name: 'Guardar resultado de Lucía Fernández' }))
+
+    expect(grade).toHaveAttribute('aria-invalid', 'true')
+    const errorId = grade.getAttribute('aria-describedby')
+    expect(errorId).toBe('exam-grade-error-21')
+    expect(document.getElementById(errorId!)).toHaveAttribute('role', 'alert')
+  })
+
   it('sends absence independently from a missing note', async () => {
     const saveResult = vi.fn().mockResolvedValue({ version: 8 })
     const user = userEvent.setup()
@@ -114,14 +127,14 @@ describe('ExamResultPanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'Cerrar y publicar mesa' }))
 
-    expect(screen.getByRole('dialog', { name: 'Confirmar cierre y publicación' })).toBeVisible()
+    expect(screen.getByRole('alertdialog', { name: 'Confirmar cierre y publicación' })).toBeVisible()
     expect(screen.getByText('Calificados')).toBeVisible()
     expect(screen.getByText('Ausentes')).toBeVisible()
     expect(screen.getByText('Pendientes')).toBeVisible()
     expect(closeTable).not.toHaveBeenCalled()
 
-    await user.click(screen.getByRole('button', { name: 'Cancelar cierre' }))
-    expect(screen.queryByRole('dialog', { name: 'Confirmar cierre y publicación' })).toBeNull()
+    await user.click(within(screen.getByRole('alertdialog')).getAllByRole('button', { name: 'Cancelar' }).at(-1)!)
+    expect(screen.queryByRole('alertdialog', { name: 'Confirmar cierre y publicación' })).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Cerrar y publicar mesa' }))
     await user.click(screen.getByRole('button', { name: 'Confirmar cierre y publicación' }))
@@ -135,7 +148,25 @@ describe('ExamResultPanel', () => {
 
     const closeButton = screen.getByRole('button', { name: 'Cerrar y publicar mesa' })
     expect(closeButton).toBeDisabled()
-    expect(screen.queryByRole('dialog', { name: 'Confirmar cierre y publicación' })).toBeNull()
+    expect(screen.queryByRole('alertdialog', { name: 'Confirmar cierre y publicación' })).toBeNull()
+  })
+
+  it('uses singular and plural forms for pending results', () => {
+    renderPanel({ canClose: true })
+    expect(screen.getByText('Queda 1 resultado pendiente.')).toBeVisible()
+  })
+
+  it('uses the plural form when several results are pending', () => {
+    renderPanel({
+      canClose: true,
+      results: [pending, { ...pending, id: 22, alumno: { ...pending.alumno, idUsuario: 14, apellidoNombre: 'Marcos Acosta', dni: '30111222' } }],
+    })
+    expect(screen.getByText('Quedan 2 resultados pendientes.')).toBeVisible()
+  })
+
+  it('reports zero pending results without a placeholder plural', () => {
+    renderPanel({ canClose: true, results: [{ ...pending, resultado: 'CALIFICADO', nota: 8, aprobado: true }] })
+    expect(screen.getByText('Todos los inscriptos tienen resultado.')).toBeVisible()
   })
 
   it('requires a reason when an administrator reopens a published table', async () => {

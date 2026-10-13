@@ -9,8 +9,10 @@ const api = vi.hoisted(() => ({
   listExamTables: vi.fn(), getExamWorkspace: vi.fn(), getExamTable: vi.fn(), listSubjectOptions: vi.fn(), listCareerOptions: vi.fn(), listTeacherOptions: vi.fn(),
   createExamTable: vi.fn(), updateExamTable: vi.fn(), assignTribunalMember: vi.fn(), removeTribunalMember: vi.fn(), reloadExamResults: vi.fn(), saveExamResult: vi.fn(), closeExamTable: vi.fn(), reopenExamTable: vi.fn(), enrollStudent: vi.fn(), withdrawStudent: vi.fn(),
 }))
+const adminApi = vi.hoisted(() => ({ listActiveStudents: vi.fn() }))
 
 vi.mock('../api/examsApi', () => api)
+vi.mock('@/modules/admin/api/adminApi', () => ({ adminApi }))
 vi.mock('@/ui/feedback', () => ({ useFeedback: () => ({ success: vi.fn(), error: vi.fn() }) }))
 
 const mesa = {
@@ -38,10 +40,12 @@ const enrolledWorkspace = {
 }
 
 beforeEach(() => {
+  vi.useRealTimers()
   vi.clearAllMocks()
   api.listSubjectOptions.mockResolvedValue({ data: [{ id: 5, nombre: 'Pedagogía' }], pagination: {} })
   api.listCareerOptions.mockResolvedValue({ data: [{ id: 2, nombre: 'Profesorado de Inicial' }], pagination: {} })
   api.listTeacherOptions.mockResolvedValue({ data: [{ idUsuario: 30, apellidoNombre: 'Docente Nuevo' }], pagination: {} })
+  adminApi.listActiveStudents.mockResolvedValue({ data: [], pagination: {} })
 })
 
 async function renderList(exam = mesa) {
@@ -61,6 +65,13 @@ async function renderList(exam = mesa) {
 }
 
 describe('AdminExamsView', () => {
+  it.each([[0, '0 inscriptos'], [1, '1 inscripto'], [2, '2 inscriptos']] as const)(
+    'pluralizes the active enrollment count for %s', async (count, expected) => {
+      await renderList({ ...mesa, _count: { inscripciones: count } })
+      expect((await screen.findAllByText(expected)).length).toBeGreaterThan(0)
+    },
+  )
+
   it('uses backend filters and presents the institutional mesa summary', async () => {
     await renderList()
 
@@ -138,6 +149,10 @@ describe('AdminExamsView', () => {
       .mockResolvedValueOnce({ detail: { ...editableMesa, version: 6 }, results: [] })
     api.assignTribunalMember.mockRejectedValue({ status: 409 })
     api.enrollStudent.mockRejectedValue({ status: 409 })
+    adminApi.listActiveStudents.mockResolvedValue({
+      data: [{ idUsuario: 13, apellidoNombre: 'Lucía Fernández', dni: '42666888', email: 'lucia@example.test', activo: true, rol: 'ALUMNO' }],
+      pagination: {},
+    })
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -158,10 +173,106 @@ describe('AdminExamsView', () => {
     expect(await screen.findByText(/otra persona modificó el tribunal/i)).toBeVisible()
     expect(api.getExamWorkspace).toHaveBeenCalledTimes(2)
 
-    await user.type(screen.getByLabelText('ID de cuenta del alumno'), '13')
+    await user.type(screen.getByLabelText('Buscar alumno por nombre o DNI'), '42666888')
+    await screen.findByRole('option', { name: 'Lucía Fernández · DNI 42666888' })
+    await user.selectOptions(screen.getByLabelText('Alumno'), '13')
     await user.click(screen.getByRole('button', { name: 'Inscribir' }))
     expect(await screen.findByText(/otra persona modificó las inscripciones/i)).toBeVisible()
+    expect(api.enrollStudent).toHaveBeenCalledWith(9, 13, 'REGULAR', 5)
     expect(api.getExamWorkspace).toHaveBeenCalledTimes(3)
+  })
+
+  it('debounces student identity lookup and preserves the selected student after an enrollment failure', async () => {
+    api.getExamWorkspace.mockResolvedValue(workspace)
+    adminApi.listActiveStudents
+      .mockRejectedValueOnce(new Error('temporary lookup failure'))
+      .mockResolvedValueOnce({
+        data: [{ idUsuario: 13, apellidoNombre: 'Lucía Fernández', dni: '42666888', email: 'lucia@example.test', activo: true, rol: 'ALUMNO' }],
+        pagination: {},
+      })
+    api.enrollStudent.mockRejectedValue(new Error('write failed'))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
+        { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
+        { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsView },
+      ],
+    })
+    await router.push('/app/administracion/mesas/9')
+    await router.isReady()
+    render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
+    await screen.findByText('Resultados de la mesa')
+    const initialUser = userEvent.setup()
+    await initialUser.click(screen.getByRole('button', { name: 'Inscribir' }))
+    expect(screen.getByText('Seleccioná un alumno de la lista.')).toBeVisible()
+    vi.useFakeTimers()
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    await user.type(screen.getByLabelText('Buscar alumno por nombre o DNI'), 'luc')
+    expect(adminApi.listActiveStudents).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(299)
+    expect(adminApi.listActiveStudents).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await Promise.resolve()
+    expect(screen.getByRole('button', { name: 'Reintentar búsqueda' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Reintentar búsqueda' }))
+    await vi.advanceTimersByTimeAsync(300)
+    await Promise.resolve()
+    expect(screen.getByRole('option', { name: 'Lucía Fernández · DNI 42666888' })).toBeVisible()
+    await user.selectOptions(screen.getByLabelText('Alumno'), '13')
+    await user.click(screen.getByRole('button', { name: 'Inscribir' }))
+
+    expect(await screen.findByText(/no se pudo registrar la inscripción/i)).toBeVisible()
+    expect(screen.getByText(/Seleccionado: Lucía Fernández · DNI 42666888/)).toBeVisible()
+    expect(api.enrollStudent).toHaveBeenCalledWith(9, 13, 'REGULAR', 4)
+    vi.useRealTimers()
+  })
+
+  it('ignores an older student search response after a newer search completes', async () => {
+    let resolveOlder!: (value: { data: Array<{ idUsuario: number; apellidoNombre: string; dni: string; email: string; activo: boolean; rol: string }>; pagination: Record<string, never> }) => void
+    adminApi.listActiveStudents
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOlder = resolve }))
+      .mockResolvedValueOnce({
+        data: [{ idUsuario: 14, apellidoNombre: 'Lucía Fernández', dni: '42666888', email: 'lucia@example.test', activo: true, rol: 'ALUMNO' }],
+        pagination: {},
+      })
+    api.getExamWorkspace.mockResolvedValue(workspace)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
+        { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
+        { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsView },
+      ],
+    })
+    await router.push('/app/administracion/mesas/9')
+    await router.isReady()
+    render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
+    await screen.findByText('Resultados de la mesa')
+    vi.useFakeTimers()
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const search = screen.getByLabelText('Buscar alumno por nombre o DNI')
+
+    await user.type(search, 'lu')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(adminApi.listActiveStudents).toHaveBeenCalledTimes(1)
+    await user.type(search, 'cía')
+    await vi.advanceTimersByTimeAsync(300)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(screen.getByRole('option', { name: 'Lucía Fernández · DNI 42666888' })).toBeVisible()
+
+    resolveOlder({
+      data: [{ idUsuario: 13, apellidoNombre: 'Lucía Antigua', dni: '11111111', email: 'old@example.test', activo: true, rol: 'ALUMNO' }],
+      pagination: {},
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(screen.queryByRole('option', { name: /Lucía Antigua/ })).not.toBeInTheDocument()
+    expect(adminApi.listActiveStudents).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
   })
 
   it('refreshes the workspace after a withdrawal conflict and allows retry', async () => {

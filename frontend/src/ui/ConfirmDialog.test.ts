@@ -62,4 +62,18 @@ describe('ConfirmDialog', () => {
     expect(within(dialog).getByRole('alert')).toHaveTextContent('No pudimos completar la inscripción.')
     expect(dialog).toHaveAttribute('aria-describedby', 'confirm-description confirm-error')
   })
+
+  it('renders optional supporting content when a confirmation needs it', () => {
+    render(ConfirmDialog, {
+      props: { open: true, title: 'Cerrar mesa', description: 'Se publicarán los resultados.' },
+      slots: { content: '<dl><dt>Resultados pendientes</dt><dd>2</dd></dl>' },
+    })
+
+    const dialog = screen.getByRole('alertdialog')
+    expect(within(dialog).getByText('Resultados pendientes')).toBeVisible()
+    expect(within(dialog).getByText('2')).toBeVisible()
+    const describedBy = dialog.getAttribute('aria-describedby')?.split(' ') ?? []
+    expect(describedBy).toContain('confirm-content')
+    expect(document.getElementById('confirm-content')).toContainElement(within(dialog).getByText('Resultados pendientes'))
+  })
 })

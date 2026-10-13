@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { render, screen, within } from '@testing-library/vue'
@@ -125,6 +125,8 @@ function expectNoCrossRoleContent(role: HomeRole) {
 }
 
 describe('HomeView', () => {
+  afterEach(() => vi.useRealTimers())
+
   beforeEach(() => {
     setActivePinia(createPinia())
     state.activeRole = 'ALUMNO'
@@ -184,6 +186,25 @@ describe('HomeView', () => {
     expect(within(list).queryByText('Finalizada')).not.toBeInTheDocument()
     expect(within(list).queryByText('Pasada')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ver mis exámenes' })).toHaveAttribute('data-route-name', 'student-exams')
+  })
+
+  it('removes an exam at its local time boundary and clears the clock on unmount', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2027-10-10T11:59:30.000Z'))
+    vi.mocked(fetchMyExamEnrollments).mockResolvedValueOnce([
+      { id: 2, mesaId: 2, materia: { id: 2, nombre: 'Examen próximo' }, fecha: '2027-10-10T12:00:00.000Z', llamado: 1, estadoMesa: 'ABIERTA', activo: true, condicion: 'REGULAR', estadoResultado: 'PENDIENTE', nota: null, aprobado: null, notaMinima: 6 },
+    ])
+
+    const view = renderHome()
+    expect(await screen.findByText('Examen próximo')).toBeVisible()
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(screen.queryByText('Examen próximo')).not.toBeInTheDocument()
+    expect(screen.getByText(/No tenés próximos exámenes/)).toBeVisible()
+    expect(fetchMyExamEnrollments).toHaveBeenCalledTimes(1)
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
   })
 
   it('shows the complete student access matrix and preserves its progress requests', async () => {

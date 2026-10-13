@@ -23,12 +23,14 @@ const loadingCareers = ref(false)
 const loadingTrajectory = ref(false)
 const error = ref('')
 const upcomingExams = ref<ExamEnrollment[]>([])
+const localNow = ref(Date.now())
 const loadingUpcomingExams = ref(false)
 const upcomingExamsError = ref('')
 let careerRequest = 0
 let trajectoryRequest = 0
 let upcomingExamsRequest = 0
 let mounted = true
+let clockInterval: ReturnType<typeof setInterval> | undefined
 const isStudent = computed(() => auth.activeRole === 'ALUMNO')
 const progress = computed(() => trajectory.value ? progressFromTrajectory(trajectory.value) : null)
 const selectedCareer = computed(() => careers.value.find(({ carreraId }) => carreraId === selectedCareerId.value)?.carrera)
@@ -86,7 +88,7 @@ const upcomingExamList = computed(() => upcomingExams.value
   .filter((exam) => {
     const timestamp = new Date(exam.fecha).getTime()
     return Number.isFinite(timestamp)
-      && timestamp > Date.now()
+      && timestamp > localNow.value
       && exam.activo !== false
       && exam.estadoMesa !== 'FINALIZADA'
   })
@@ -193,12 +195,13 @@ watch(() => [auth.user?.idUsuario ?? null, auth.activeRole ?? null], ([userId, r
   }
 })
 onMounted(() => {
+  clockInterval = setInterval(() => { localNow.value = Date.now() }, 60_000)
   if (isStudent.value) {
     void loadStudentHome()
     void loadUpcomingExams()
   }
 })
-onUnmounted(() => { mounted = false; careerRequest++; trajectoryRequest++; upcomingExamsRequest++ })
+onUnmounted(() => { mounted = false; careerRequest++; trajectoryRequest++; upcomingExamsRequest++; if (clockInterval !== undefined) clearInterval(clockInterval) })
 </script>
 
 <template>

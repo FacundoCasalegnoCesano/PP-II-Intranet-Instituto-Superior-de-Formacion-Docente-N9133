@@ -35,9 +35,23 @@ describe('AppShell', () => {
   it('offers role switching only when multiple roles are available and opens the selector', async () => {
     const user = userEvent.setup()
     render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: () => () => h('a', {}, 'Mi perfil') }) } } })
-    await user.click(screen.getByRole('button', { name: /Ada Lovelace/i }))
-    await user.click(screen.getByRole('menuitem', { name: 'Cambiar rol' }))
+    await user.click(screen.getByRole('button', { name: 'Menú de cuenta' }))
+    await user.click(screen.getByRole('button', { name: 'Cambiar rol' }))
     expect(push).toHaveBeenCalledWith({ name: 'role-selection' })
+  })
+
+  it('exposes account links as a controlled native disclosure', async () => {
+    const user = userEvent.setup()
+    render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+    const trigger = screen.getByRole('button', { name: 'Menú de cuenta' })
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger).toHaveAttribute('aria-controls', 'account-disclosure')
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getAllByRole('link', { name: 'Mi perfil' })).toHaveLength(2)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cambiar rol' })).not.toHaveAttribute('role')
   })
 
   it('opens and closes the responsive navigation drawer from the keyboard', async () => {
@@ -186,9 +200,9 @@ describe('AppShell', () => {
     })
     render(AppShell, { global: { stubs: { RouterLink } } })
 
-    expect(screen.getByRole('link', { name: 'Mis cursadas' })).toHaveAttribute('data-route-name', 'teacher-courses')
+    expect(screen.getByRole('link', { name: 'Cursado' })).toHaveAttribute('data-route-name', 'teacher-courses')
     await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
-    expect(screen.getAllByRole('link', { name: 'Mis cursadas' })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Cursado' })).toHaveLength(2)
   })
 
   it.each([
@@ -197,7 +211,7 @@ describe('AppShell', () => {
     'teacher-course-classes',
     'teacher-course-grades',
     'teacher-course-summary',
-  ])('marks Mis cursadas active for route %s', (routeName) => {
+  ])('marks Cursado active for route %s', (routeName) => {
     authState.activeRole = 'PROFESOR'
     routeState.name = routeName
     const RouterLink = defineComponent({
@@ -207,7 +221,7 @@ describe('AppShell', () => {
     })
     render(AppShell, { global: { stubs: { RouterLink } } })
 
-    expect(screen.getByRole('link', { name: 'Mis cursadas' })).toHaveClass('bg-white/20', 'font-semibold')
+    expect(screen.getByRole('link', { name: 'Cursado' })).toHaveClass('bg-white/20', 'font-semibold')
   })
 
   it('keeps the active teacher link exposed with aria-current inside the mobile drawer', async () => {
@@ -221,10 +235,10 @@ describe('AppShell', () => {
     })
     render(AppShell, { global: { stubs: { RouterLink } } })
 
-    expect(screen.getByRole('link', { name: 'Mis cursadas' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Cursado' })).toHaveAttribute('aria-current', 'page')
     await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
-    expect(screen.getAllByRole('link', { name: 'Mis cursadas' })).toHaveLength(2)
-    for (const link of screen.getAllByRole('link', { name: 'Mis cursadas' })) {
+    expect(screen.getAllByRole('link', { name: 'Cursado' })).toHaveLength(2)
+    for (const link of screen.getAllByRole('link', { name: 'Cursado' })) {
       expect(link).toHaveAttribute('aria-current', 'page')
     }
   })

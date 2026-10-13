@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { defineComponent, h, nextTick, reactive } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import type { Component } from 'vue'
 import type { AcademicSummary, GradeRecord, TeacherCourse, TeacherCourseListResult, TeacherCourseSection } from '../types/teacherCourses'
 import { apiErrorFromPayload } from '@/core/api/errors'
@@ -324,7 +325,8 @@ describe('TeacherCoursesView', () => {
     await waitFor(() => expect(screen.getByText('Alumno nuevo')).toBeVisible())
     resolveFirst([gradeFixture])
 
-    await waitFor(() => expect(screen.getByText(/Solicitudes obsoletas descartadas: 1/)).toBeVisible())
+    await flushPromises()
+    expect(screen.queryByText(/Solicitudes obsoletas descartadas/)).not.toBeInTheDocument()
     expect(screen.queryByText('Lucia Test')).not.toBeInTheDocument()
     expect(mocks.saveGrades).not.toHaveBeenCalled()
   })
@@ -423,7 +425,8 @@ describe('TeacherCoursesView', () => {
     await waitFor(() => expect(screen.getByText('Alumno nuevo')).toBeVisible())
     resolveRefresh([gradeFixture])
 
-    await waitFor(() => expect(screen.getByText(/Solicitudes obsoletas descartadas: 1/)).toBeVisible())
+    await flushPromises()
+    expect(screen.queryByText(/Solicitudes obsoletas descartadas/)).not.toBeInTheDocument()
     expect(screen.getByText('No hay calificaciones cargadas todavía. Podés cargar la primera evaluación.')).toBeVisible()
   })
 
@@ -450,7 +453,8 @@ describe('TeacherCoursesView', () => {
 
     expect(await screen.findByText('Alumno nuevo')).toBeVisible()
     expect(await screen.findByLabelText('Nota')).toHaveValue(8)
-    await waitFor(() => expect(screen.getByText(/Solicitudes obsoletas descartadas: 1/)).toBeVisible())
+    await flushPromises()
+    expect(screen.queryByText(/Solicitudes obsoletas descartadas/)).not.toBeInTheDocument()
     expect(screen.queryByText('Lucia Test')).not.toBeInTheDocument()
   })
 
@@ -566,6 +570,18 @@ describe('TeacherCoursesView', () => {
     expect(status).toHaveClass(className)
   })
 
+  it('uses singular grammar for a single enrolled student', async () => {
+    mocks.route.name = 'teacher-course-students'
+    mocks.route.params = { id: '12' }
+    mocks.route.fullPath = '/profesor/cursadas/12/alumnos'
+    mocks.get.mockResolvedValue(course(12, new Date().getFullYear(), true))
+    mocks.listStudents.mockResolvedValue([{ alumnoId: 13, apellidoNombre: 'Lucia Test', dni: 42666888, email: 'lucia@example.test' }])
+
+    renderView()
+
+    expect(await screen.findByText('Contexto: 1 alumno inscripto')).toBeVisible()
+  })
+
   it('does not let an old students response replace the newly selected course', async () => {
     mocks.route.name = 'teacher-course-students'
     mocks.route.params = { id: '12' }
@@ -583,11 +599,12 @@ describe('TeacherCoursesView', () => {
 
     resolveFirst([{ alumnoId: 21, apellidoNombre: 'Alumno antiguo', dni: 40111222, email: 'antiguo@example.test' }])
 
-    await waitFor(() => expect(screen.getByText(/Solicitudes obsoletas descartadas: 1/)).toBeVisible())
+    await flushPromises()
+    expect(screen.queryByText(/Solicitudes obsoletas descartadas/)).not.toBeInTheDocument()
     expect(screen.queryByText('Alumno antiguo')).not.toBeInTheDocument()
   })
 
-  it('counts and discards a stale course response', async () => {
+  it('discards a stale course response without showing internal request counts', async () => {
     let resolveFirst!: (value: TeacherCourseListResult) => void
     const first = new Promise<TeacherCourseListResult>((resolve) => { resolveFirst = resolve })
     mocks.list.mockImplementationOnce(() => first).mockResolvedValueOnce(result([course(4, 2024, false)]))
@@ -598,7 +615,8 @@ describe('TeacherCoursesView', () => {
     expect((await screen.findAllByText('Materia 4'))[0]).toBeVisible()
     resolveFirst(result([course(5, new Date().getFullYear(), true)]))
 
-    await waitFor(() => expect(screen.getByText(/Solicitudes obsoletas descartadas: 1/)).toBeVisible())
+    await flushPromises()
+    expect(screen.queryByText(/Solicitudes obsoletas descartadas/)).not.toBeInTheDocument()
     expect(screen.queryByText('Materia 5')).not.toBeInTheDocument()
   })
 })

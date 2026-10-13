@@ -41,7 +41,7 @@ const adminNavItems = [
   { name: 'admin-homologations', label: 'Homologaciones', icon: BadgeCheck },
 ] as const
 const teacherNavItems = [
-  { name: 'teacher-courses', label: 'Mis cursadas', icon: BookOpen },
+  { name: 'teacher-courses', label: 'Cursado', icon: BookOpen },
   { name: 'teacher-exams', label: 'Mis mesas', icon: ClipboardList },
 ] as const
 const navItems = computed(() => {
@@ -131,14 +131,14 @@ async function logout(): Promise<void> {
         <button ref="drawerTrigger" type="button" class="min-h-11 min-w-11 rounded p-2 lg:hidden" aria-label="Abrir navegación" :aria-expanded="drawerOpen" aria-controls="mobile-navigation" @click="drawerOpen = true"><Menu class="size-6" aria-hidden="true" /></button>
         <p class="hidden text-sm text-[var(--color-graphite)] sm:block">Instituto Superior de Formación Docente N.º 9133</p>
         <div class="relative ml-auto">
-          <button ref="userMenuTrigger" type="button" class="flex min-h-11 items-center gap-2 rounded-md px-2 py-1 text-left" :aria-expanded="userMenuOpen" aria-haspopup="menu" @click="userMenuOpen = !userMenuOpen">
+          <button id="account-disclosure-trigger" ref="userMenuTrigger" type="button" class="flex min-h-11 items-center gap-2 rounded-md px-2 py-1 text-left" aria-label="Menú de cuenta" :aria-expanded="userMenuOpen" aria-controls="account-disclosure" @click="userMenuOpen = !userMenuOpen">
             <span class="grid size-8 place-items-center rounded-full bg-[#f4e7e7] font-semibold text-[var(--color-brand)]">{{ auth.user?.apellidoNombre?.charAt(0) ?? 'U' }}</span>
             <span class="hidden sm:block"><span class="block text-sm font-semibold text-[var(--color-text)]">{{ auth.user?.apellidoNombre }}</span><span class="block text-xs text-[var(--color-graphite)]">{{ roleLabel }}</span></span><ChevronDown class="size-4" />
           </button>
-          <div v-if="userMenuOpen" role="menu" class="absolute right-0 z-20 mt-2 w-52 rounded-md border border-[var(--color-border)] bg-white p-1 shadow-lg">
-            <RouterLink :to="{ name: 'profile' }" role="menuitem" class="flex min-h-11 items-center rounded px-3 py-2 hover:bg-[#f6f7f4]" @click="userMenuOpen = false">Mi perfil</RouterLink>
-            <button v-if="canChangeRole" type="button" role="menuitem" class="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[#f6f7f4]" @click="goToRoleSelection"><Repeat2 class="size-4" />Cambiar rol</button>
-            <button type="button" role="menuitem" class="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[#f6f7f4]" @click="confirmLogoutOpen = true; userMenuOpen = false"><LogOut class="size-4" />Cerrar sesión</button>
+          <div v-show="userMenuOpen" id="account-disclosure" class="absolute right-0 z-20 mt-2 w-52 rounded-md border border-[var(--color-border)] bg-white p-1 shadow-lg">
+            <RouterLink :to="{ name: 'profile' }" class="flex min-h-11 items-center rounded px-3 py-2 hover:bg-[#f6f7f4]" @click="userMenuOpen = false">Mi perfil</RouterLink>
+            <button v-if="canChangeRole" type="button" class="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[#f6f7f4]" @click="goToRoleSelection"><Repeat2 class="size-4" />Cambiar rol</button>
+            <button type="button" class="flex min-h-11 w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[#f6f7f4]" @click="confirmLogoutOpen = true; userMenuOpen = false"><LogOut class="size-4" />Cerrar sesión</button>
           </div>
         </div>
       </header>

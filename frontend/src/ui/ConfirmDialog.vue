@@ -64,7 +64,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-if="open" class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#171a18]/45 p-4">
-    <section ref="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" :aria-describedby="error ? 'confirm-description confirm-error' : 'confirm-description'" class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+    <section ref="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" :aria-describedby="['confirm-description', $slots.content ? 'confirm-content' : null, error ? 'confirm-error' : null].filter(Boolean).join(' ')" class="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
       <div class="flex items-start justify-between gap-4">
         <div>
           <h2 id="confirm-title" class="text-xl font-semibold text-[var(--color-text)]">{{ title }}</h2>
@@ -72,6 +72,7 @@ onBeforeUnmount(() => {
         </div>
         <button type="button" class="min-h-11 min-w-11 rounded p-2" aria-label="Cancelar" @click="emit('cancel')"><X class="size-5" aria-hidden="true" /></button>
       </div>
+      <div v-if="$slots.content" id="confirm-content" class="mt-4"><slot name="content" /></div>
       <p v-if="error" id="confirm-error" class="mt-4 rounded-md border border-[#c97578] bg-[#fff7f6] p-3 text-sm text-[var(--color-brand)]" role="alert">{{ error }}</p>
       <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <AppButton ref="cancelButton" variant="secondary" @click="emit('cancel')">Cancelar</AppButton>

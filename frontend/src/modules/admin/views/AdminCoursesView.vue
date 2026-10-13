@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import AdminFilters from '../components/AdminFilters.vue'
 import AdminPagination from '../components/AdminPagination.vue'
@@ -21,55 +21,112 @@ const selected = ref<CourseOffering | null>(null)
 const loading = ref(false)
 const error = ref('')
 const saving = ref(false)
+const editLoading = ref(false)
+const editError = ref('')
+const optionsReady = ref(false)
+const optionsLoading = ref(false)
+const optionsError = ref('')
+const deactivating = ref(false)
 const pagination = ref({ page: 1, limit: 20, total: 0, totalPages: 0 })
 const yearFilter = ref(String(route.query.anioLectivo ?? ''))
 const form = reactive<Record<string, any>>({ materiaId: 0, anioLectivo: new Date().getFullYear(), periodo: 'ANUAL', docenteId: null })
 const fieldError = ref('')
+let listRequest = 0
+let detailRequest = 0
+let editRequest = 0
+let optionsRequest = 0
+let disposed = false
 
 const mode = computed(() => String(route.name))
 const isList = computed(() => mode.value === 'admin-courses')
 const isDetail = computed(() => mode.value === 'admin-course-detail')
 const id = computed(() => Number(route.params.id))
 
-async function loadOptions(): Promise<void> {
-  const [subjectResult, userResult] = await Promise.all([adminApi.listSubjects({ limit: 100 }), adminApi.listUsers({ rol: 'PROFESOR', limit: 100 })])
-  subjects.value = subjectResult.data
-  teachers.value = userResult.data.map((user) => ({ idUsuario: user.idUsuario, apellidoNombre: user.apellidoNombre }))
+async function loadOptions(request = ++optionsRequest, targetRoute = route.fullPath): Promise<boolean> {
+  optionsLoading.value = true
+  optionsError.value = ''
+  try {
+    const [subjectResult, userResult] = await Promise.all([adminApi.listSubjects({ limit: 100 }), adminApi.listUsers({ rol: 'PROFESOR', limit: 100 })])
+    if (disposed || request !== optionsRequest || route.fullPath !== targetRoute) return false
+    subjects.value = subjectResult.data
+    teachers.value = userResult.data.map((user) => ({ idUsuario: user.idUsuario, apellidoNombre: user.apellidoNombre }))
+    optionsReady.value = true
+    return true
+  } catch {
+    if (!disposed && request === optionsRequest && route.fullPath === targetRoute) optionsError.value = 'No pudimos cargar las materias y docentes.'
+    return false
+  } finally {
+    if (!disposed && request === optionsRequest && route.fullPath === targetRoute) optionsLoading.value = false
+  }
 }
 
 async function loadList(): Promise<void> {
+  const request = ++listRequest
+  const targetRoute = route.fullPath
   loading.value = true
   error.value = ''
   try {
     const result = await adminApi.listCourses({ anioLectivo: yearFilter.value ? Number(yearFilter.value) : undefined, page: Number(route.query.page ?? 1) })
+    if (disposed || request !== listRequest || route.fullPath !== targetRoute || !isList.value) return
     courses.value = result.data
     pagination.value = result.pagination
   } catch {
-    error.value = 'No pudimos cargar las cursadas.'
+    if (!disposed && request === listRequest && route.fullPath === targetRoute && isList.value) error.value = 'No pudimos cargar las cursadas.'
   } finally {
-    loading.value = false
+    if (!disposed && request === listRequest && route.fullPath === targetRoute) loading.value = false
   }
 }
 
 async function loadDetail(): Promise<void> {
+  const request = ++detailRequest
+  const targetRoute = route.fullPath
   loading.value = true
+  selected.value = null
   error.value = ''
   try {
-    selected.value = await adminApi.getCourse(id.value)
+    const result = await adminApi.getCourse(id.value)
+    if (disposed || request !== detailRequest || route.fullPath !== targetRoute || !isDetail.value) return
+    selected.value = result
   } catch {
-    error.value = 'No pudimos cargar la cursada.'
+    if (!disposed && request === detailRequest && route.fullPath === targetRoute && isDetail.value) error.value = 'No pudimos cargar la cursada.'
   } finally {
-    loading.value = false
+    if (!disposed && request === detailRequest && route.fullPath === targetRoute) loading.value = false
   }
 }
 
 function reset(): void {
   Object.assign(form, { materiaId: 0, anioLectivo: new Date().getFullYear(), periodo: 'ANUAL', docenteId: null })
   fieldError.value = ''
-  if (mode.value === 'admin-course-edit') void adminApi.getCourse(id.value).then((course) => Object.assign(form, { materiaId: course.materiaId ?? course.materia.id, anioLectivo: course.anioLectivo, periodo: course.periodo, docenteId: course.docenteId ?? null }))
+}
+
+async function loadEdit(): Promise<void> {
+  const request = ++editRequest
+  const targetRoute = route.fullPath
+  editLoading.value = true
+  editError.value = ''
+  optionsReady.value = false
+  selected.value = null
+  reset()
+  const loadedOptions = await loadOptions(++optionsRequest, targetRoute)
+  if (!loadedOptions || disposed || request !== editRequest || route.fullPath !== targetRoute || !isEdit.value) {
+    if (!loadedOptions && request === editRequest && route.fullPath === targetRoute) editError.value = optionsError.value || 'No pudimos cargar los datos para editar.'
+    if (!disposed && request === editRequest && route.fullPath === targetRoute) editLoading.value = false
+    return
+  }
+  try {
+    const course = await adminApi.getCourse(id.value)
+    if (disposed || request !== editRequest || route.fullPath !== targetRoute || !isEdit.value) return
+    selected.value = course
+    Object.assign(form, { materiaId: course.materiaId ?? course.materia.id, anioLectivo: course.anioLectivo, periodo: course.periodo, docenteId: course.docenteId ?? null })
+  } catch {
+    if (!disposed && request === editRequest && route.fullPath === targetRoute && isEdit.value) editError.value = 'No pudimos cargar la cursada para editar.'
+  } finally {
+    if (!disposed && request === editRequest && route.fullPath === targetRoute) editLoading.value = false
+  }
 }
 
 async function save(): Promise<void> {
+  if (saving.value || !optionsReady.value || (isEdit.value && (!selected.value || editLoading.value || editError.value))) return
   fieldError.value = ''
   const result = courseSchema.safeParse(form)
   if (!result.success) { fieldError.value = result.error.issues[0]?.message ?? 'Revisá los datos.'; return }
@@ -83,20 +140,33 @@ async function save(): Promise<void> {
 }
 
 async function deactivate(): Promise<void> {
-  if (!selected.value || !window.confirm('¿Desactivar esta cursada?')) return
-  try { await adminApi.deactivateCourse(selected.value.id); feedback.success('Cursada desactivada.'); await router.replace({ name: 'admin-courses' }) } catch { feedback.error('No se pudo desactivar la cursada.') }
+  if (!selected.value || deactivating.value) return
+  const course = selected.value
+  if (!window.confirm(`¿Desactivar ${course.materia?.nombre ?? 'esta materia'} · ciclo ${course.anioLectivo} (${academicLabel(course.periodo)})?`)) return
+  deactivating.value = true
+  try { await adminApi.deactivateCourse(course.id); feedback.success('Cursada desactivada.'); await router.replace({ name: 'admin-courses' }) } catch { feedback.error('No se pudo desactivar la cursada.') } finally { deactivating.value = false }
 }
 
-onMounted(() => { void loadOptions(); if (isList.value) void loadList(); else if (isDetail.value) void loadDetail(); else reset() })
-watch(() => route.fullPath, () => { if (isList.value) void loadList(); else if (isDetail.value) void loadDetail(); else reset() })
+const isEdit = computed(() => mode.value === 'admin-course-edit')
+function enterRoute(): void {
+  ++listRequest; ++detailRequest; ++editRequest; ++optionsRequest
+  loading.value = false; error.value = ''; selected.value = null
+  if (isList.value) void loadList()
+  else if (isDetail.value) void loadDetail()
+  else if (isEdit.value) void loadEdit()
+  else { void loadOptions(); reset() }
+}
+onMounted(enterRoute)
+watch(() => route.fullPath, enterRoute)
+onBeforeUnmount(() => { disposed = true; ++listRequest; ++detailRequest; ++editRequest; ++optionsRequest })
 </script>
 
 <template>
   <main aria-labelledby="admin-courses-title" class="mx-auto max-w-6xl">
     <div class="flex flex-wrap items-end justify-between gap-4"><div><p class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--color-brand)]">Administración</p><h1 id="admin-courses-title" class="mt-2 text-3xl font-semibold">Cursadas</h1></div><RouterLink v-if="isList" :to="{ name: 'admin-course-create' }" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-4 py-2.5 font-semibold text-white">Nueva cursada</RouterLink></div>
     <template v-if="isList"><form class="mt-6 flex max-w-md items-end gap-3 rounded-xl border border-[var(--color-border)] bg-white p-4" @submit.prevent="router.replace({ query: { anioLectivo: yearFilter || undefined, page: undefined } }).then(loadList)"><label class="flex-1 text-sm font-semibold">Año lectivo<input v-model="yearFilter" inputmode="numeric" class="admin-input" /></label><button class="min-h-11 rounded-lg bg-[var(--color-brand)] px-4 font-semibold text-white">Aplicar</button></form><div class="mt-5"><AdminState :loading="loading" :error="error" :empty="!loading && !error && !courses.length" empty-text="No hay cursadas para mostrar." @retry="loadList"><AdminTable :columns="[{ key: 'subject', label: 'Materia' }, { key: 'year', label: 'Año' }, { key: 'teacher', label: 'Docente' }, { key: 'status', label: 'Estado' }]"><template #rows><tr v-for="course in courses" :key="course.id" class="border-t border-[var(--color-border)]"><td class="px-4 py-3"><RouterLink :to="{ name: 'admin-course-detail', params: { id: course.id } }" class="font-semibold text-[var(--color-brand)]">{{ course.materia?.nombre ?? '—' }}</RouterLink></td><td class="px-4 py-3">{{ course.anioLectivo }}</td><td class="px-4 py-3">{{ course.docente?.apellidoNombre ?? 'Sin asignar' }}</td><td class="px-4 py-3">{{ academicLabel(course.activo ? 'ACTIVA' : 'INACTIVA') }}</td><td class="px-4 py-3 text-right"><RouterLink :to="{ name: 'admin-course-edit', params: { id: course.id } }" class="font-semibold text-[var(--color-brand)]">Editar</RouterLink></td></tr></template><template #cards><article v-for="course in courses" :key="course.id" class="rounded-lg border border-[var(--color-border)] p-4"><RouterLink :to="{ name: 'admin-course-detail', params: { id: course.id } }" class="font-semibold text-[var(--color-brand)]">{{ course.materia?.nombre ?? '—' }}</RouterLink><p class="text-sm text-[var(--color-graphite)]">{{ course.anioLectivo }} · {{ course.docente?.apellidoNombre ?? 'Sin asignar' }}</p></article></template></AdminTable><AdminPagination :pagination="pagination" @change="(page) => router.replace({ query: { ...route.query, page: String(page) } }).then(loadList)" /></AdminState></div></template>
-    <template v-else-if="isDetail"><AdminState :loading="loading" :error="error" @retry="loadDetail"><section v-if="selected" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6"><div class="flex items-start justify-between gap-4"><div><h2 class="text-2xl font-semibold">{{ selected.materia?.nombre }}</h2><p class="text-[var(--color-graphite)]">{{ selected.anioLectivo }} · {{ academicLabel(selected.periodo) }} · {{ selected.docente?.apellidoNombre ?? 'Sin docente' }}</p></div><div class="flex gap-2"><RouterLink :to="{ name: 'admin-course-edit', params: { id: selected.id } }" class="min-h-10 rounded-lg bg-[var(--color-brand)] px-4 py-2 font-semibold text-white">Editar</RouterLink><button type="button" class="min-h-10 rounded-lg border border-[var(--color-border)] px-4 py-2" @click="deactivate">Desactivar</button></div></div><div class="mt-8 rounded-lg bg-[#f6f7f4] p-4"><h3 class="text-xl font-semibold">Horarios oficiales</h3><p class="mt-1 text-sm text-[var(--color-graphite)]">Consultá o publicá el PDF oficial de horarios desde la sección centralizada.</p><RouterLink :to="{ name: 'schedules' }" class="mt-3 inline-flex min-h-10 items-center rounded-lg border border-[var(--color-brand)] px-4 py-2 font-semibold text-[var(--color-brand)]">Horarios oficiales</RouterLink></div></section></AdminState></template>
-    <template v-else><section class="mt-7 max-w-3xl rounded-xl border border-[var(--color-border)] bg-white p-6"><h2 class="text-2xl font-semibold">{{ mode === 'admin-course-create' ? 'Nueva cursada' : 'Editar cursada' }}</h2><form class="mt-5 grid gap-4 sm:grid-cols-2" @submit.prevent="save"><label class="font-semibold sm:col-span-2">Materia<select v-model.number="form.materiaId" class="admin-input"><option :value="0">Seleccionar</option><option v-for="subject in subjects" :key="subject.id" :value="subject.id">{{ subject.nombre }} · {{ subject.carrera?.nombre }}</option></select></label><label class="font-semibold">Año lectivo<input v-model.number="form.anioLectivo" type="number" min="2000" max="2100" class="admin-input" /></label><label class="font-semibold">Período<select v-model="form.periodo" class="admin-input"><option value="ANUAL">{{ academicLabel('ANUAL') }}</option><option value="PRIMER_CUATRIMESTRE">{{ academicLabel('PRIMER_CUATRIMESTRE') }}</option><option value="SEGUNDO_CUATRIMESTRE">{{ academicLabel('SEGUNDO_CUATRIMESTRE') }}</option></select></label><label class="font-semibold sm:col-span-2">Docente<select v-model="form.docenteId" class="admin-input"><option :value="null">Sin asignar</option><option v-for="teacher in teachers" :key="teacher.idUsuario" :value="teacher.idUsuario">{{ teacher.apellidoNombre }}</option></select></label><p v-if="fieldError" class="field-error sm:col-span-2" role="alert">{{ fieldError }}</p><div class="flex gap-3 sm:col-span-2"><button type="submit" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-5 font-semibold text-white" :disabled="saving">{{ saving ? 'Guardando…' : 'Guardar cursada' }}</button><RouterLink :to="{ name: 'admin-courses' }" class="min-h-11 rounded-lg border border-[var(--color-border)] px-5 py-2.5">Cancelar</RouterLink></div></form></section></template>
+    <template v-else-if="isDetail"><AdminState :loading="loading" :error="error" @retry="loadDetail"><section v-if="selected" class="mt-7 rounded-xl border border-[var(--color-border)] bg-white p-6"><div class="flex items-start justify-between gap-4"><div><h2 class="text-2xl font-semibold">{{ selected.materia?.nombre }}</h2><p class="text-[var(--color-graphite)]">{{ selected.anioLectivo }} · {{ academicLabel(selected.periodo) }} · {{ selected.docente?.apellidoNombre ?? 'Sin docente' }}</p></div><div class="flex gap-2"><RouterLink :to="{ name: 'admin-course-edit', params: { id: selected.id } }" class="min-h-10 rounded-lg bg-[var(--color-brand)] px-4 py-2 font-semibold text-white">Editar</RouterLink><button type="button" class="min-h-10 rounded-lg border border-[var(--color-border)] px-4 py-2" :disabled="deactivating" @click="deactivate">{{ deactivating ? 'Desactivando…' : 'Desactivar' }}</button></div></div><div class="mt-8 rounded-lg bg-[#f6f7f4] p-4"><h3 class="text-xl font-semibold">Horarios oficiales</h3><p class="mt-1 text-sm text-[var(--color-graphite)]">Consultá o publicá el PDF oficial de horarios desde la sección centralizada.</p><RouterLink :to="{ name: 'schedules' }" class="mt-3 inline-flex min-h-10 items-center rounded-lg border border-[var(--color-brand)] px-4 py-2 font-semibold text-[var(--color-brand)]">Horarios oficiales</RouterLink></div></section></AdminState></template>
+    <template v-else><section class="mt-7 max-w-3xl rounded-xl border border-[var(--color-border)] bg-white p-6"><h2 class="text-2xl font-semibold">{{ mode === 'admin-course-create' ? 'Nueva cursada' : 'Editar cursada' }}</h2><div v-if="isEdit && editLoading" role="status" aria-busy="true" class="mt-4">Cargando datos de la cursada…</div><div v-else-if="isEdit && editError" class="mt-4" role="alert"><p>{{ editError }}</p><button type="button" class="mt-3 min-h-10 rounded-lg border border-[var(--color-border)] px-4" @click="loadEdit">Reintentar</button></div><div v-else-if="optionsLoading" role="status" aria-busy="true" class="mt-4">Cargando materias y docentes…</div><div v-else-if="optionsError" class="mt-4" role="alert"><p>{{ optionsError }}</p><button type="button" class="mt-3 min-h-10 rounded-lg border border-[var(--color-border)] px-4" @click="loadOptions()">Reintentar</button></div><form v-else-if="optionsReady && (!isEdit || selected)" class="mt-5 grid gap-4 sm:grid-cols-2" @submit.prevent="save"><label class="font-semibold sm:col-span-2">Materia<select v-model.number="form.materiaId" class="admin-input"><option :value="0">Seleccionar</option><option v-for="subject in subjects" :key="subject.id" :value="subject.id">{{ subject.nombre }} · {{ subject.carrera?.nombre }}</option></select></label><label class="font-semibold">Año lectivo<input v-model.number="form.anioLectivo" type="number" min="2000" max="2100" class="admin-input" /></label><label class="font-semibold">Período<select v-model="form.periodo" class="admin-input"><option value="ANUAL">{{ academicLabel('ANUAL') }}</option><option value="PRIMER_CUATRIMESTRE">{{ academicLabel('PRIMER_CUATRIMESTRE') }}</option><option value="SEGUNDO_CUATRIMESTRE">{{ academicLabel('SEGUNDO_CUATRIMESTRE') }}</option></select></label><label class="font-semibold sm:col-span-2">Docente<select v-model="form.docenteId" class="admin-input"><option :value="null">Sin asignar</option><option v-for="teacher in teachers" :key="teacher.idUsuario" :value="teacher.idUsuario">{{ teacher.apellidoNombre }}</option></select></label><p v-if="fieldError" class="field-error sm:col-span-2" role="alert">{{ fieldError }}</p><div class="flex gap-3 sm:col-span-2"><button type="submit" class="min-h-11 rounded-lg bg-[var(--color-brand)] px-5 font-semibold text-white" :disabled="saving || !optionsReady || (isEdit && !selected)">{{ saving ? 'Guardando…' : 'Guardar cursada' }}</button><RouterLink :to="{ name: 'admin-courses' }" class="min-h-11 rounded-lg border border-[var(--color-border)] px-5 py-2.5">Cancelar</RouterLink></div></form></section></template>
   </main>
 </template>
 

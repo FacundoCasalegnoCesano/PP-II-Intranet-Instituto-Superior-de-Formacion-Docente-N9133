@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, nextTick, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { academicLabel } from '@/core/presentation/academicLabels'
+import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 import type {
   ExamResultsSnapshot,
   ExamTableStatus,
@@ -49,7 +50,6 @@ const panelError = ref('')
 const rowErrors = ref<Record<number, string>>({})
 const reopenReason = ref('')
 const closeConfirmationOpen = ref(false)
-const closeCancelButton = ref<HTMLButtonElement | null>(null)
 const savedMessage = ref('')
 const refreshRetryAvailable = ref(false)
 
@@ -59,10 +59,6 @@ const qualifiedCount = computed(() => localResults.value.filter((row) => row.res
 const absentCount = computed(() => localResults.value.filter((row) => row.resultado === 'AUSENTE').length)
 const canPublish = computed(() => props.canClose && !readOnly.value && pendingCount.value === 0)
 const dirty = computed(() => Object.values(drafts.value).some(draft => draft.dirty))
-
-watch(closeConfirmationOpen, (open) => {
-  if (open) void nextTick(() => closeCancelButton.value?.focus())
-})
 
 function draftFromResult(row: InscriptoResultado): DraftRow {
   return {
@@ -290,32 +286,20 @@ async function reopenTable(): Promise<void> {
             <td class="px-3 py-4 font-semibold">{{ row.alumno.apellidoNombre }}</td>
             <td class="px-3 py-4">{{ academicLabel(row.condicion) }}</td>
             <td class="px-3 py-4"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(row.resultado)">{{ academicLabel(row.resultado) }}</span><span class="mt-2 block text-xs text-[var(--color-graphite)]">{{ resultDescription(row) }}</span></td>
-            <td class="px-3 py-4"><div class="flex items-center gap-3"><label class="block text-xs font-semibold" :for="`exam-grade-${row.id}`">Nota<input :id="`exam-grade-${row.id}`" :value="drafts[row.id]?.nota" type="number" min="0" max="10" step="1" :disabled="readOnly || drafts[row.id]?.ausente || savingId === row.id" :aria-label="`Nota de ${row.alumno.apellidoNombre}`" class="mt-1 min-h-11 w-20 rounded-md border border-[var(--color-border)] px-2 text-base font-normal" @input="updateDraft(row, ($event.target as HTMLInputElement).value)" /></label><label class="mt-5 flex min-h-11 items-center gap-2 text-xs font-semibold"><input type="checkbox" :checked="drafts[row.id]?.ausente" :disabled="readOnly || savingId === row.id" :aria-label="`Ausente: ${row.alumno.apellidoNombre}`" class="h-5 w-5" @change="toggleAbsence(row)" />Ausente</label></div><p v-if="rowErrors[row.id]" class="mt-2 max-w-xs text-xs text-[#a31118]" role="alert">{{ rowErrors[row.id] }}</p></td>
+            <td class="px-3 py-4"><div class="flex items-center gap-3"><label class="block text-xs font-semibold" :for="`exam-grade-${row.id}`">Nota<input :id="`exam-grade-${row.id}`" :value="drafts[row.id]?.nota" type="number" min="0" max="10" step="1" :disabled="readOnly || drafts[row.id]?.ausente || savingId === row.id" :aria-label="`Nota de ${row.alumno.apellidoNombre}`" :aria-describedby="rowErrors[row.id] ? 'exam-grade-error-' + row.id : undefined" :aria-invalid="Boolean(rowErrors[row.id])" class="mt-1 min-h-11 w-20 rounded-md border border-[var(--color-border)] px-2 text-base font-normal" @input="updateDraft(row, ($event.target as HTMLInputElement).value)" /></label><label class="mt-5 flex min-h-11 items-center gap-2 text-xs font-semibold"><input type="checkbox" :checked="drafts[row.id]?.ausente" :disabled="readOnly || savingId === row.id" :aria-label="`Ausente: ${row.alumno.apellidoNombre}`" class="h-5 w-5" @change="toggleAbsence(row)" />Ausente</label></div><p v-if="rowErrors[row.id]" :id="`exam-grade-error-${row.id}`" class="mt-2 max-w-xs text-xs text-[#a31118]" role="alert">{{ rowErrors[row.id] }}</p></td>
             <td class="px-3 py-4 text-right"><button type="button" class="min-h-11 rounded-md bg-[var(--color-brand)] px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" :aria-label="`Guardar resultado de ${row.alumno.apellidoNombre}`" :disabled="readOnly || savingId !== null" @click="saveRow(row)">{{ savingId === row.id ? 'Guardando…' : 'Guardar' }}</button></td>
           </tr>
         </tbody>
       </table>
     </div>
 
-      <div v-if="canClose" class="mt-6 flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[#f6f7f4] p-4 sm:flex-row sm:items-end sm:justify-between">
-      <div><p class="font-semibold">Cierre y publicación</p><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ pendingCount ? `Quedan ${pendingCount} resultado(s) pendiente(s).` : 'Todos los inscriptos tienen resultado.' }}</p></div><button type="button" class="min-h-11 rounded-md bg-[var(--color-brand)] px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" :disabled="!canPublish || tableSaving" @click="openCloseConfirmation">{{ tableSaving ? 'Procesando…' : 'Cerrar y publicar mesa' }}</button>
+    <div v-if="canClose" class="mt-6 flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[#f6f7f4] p-4 sm:flex-row sm:items-end sm:justify-between">
+      <div><p class="font-semibold">Cierre y publicación</p><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ pendingCount === 0 ? 'Todos los inscriptos tienen resultado.' : pendingCount === 1 ? 'Queda 1 resultado pendiente.' : `Quedan ${pendingCount} resultados pendientes.` }}</p></div><button type="button" class="min-h-11 rounded-md bg-[var(--color-brand)] px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" :disabled="!canPublish || tableSaving" @click="openCloseConfirmation">{{ tableSaving ? 'Procesando…' : 'Cerrar y publicar mesa' }}</button>
     </div>
 
-    <div v-if="closeConfirmationOpen" class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4" role="presentation">
-      <section class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="close-confirmation-title">
-        <h3 id="close-confirmation-title" class="text-xl font-semibold">Confirmar cierre y publicación</h3>
-        <p class="mt-2 text-sm text-[var(--color-graphite)]">Se publicarán los resultados actuales y la mesa quedará cerrada para edición.</p>
-        <dl class="mt-4 grid gap-2 text-sm sm:grid-cols-3">
-          <div><dt class="font-semibold">Calificados</dt><dd>{{ qualifiedCount }}</dd></div>
-          <div><dt class="font-semibold">Ausentes</dt><dd>{{ absentCount }}</dd></div>
-          <div><dt class="font-semibold">Pendientes</dt><dd>{{ pendingCount }}</dd></div>
-        </dl>
-        <div class="mt-6 flex flex-wrap justify-end gap-3">
-          <button ref="closeCancelButton" type="button" aria-label="Cancelar cierre" class="min-h-11 rounded-md border border-[var(--color-border)] px-4 py-2 font-semibold" @click="cancelClose">Cancelar</button>
-          <button type="button" class="min-h-11 rounded-md bg-[var(--color-brand)] px-4 py-2 font-semibold text-white" @click="confirmClose">Confirmar cierre y publicación</button>
-        </div>
-      </section>
-    </div>
+    <ConfirmDialog :open="closeConfirmationOpen" title="Confirmar cierre y publicación" description="Se publicarán los resultados actuales y la mesa quedará cerrada para edición." confirm-label="Confirmar cierre y publicación" :loading="tableSaving" @cancel="cancelClose" @confirm="confirmClose">
+      <template #content><dl class="grid gap-2 text-sm sm:grid-cols-3"><div><dt class="font-semibold">Calificados</dt><dd>{{ qualifiedCount }}</dd></div><div><dt class="font-semibold">Ausentes</dt><dd>{{ absentCount }}</dd></div><div><dt class="font-semibold">Pendientes</dt><dd>{{ pendingCount }}</dd></div></dl></template>
+    </ConfirmDialog>
 
     <form v-if="canReopen && status === 'FINALIZADA'" class="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4" @submit.prevent="reopenTable"><label class="block text-sm font-semibold" for="reopen-reason">Motivo de reapertura<textarea id="reopen-reason" v-model="reopenReason" class="mt-1 min-h-20 w-full rounded-md border border-amber-300 bg-white px-3 py-2 font-normal" placeholder="Por ejemplo: corrección de acta"></textarea></label><button type="submit" class="mt-3 min-h-11 rounded-md border border-[var(--color-brand)] px-4 py-2 font-semibold text-[var(--color-brand)]" :disabled="tableSaving">Reabrir mesa</button></form>
   </section>

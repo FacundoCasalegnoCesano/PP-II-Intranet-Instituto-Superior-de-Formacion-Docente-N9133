@@ -57,7 +57,6 @@ const loading = ref(false)
 const loadingSelection = ref(false)
 const error = ref('')
 const selectionError = ref('')
-const staleResponsesDiscarded = ref(0)
 let listRequest = 0
 let selectionRequest = 0
 
@@ -73,6 +72,10 @@ const routeSection = computed<TeacherCourseSection>(() => {
 })
 const isList = computed(() => route.params.id === undefined)
 const selectedStudent = computed(() => students.value.find(student => student.alumnoId === studentIdFromRoute()) ?? null)
+const studentCountLabel = computed(() => {
+  const count = students.value.length || academicSummary.value?.alumnos.length || 0
+  return `${count} ${count === 1 ? 'alumno inscripto' : 'alumnos inscriptos'}`
+})
 const gradeStudents = computed(() => selectedStudent.value ? [selectedStudent.value] : [])
 const invalidStudentSelection = computed(() => routeSection.value === 'grades' && studentIdFromRoute() !== null && selectedStudent.value === null)
 const courseStatus = computed(() => selectedCourse.value && courseIsCurrent(selectedCourse.value) ? 'Cursada actual' : 'Cursada histórica')
@@ -96,13 +99,11 @@ async function loadCourses(): Promise<void> {
   try {
     const result = await teacherCoursesApi.list({ anioLectivo: selectedYear.value })
     if (request !== listRequest) {
-      staleResponsesDiscarded.value += 1
       return
     }
     courses.value = result.data
   } catch {
     if (request !== listRequest) {
-      staleResponsesDiscarded.value += 1
       return
     }
     error.value = 'No pudimos cargar las cursadas.'
@@ -130,7 +131,6 @@ async function loadSelection(): Promise<void> {
   try {
     const course = await teacherCoursesApi.get(id)
     if (request !== selectionRequest) {
-      staleResponsesDiscarded.value += 1
       return
     }
     selectedCourse.value = course
@@ -147,7 +147,6 @@ async function loadSelection(): Promise<void> {
           : Promise.resolve<AcademicSummary | null>(null),
       ])
       if (request !== selectionRequest) {
-        staleResponsesDiscarded.value += 1
         return
       }
       students.value = enrolledStudents ?? []
@@ -160,7 +159,6 @@ async function loadSelection(): Promise<void> {
         ? await teacherCoursesApi.listGrades(id, { alumnoId: routeStudentId })
         : []
       if (request !== selectionRequest) {
-        staleResponsesDiscarded.value += 1
         return
       }
       grades.value = (loadedGrades ?? []).filter(grade => routeSection.value !== 'grades' || grade.alumno.alumnoId === routeStudentId)
@@ -169,7 +167,6 @@ async function loadSelection(): Promise<void> {
     }
   } catch {
     if (request !== selectionRequest) {
-      staleResponsesDiscarded.value += 1
       return
     }
     selectionError.value = 'No pudimos cargar la cursada seleccionada.'
@@ -206,7 +203,6 @@ async function saveGrades(payload: SaveGradesPayload): Promise<void> {
   try {
     const refreshedGrades = await teacherCoursesApi.listGrades(payload.cursadaId, { alumnoId: studentId })
     if (request !== selectionRequest || selectedCourse.value?.id !== payload.cursadaId) {
-      staleResponsesDiscarded.value += 1
       return
     }
     grades.value = refreshedGrades.filter(grade => grade.alumno.alumnoId === studentId)
@@ -237,7 +233,6 @@ async function retryGradeRefresh(): Promise<void> {
   try {
     const refreshedGrades = await teacherCoursesApi.listGrades(courseId, { alumnoId: studentId })
     if (request !== selectionRequest || selectedCourse.value?.id !== courseId) {
-      staleResponsesDiscarded.value += 1
       return
     }
     grades.value = refreshedGrades.filter(grade => grade.alumno.alumnoId === studentId)
@@ -338,8 +333,6 @@ onBeforeUnmount(() => removeRouteGuard?.())
       <p class="mt-2 max-w-2xl text-[var(--color-graphite)]">Consultá tus cursadas, alumnos y la información académica calculada por la institución.</p>
     </header>
 
-    <p v-if="staleResponsesDiscarded" class="mt-3 text-sm text-[var(--color-graphite)]" role="status" aria-live="polite">Solicitudes obsoletas descartadas: {{ staleResponsesDiscarded }}</p>
-
     <template v-if="isList">
       <section class="mt-7 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6" aria-labelledby="course-list-title">
         <div class="flex flex-wrap items-end justify-between gap-4">
@@ -358,7 +351,7 @@ onBeforeUnmount(() => removeRouteGuard?.())
         <div v-if="loadingSelection" role="status" aria-busy="true" aria-live="polite">Cargando cursada…</div>
         <div v-else-if="selectionError" role="alert"><p>{{ selectionError }}</p><AppButton class="mt-4" variant="secondary" @click="retry">Reintentar</AppButton></div>
         <template v-else-if="selectedCourse">
-          <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="selected-course-title" class="text-2xl font-semibold">{{ selectedCourse.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ selectedCourse.materia.carrera?.nombre ?? 'Carrera no informada' }} · Año {{ selectedCourse.anioLectivo }} · {{ academicLabel(selectedCourse.periodo) }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]" aria-live="polite">Contexto: {{ students.length || academicSummary?.alumnos.length || 0 }} alumnos inscriptos</p></div><p class="font-semibold" :class="courseIsCurrent(selectedCourse) ? 'text-[var(--color-brand)]' : 'text-[var(--color-graphite)]'">{{ courseStatus }}</p></div>
+          <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="selected-course-title" class="text-2xl font-semibold">{{ selectedCourse.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ selectedCourse.materia.carrera?.nombre ?? 'Carrera no informada' }} · Año {{ selectedCourse.anioLectivo }} · {{ academicLabel(selectedCourse.periodo) }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]" aria-live="polite">Contexto: {{ studentCountLabel }}</p></div><p class="font-semibold" :class="courseIsCurrent(selectedCourse) ? 'text-[var(--color-brand)]' : 'text-[var(--color-graphite)]'">{{ courseStatus }}</p></div>
           <TeacherCourseSectionNav class="mt-6" :course-id="selectedCourse.id" :section="routeSection" :anio-lectivo="selectedYear" />
           <section v-if="routeSection === 'students' || (routeSection === 'grades' && studentIdFromRoute() === null)" aria-labelledby="students-title">
             <h3 id="students-title" class="mt-6 text-xl font-semibold">Alumnos inscriptos</h3>
