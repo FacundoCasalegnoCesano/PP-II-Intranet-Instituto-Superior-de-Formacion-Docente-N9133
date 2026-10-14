@@ -118,7 +118,7 @@ async function logout(): Promise<void> {
 <template>
   <div class="min-h-screen min-w-0 bg-[var(--color-background)] lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]">
     <aside class="app-sidebar hidden min-h-screen bg-[var(--color-sidebar)] px-4 py-6 text-white lg:block">
-      <div class="flex items-center gap-3 px-3"><img :src="logoUrl" alt="" class="size-10 shrink-0 rounded-md bg-white object-contain p-1" aria-hidden="true" /><span class="text-lg font-semibold">ISFD N.º 9133</span></div>
+      <div class="flex items-center gap-3 px-3"><img :src="logoUrl" alt="" class="size-10 shrink-0 rounded-md bg-white object-contain p-1" aria-hidden="true" /><span class="text-lg font-semibold">ISPI N.º 9133</span></div>
       <nav class="mt-10" aria-label="Navegación lateral">
         <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined">
           <component :is="item.icon" class="size-5" aria-hidden="true" />{{ item.label }}
@@ -148,7 +148,7 @@ async function logout(): Promise<void> {
     <div v-if="drawerOpen" id="mobile-navigation" ref="drawer" role="dialog" aria-modal="true" aria-label="Navegación" class="fixed inset-0 z-40 lg:hidden">
       <button type="button" class="absolute inset-0 bg-black/40" aria-label="Cerrar navegación" @click="closeDrawer" />
       <aside class="app-sidebar relative h-full w-[min(18rem,calc(100vw-2rem))] overflow-y-auto bg-[var(--color-sidebar)] p-5 text-white shadow-xl">
-        <div class="flex items-center justify-between gap-3"><span class="font-semibold">ISFD N.º 9133</span><button ref="drawerCloseButton" type="button" aria-label="Cerrar navegación" class="min-h-11 min-w-11 rounded p-2" @click="closeDrawer"><X class="size-5" aria-hidden="true" /></button></div>
+        <div class="flex items-center justify-between gap-3"><span class="font-semibold">ISPI N.º 9133</span><button ref="drawerCloseButton" type="button" aria-label="Cerrar navegación" class="min-h-11 min-w-11 rounded p-2" @click="closeDrawer"><X class="size-5" aria-hidden="true" /></button></div>
         <nav class="mt-8" aria-label="Navegación principal">
           <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-2 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined" @click="closeDrawer"><component :is="item.icon" class="size-5" />{{ item.label }}</RouterLink>
         </nav>
