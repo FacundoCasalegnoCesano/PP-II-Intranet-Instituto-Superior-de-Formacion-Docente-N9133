@@ -4,7 +4,6 @@ import { BriefcaseBusiness, GraduationCap, ShieldCheck } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import type { Role } from '@/core/auth/contracts'
 import AuthLayout from '@/layouts/AuthLayout.vue'
-import AppButton from '@/ui/AppButton.vue'
 import { useFeedback } from '@/ui/feedback'
 import { useAuthStore } from '@/stores/authStore'
 

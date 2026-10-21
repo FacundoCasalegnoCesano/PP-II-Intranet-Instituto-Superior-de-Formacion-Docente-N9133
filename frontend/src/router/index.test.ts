@@ -217,9 +217,10 @@ describe('navigation guards', () => {
     expect(routes.find((route) => route.name === 'teacher-course-classes')?.path).toBe('/app/profesor/cursadas/:id/clases')
     expect(routes.find((route) => route.name === 'teacher-course-grades')?.path).toBe('/app/profesor/cursadas/:id/calificaciones')
     expect(routes.find((route) => route.name === 'teacher-course-summary')?.path).toBe('/app/profesor/cursadas/:id/resumen')
-    expect(routes.filter((route) => String(route.name).startsWith('teacher-course')).every((route) => (
-      route.meta.allowedRoles?.length === 1 && route.meta.allowedRoles[0] === 'PROFESOR'
-    ))).toBe(true)
+    expect(routes.filter((route) => String(route.name).startsWith('teacher-course')).every((route) => {
+      const allowedRoles = route.meta.allowedRoles
+      return Array.isArray(allowedRoles) && allowedRoles.length === 1 && allowedRoles[0] === 'PROFESOR'
+    })).toBe(true)
   })
 
   it('redirects non-professors away from every teacher course route', async () => {
@@ -288,8 +289,11 @@ describe('navigation guards', () => {
       path: '/app/docente/mesas/:id',
       meta: { requiresSession: true, allowedRoles: ['PROFESOR'] },
     })
-    expect(router.getRoutes().find((route) => route.name === 'admin-exam-detail')?.components?.default?.render).toEqual(expect.any(Function))
-    expect(router.getRoutes().find((route) => route.name === 'teacher-exam-detail')?.components?.default?.render).toEqual(expect.any(Function))
+    const hasRenderFunction = (component: unknown): boolean => (
+      typeof component === 'object' && component !== null && 'render' in component && typeof component.render === 'function'
+    )
+    expect(hasRenderFunction(router.getRoutes().find((route) => route.name === 'admin-exam-detail')?.components?.default)).toBe(true)
+    expect(hasRenderFunction(router.getRoutes().find((route) => route.name === 'teacher-exam-detail')?.components?.default)).toBe(true)
     expect(AdminExamsView).toBeDefined()
     expect(TeacherExamsView).toBeDefined()
 

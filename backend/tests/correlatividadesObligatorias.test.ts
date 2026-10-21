@@ -53,11 +53,13 @@ test('acepta una correlatividad individual solo con la materia requerida', async
   });
 
   assert.deepEqual(resultado, {
-    materiaRequeridaId: 12
+    materiaRequeridaId: 12,
+    aplicaCursado: false,
+    aplicaRendir: true
   });
 });
 
-for (const campo of ['tipoRequisito', 'aplicaCursado', 'aplicaRendir']) {
+for (const campo of ['tipoRequisito']) {
   test(`rechaza el campo controlado ${campo}`, async () => {
     await assert.rejects(
       correlatividadSchema.validateAsync({
@@ -68,6 +70,17 @@ for (const campo of ['tipoRequisito', 'aplicaCursado', 'aplicaRendir']) {
     );
   });
 }
+
+test('acepta destino espacio y flags de cursado/rendir', async () => {
+  const resultado = await correlatividadSchema.validateAsync({ espacioRequeridoId: 12, aplicaCursado: true, aplicaRendir: true });
+  assert.deepEqual(resultado, { espacioRequeridoId: 12, aplicaCursado: true, aplicaRendir: true });
+});
+
+test('rechaza destinos ausentes o simultáneos y reglas sin modo', async () => {
+  for (const value of [{}, { materiaRequeridaId: 1, espacioRequeridoId: 1 }, { materiaRequeridaId: 1, aplicaCursado: false, aplicaRendir: false }]) {
+    await assert.rejects(correlatividadSchema.validateAsync(value));
+  }
+});
 
 for (const campo of ['grupo', 'cantidadMinimaAprobadas']) {
   test(`rechaza el parámetro ${campo} en una correlatividad obligatoria`, async () => {
@@ -97,7 +110,7 @@ test('el repositorio entrega al flujo activo únicamente correlatividades obliga
   });
 });
 
-for (const campo of ['tipoRequisito', 'aplicaCursado', 'aplicaRendir']) {
+for (const campo of ['tipoRequisito']) {
   test(`HTTP rechaza ${campo} en la ruta individual`, async () => {
     const response = await postCorrelatividad({
       materiaRequeridaId: 12,
@@ -112,4 +125,24 @@ test('HTTP acepta el body individual válido con sólo materiaRequeridaId', asyn
   const response = await postCorrelatividad({ materiaRequeridaId: 12 });
 
   assert.equal(response.status, 201);
+});
+
+test('HTTP acepta correlatividad con destino espacio y flags', async () => {
+  const response = await postCorrelatividad({ espacioRequeridoId: 12, aplicaCursado: true, aplicaRendir: true });
+  assert.equal(response.status, 201);
+});
+
+test('el repositorio tipa el destino espacio sin confundir IDs coincidentes', async () => {
+  const original = (prisma.correlatividad as any).findMany;
+  (prisma.correlatividad as any).findMany = async () => [{
+    id: 7, materiaOrigenId: 1, materiaRequeridaId: null, materiaRequerida: null,
+    espacioRequeridoId: 1, espacioRequerido: { id: 1, nombre: 'Espacio', carreraId: 3 },
+    aplicaCursado: true, aplicaRendir: false
+  }];
+  restorations.push(() => { (prisma.correlatividad as any).findMany = original; });
+  const [rule] = await materiaRepository.getCorrelatividades(1);
+  assert.equal(rule.tipoDestino, 'ESPACIO');
+  assert.equal(rule.materiaRequeridaId, null);
+  assert.equal(rule.espacioRequeridoId, 1);
+  assert.equal(rule.aplicaCursado, true);
 });

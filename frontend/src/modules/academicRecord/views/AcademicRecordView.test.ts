@@ -21,8 +21,8 @@ const careerRows = [
   { id: 1, carreraId: 3, activo: true, carrera: { id: 3, nombre: 'Profesorado', activo: true, materias: [] } },
   { id: 2, carreraId: 4, activo: true, carrera: { id: 4, nombre: 'Tecnicatura', activo: true, materias: [] } },
 ]
-function trajectory(carreraId: number, nombre: string, asistencia = 80) {
-  return { alumnoUsuarioId: 13, carrera: { id: carreraId, nombre }, promedioGeneral: carreraId === 3 ? 8.5 : 7, cantidadMateriasAprobadas: 1, materias: [{ materia: { id: carreraId, nombre: carreraId === 3 ? 'Pedagogía' : 'Historia' }, estado: 'REGULAR', plan: { anio: 1 }, asistencia: { porcentaje: asistencia }, cursadas: [{ cursadaId: carreraId * 10, anioLectivo: 2026, periodo: 'ANUAL', asistencia: { porcentaje: asistencia } }, { cursadaId: carreraId * 10 + 1, anioLectivo: 2025, periodo: 'ANUAL', asistencia: { porcentaje: 60 } }], regularidad: { hasta: '2027-12-31T00:00:00.000Z', vencida: false }, definitiva: null }] }
+function trajectory(carreraId: number, nombre: string, asistencia = 80, parcialesEfectivos: Array<{ numero: number; notaOriginal: number; notaEfectiva: number; recuperado: boolean }> = []) {
+  return { alumnoUsuarioId: 13, carrera: { id: carreraId, nombre }, promedioGeneral: carreraId === 3 ? 8.5 : 7, cantidadMateriasAprobadas: 1, materias: [{ materia: { id: carreraId, nombre: carreraId === 3 ? 'Pedagogía' : 'Historia' }, estado: 'REGULAR', plan: { anio: 1 }, asistencia: { porcentaje: asistencia }, cursadas: [{ cursadaId: carreraId * 10, anioLectivo: 2026, periodo: 'ANUAL', asistencia: { porcentaje: asistencia } }, { cursadaId: carreraId * 10 + 1, anioLectivo: 2025, periodo: 'ANUAL', asistencia: { porcentaje: 60 } }], parcialesEfectivos, regularidad: { hasta: '2027-12-31T00:00:00.000Z', vencida: false }, definitiva: null }] }
 }
 function attendance(cursadaId: number, page = 1) {
   return { data: [{ cursadaId, materia: { id: cursadaId, nombre: 'Pedagogía' }, anioLectivo: cursadaId === 30 ? 2026 : 2025, periodo: 'ANUAL', fecha: cursadaId === 31 ? '2025-04-06' : page === 1 ? '2026-04-06' : '2026-05-06', presente: page === 1, justificado: false }], pagination: { page, limit: 20, total: 21, totalPages: 2 } }
@@ -41,9 +41,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers() })
 
 describe('AcademicRecordView', () => {
+  it('shows the effective partial grade returned by the trajectory API', async () => {
+    vi.mocked(fetchAcademicRecordTrajectory).mockResolvedValue(trajectory(3, 'Profesorado', 80, [
+      { numero: 1, notaOriginal: 4, notaEfectiva: 8, recuperado: true },
+    ]) as never)
+
+    render(AcademicRecordView, { global: { stubs: routerStubs } })
+
+    expect(await screen.findByText('Notas: 8')).toBeVisible()
+  })
+
   it('uses the career selected by Inicio when the enrollment is still active', async () => {
     useCareerSelectionStore().selectCareer(4, { userId: 13, role: 'ALUMNO' })
-    render(AcademicRecordView, { global: routerStubs })
+    render(AcademicRecordView, { global: { stubs: routerStubs } })
 
     expect(await screen.findByRole('option', { name: 'Tecnicatura', selected: true })).toBeVisible()
     expect(fetchAcademicRecordTrajectory).toHaveBeenCalledWith(13, 4)
@@ -67,8 +77,8 @@ describe('AcademicRecordView', () => {
     render(AcademicRecordView, { global: { stubs: routerStubs } })
     expect(await screen.findByRole('heading', { name: 'Aprobada' })).toBeVisible()
     expect(screen.getByText('Promedio general: 8.5')).toBeVisible()
-    const filter = screen.getByRole('combobox', { name: 'Filtrar materias' })
-    expect(screen.getByText('Mostrando 6 de 6 materias.')).toBeVisible()
+    const filter = screen.getByRole('combobox', { name: 'Filtrar materias y espacios' })
+    expect(screen.getByText('Mostrando 6 de 6 unidades: 0 espacios curriculares y 6 materias.')).toBeVisible()
     await fireEvent.update(filter, 'VENCIDAS')
     const subjectList = () => screen.getByRole('list', { name: 'Materias de la trayectoria' })
     expect(within(subjectList()).getByRole('heading', { name: 'Vencida' })).toBeVisible()
@@ -82,9 +92,36 @@ describe('AcademicRecordView', () => {
   it('shows an empty state for a category without subjects', async () => {
     render(AcademicRecordView, { global: { stubs: routerStubs } })
     await screen.findByText('Pedagogía')
-    await fireEvent.update(screen.getByRole('combobox', { name: 'Filtrar materias' }), 'APROBADAS')
-    expect(screen.getByText('No hay materias en esta categoría.')).toBeVisible()
-    expect(screen.getByText('Mostrando 0 de 1 materias.')).toBeVisible()
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Filtrar materias y espacios' }), 'APROBADAS')
+    expect(screen.getByText('No hay unidades en esta categoría.')).toBeVisible()
+    expect(screen.getByText('Mostrando 0 de 1 unidades: 0 espacios curriculares y 0 materias.')).toBeVisible()
+  })
+
+  it('shows space components inside one unit and keeps only standalone materias in the materia list', async () => {
+    vi.mocked(fetchAcademicRecordTrajectory).mockResolvedValue({
+      alumnoUsuarioId: 13,
+      carrera: { id: 3, nombre: 'Profesorado' },
+      cantidadMateriasAprobadas: 1,
+      cantidadUnidadesTotal: 2,
+      espaciosCurriculares: [{
+        id: 8, nombre: 'Campo de la Práctica', estado: 'APROBADA', nota: 8,
+        definitiva: { nota: 8, via: 'ESPACIO_CURRICULAR' },
+        componentes: [{ materiaId: 10, nombre: 'Práctica I', estado: 'APROBADA', definitiva: { nota: 8, via: 'PROMOCION_DIRECTA' } }],
+      }],
+      materias: [
+        { materia: { id: 10, nombre: 'Práctica I' }, espacioCurricular: { id: 8, nombre: 'Campo de la Práctica' }, estado: 'APROBADA', definitiva: { nota: 8, via: 'PROMOCION_DIRECTA' } },
+        { materia: { id: 11, nombre: 'Pedagogía' }, espacioCurricular: null, estado: 'REGULAR', categoriaTrayectoria: 'REGULAR', definitiva: null },
+      ],
+    } as never)
+    render(AcademicRecordView, { global: { stubs: routerStubs } })
+
+    expect(await screen.findByRole('heading', { name: 'Campo de la Práctica' })).toBeVisible()
+    expect(screen.getByText('1 de 2 unidades aprobadas')).toBeVisible()
+    expect(screen.getByText('Mostrando 2 de 2 unidades: 1 espacios curriculares y 1 materias.')).toBeVisible()
+    expect(screen.getByText('Nota: 8')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Pedagogía' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Práctica I' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: 'Materias de la trayectoria' })).getAllByRole('listitem')).toHaveLength(1)
   })
 
   it('shows only current regularities through 90 calendar days, ordered by deadline', async () => {
@@ -126,10 +163,10 @@ describe('AcademicRecordView', () => {
     render(AcademicRecordView, { global: { stubs: routerStubs } })
     expect(await screen.findByRole('heading', { name: 'Sólo Profesorado', level: 2 })).toBeVisible()
     expect(screen.getByRole('region', { name: 'Regularidades próximas a vencer' })).toBeVisible()
-    await fireEvent.update(screen.getByRole('combobox', { name: 'Filtrar materias' }), 'APROBADAS')
+    await fireEvent.update(screen.getByRole('combobox', { name: 'Filtrar materias y espacios' }), 'APROBADAS')
     await fireEvent.update(screen.getByLabelText('Carrera'), '4')
     await screen.findByText('Historia')
-    expect(screen.getByRole('combobox', { name: 'Filtrar materias' })).toHaveValue('TODAS')
+    expect(screen.getByRole('combobox', { name: 'Filtrar materias y espacios' })).toHaveValue('TODAS')
     expect(screen.queryByRole('region', { name: 'Regularidades próximas a vencer' })).not.toBeInTheDocument()
     expect(screen.queryByText('Sólo Profesorado')).not.toBeInTheDocument()
   })

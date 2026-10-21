@@ -3,6 +3,7 @@ import { afterEach, test } from 'node:test';
 
 import asistenciaRepository from '../src/repositories/asistenciaRepository.js';
 import alumnoRepository from '../src/repositories/alumnoRepository.js';
+import calificacionRepository from '../src/repositories/calificacionRepository.js';
 import cursadaRepository from '../src/repositories/cursadaRepository.js';
 import type { InscriptoPublico } from '../src/repositories/cursadaRepository.js';
 import profesorMateriaRepository from '../src/repositories/profesorMateriaRepository.js';
@@ -171,7 +172,9 @@ test('GET cursadas calcula editable con el año institucional y conserva paginac
         materia: {
           profesorMaterias: [{ profesorId: 12, activo: true, fechaBaja: null }]
         }
-      }
+      },
+      { id: 4, docenteId: 12, activo: false, anioLectivo: anio - 1, materia: {} },
+      { id: 5, docenteId: 12, activo: false, anioLectivo: anio, materia: {} }
     ],
     pagination: { page: 2, limit: 10, total: 2, totalPages: 1 }
   }));
@@ -182,7 +185,10 @@ test('GET cursadas calcula editable con el año institucional y conserva paginac
   );
 
   assert.deepEqual(result.pagination, { page: 2, limit: 10, total: 2, totalPages: 1 });
-  assert.deepEqual(result.data.map((cursada: any) => cursada.editable), [true, false, true]);
+  assert.deepEqual(result.data.map((cursada: any) => cursada.editable), [true, false, true, false, false]);
+  assert.deepEqual(result.data.map((cursada: any) => cursada.estadoCursada), [
+    'ACTIVA', 'FINALIZADA', 'ACTIVA', 'FINALIZADA', 'INACTIVA'
+  ]);
 });
 
 test('cursadaRepository.findAll preserva filtros, restricción docente y página real', async () => {
@@ -420,6 +426,69 @@ test('el repository proyecta inscriptos sin seleccionar idAlumno ni relaciones P
     dni: 123,
     email: 'ada@example.test'
   }]);
+  assert.deepEqual(consulta.where, {
+    cursadaId: 8,
+    estado: 'ACTIVA',
+    fechaBaja: null
+  });
+});
+
+test('el repository incluye matrículas FINALIZADA sin baja sólo para cursadas históricas', async () => {
+  let consulta: any;
+  replaceMethod((prisma as any).inscripcionMateria, 'findMany', async (args: any) => {
+    consulta = args;
+    return [];
+  });
+
+  await cursadaRepository.findInscriptosByCursadaId(8, true);
+
+  assert.deepEqual(consulta.where, {
+    cursadaId: 8,
+    estado: { in: ['ACTIVA', 'FINALIZADA'] },
+    fechaBaja: null
+  });
+});
+
+test('la validación de carga de calificaciones admite FINALIZADA y excluye sólo BAJA', async () => {
+  let consulta: any;
+  replaceMethod((prisma as any).inscripcionMateria, 'findMany', async (args: any) => {
+    consulta = args;
+    return [{ alumnoId: 7 }];
+  });
+
+  const rows = await calificacionRepository.findInscripcionesByCursada(8, [7]);
+
+  assert.deepEqual(consulta.where, {
+    cursadaId: 8,
+    alumnoId: { in: [7] },
+    estado: { not: 'BAJA' }
+  });
+  assert.deepEqual(rows, [{ alumnoId: 7 }]);
+});
+
+test('la nómina de una cursada histórica incluye FINALIZADA y mantiene acceso docente de sólo lectura', async () => {
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 8,
+    materiaId: 3,
+    docenteId: 12,
+    activo: true,
+    anioLectivo: 2025,
+    materia: { id: 3, nombre: 'Materia histórica' }
+  }));
+  replaceMethod(cursadaRepository, 'findInscriptosByCursadaId', async (_id: number, incluirFinalizadas: boolean) => {
+    assert.equal(incluirFinalizadas, true);
+    return [{ alumnoId: 42, apellidoNombre: 'Ada Lovelace', dni: 123, email: 'ada@example.test' }];
+  });
+
+  const result = await cursadaService.getInscriptosByCursada(
+    8,
+    { id: 12, rol: ROLES.PROFESOR }
+  );
+  const course = await cursadaService.getCursadaById(8, { id: 12, rol: ROLES.PROFESOR });
+
+  assert.deepEqual(result.map(alumno => alumno.alumnoId), [42]);
+  assert.equal(course.estadoCursada, 'FINALIZADA');
+  assert.equal(course.editable, false);
 });
 
 test('la carga de calificaciones rechaza mutación histórica antes de consultar alumnos', async () => {

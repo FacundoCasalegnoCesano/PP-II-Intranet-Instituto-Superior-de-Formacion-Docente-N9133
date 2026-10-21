@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import inscripcionMateriaService from '../services/inscripcionMateriaService.js';
 import materiaService from '../services/materiaService.js';
 import { ROLES } from '../constants/roles.js';
+import { anioInstitucionalActual } from '../utils/cicloLectivo.js';
 
 class InscripcionMateriaController {
   // Inscribir alumno a materia (Alumno o Admin)
@@ -254,7 +255,7 @@ class InscripcionMateriaController {
 
       const cicloLectivo = req.query.cicloLectivo 
         ? parseInt(req.query.cicloLectivo as string) 
-        : new Date().getFullYear();
+        : anioInstitucionalActual();
 
       const materias = await materiaService.getMateriasDisponibles(alumnoId, cicloLectivo);
       
@@ -314,12 +315,13 @@ class InscripcionMateriaController {
 
       const cicloLectivo = req.query.cicloLectivo 
         ? parseInt(req.query.cicloLectivo as string) 
-        : new Date().getFullYear();
+        : anioInstitucionalActual();
 
       const result = await materiaService.verificarInscripcion(
         alumnoId,
         materiaId,
-        cicloLectivo
+        cicloLectivo,
+        currentUser
       );
       
       res.json({

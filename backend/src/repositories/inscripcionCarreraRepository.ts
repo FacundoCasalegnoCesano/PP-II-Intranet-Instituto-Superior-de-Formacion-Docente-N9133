@@ -6,10 +6,12 @@ import { AppError } from '../utils/AppError.js';
 export interface InscripcionCarreraCreateData {
   usuarioId: number;
   carreraId: number;
-  cicloLectivo: number;
+  cicloLectivo?: number | null;
+  anioCohorte?: number | null;
 }
 
 export interface InscripcionCarreraUpdateData {
+  anioCohorte?: number | null;
   fechaBaja?: Date | null;
   fechaInscripcion?: Date;
   cicloLectivo?: number;
@@ -22,7 +24,8 @@ class InscripcionCarreraRepository {
       data: {
         usuarioId: data.usuarioId,
         carreraId: data.carreraId,
-        cicloLectivo: data.cicloLectivo,
+        cicloLectivo: data.cicloLectivo ?? null,
+        anioCohorte: data.anioCohorte,
         fechaInscripcion: new Date(),
         activo: true
       },
@@ -145,18 +148,27 @@ class InscripcionCarreraRepository {
             activo: true,
             fechaBaja: null,
             fechaInscripcion: new Date(),
-            cicloLectivo: data.cicloLectivo
+            ...(data.anioCohorte !== undefined ? { anioCohorte: data.anioCohorte } : {})
           },
           include: { carrera: true }
         });
         return { ...reactivated, reactivada: true };
       }
 
+      if (
+        !Number.isInteger(data.anioCohorte) ||
+        data.anioCohorte! < 1900 ||
+        data.anioCohorte! > 2100
+      ) {
+        throw new AppError(400, 'El año de cohorte es requerido para una inscripción nueva');
+      }
+
       return await tx.inscripcionCarrera.create({
         data: {
           usuarioId: data.usuarioId,
           carreraId: data.carreraId,
-          cicloLectivo: data.cicloLectivo,
+          cicloLectivo: data.cicloLectivo ?? null,
+          anioCohorte: data.anioCohorte,
           fechaInscripcion: new Date(),
           activo: true
         },

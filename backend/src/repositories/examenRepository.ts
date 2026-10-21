@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma.js';
 import { Prisma } from '@prisma/client';
 import type { CondicionExamen, RolTribunal, TipoExamen } from '@prisma/client';
 import { AppError } from '../utils/AppError.js';
+import { latchSpaceIfStudentCompleted, lockCareerForAcademicMutation } from '../services/espacioComposicionLatch.js';
 
 export interface ExamenCreateData {
   materiaId: number;
@@ -51,8 +52,10 @@ export interface MesaDisponibleParaAlumno {
     nombre: string;
     carrera: { id: number; nombre: string };
     correlatividadesOrigen: Array<{
-      materiaRequeridaId: number;
-      materiaRequerida: { id: number; nombre: string };
+      materiaRequeridaId: number | null;
+      materiaRequerida: { id: number; nombre: string } | null;
+      espacioRequeridoId: number | null;
+      espacioRequerido: { id: number; nombre: string } | null;
       aplicaCursado: boolean;
       aplicaRendir: boolean;
     }>;
@@ -63,7 +66,7 @@ export interface MesaDisponibleParaAlumno {
     rolTribunal: RolTribunal;
     profesor: { apellidoNombre: string };
   }>;
-  inscripciones: Array<{ id: number; fechaBaja: Date | null; condicion?: CondicionExamen }>;
+  inscripciones: Array<{ id: number; fechaBaja: Date | null; condicion?: CondicionExamen | null }>;
   periodosHabilitadores?: Array<{ periodoInscripcion: {
     tipo: string;
     activo: boolean;
@@ -73,6 +76,17 @@ export interface MesaDisponibleParaAlumno {
 }
 
 class ExamenRepository {
+  private assertMesaOrdinariaCompleta<T extends {
+    fecha: Date | null;
+    tipoExamen: TipoExamen | null;
+    llamado: number | null;
+  }>(mesa: T): T & { fecha: Date; tipoExamen: TipoExamen; llamado: number } {
+    if (mesa.fecha === null || mesa.tipoExamen === null || mesa.llamado === null) {
+      throw new AppError(500, 'La mesa ordinaria tiene fecha, modalidad o llamado incompleto');
+    }
+    return { ...mesa, fecha: mesa.fecha, tipoExamen: mesa.tipoExamen, llamado: mesa.llamado };
+  }
+
   private assertVersion(actual: number, expectedVersion?: number): void {
     if (expectedVersion !== undefined && actual !== expectedVersion) {
       throw new AppError(409, `La mesa fue modificada; versión actual ${actual}`);
@@ -148,10 +162,10 @@ class ExamenRepository {
   }
 
   async findExamenById(id: number, profesorId?: number): Promise<any> {
-    return await prisma.mesa.findFirst({
+    const mesa = await prisma.mesa.findFirst({
       where: profesorId === undefined
-        ? { id }
-        : { id, tribunales: { some: { profesorId } } },
+        ? { id, origen: 'ORDINARIA' }
+        : { id, origen: 'ORDINARIA', tribunales: { some: { profesorId } } },
       include: {
         materia: {
           include: {
@@ -187,13 +201,14 @@ class ExamenRepository {
         }
       }
     });
+    return mesa ? this.assertMesaOrdinariaCompleta(mesa) : null;
   }
 
   async findAllExamenes(filters: any = {}) {
     const { materiaId, carreraId, fechaDesde, fechaHasta, cicloLectivo, estadoMesa, profesorId, page = 1, limit = 20 } = filters;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: any = { origen: 'ORDINARIA' };
     if (materiaId) where.materiaId = materiaId;
     if (carreraId) where.materia = { ...(where.materia ?? {}), carreraId };
     if (estadoMesa) where.estadoMesa = estadoMesa;
@@ -248,7 +263,7 @@ class ExamenRepository {
     ]);
 
     return {
-      data: examenes,
+      data: examenes.map(mesa => this.assertMesaOrdinariaCompleta(mesa)),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
     };
   }
@@ -263,6 +278,7 @@ class ExamenRepository {
   }): Promise<MesaDisponibleParaAlumno[]> {
     const where: Prisma.MesaWhereInput = {
       activo: true,
+      origen: 'ORDINARIA',
       estadoMesa: 'ABIERTA',
       fecha: { gte: filtros.fechaDesde },
       materia: {
@@ -289,7 +305,7 @@ class ExamenRepository {
         }
       };
     }
-    return await prisma.mesa.findMany({
+    const mesas = await prisma.mesa.findMany({
       where,
       select: {
         id: true,
@@ -308,6 +324,8 @@ class ExamenRepository {
               select: {
                 materiaRequeridaId: true,
                 materiaRequerida: { select: { id: true, nombre: true } },
+                espacioRequeridoId: true,
+                espacioRequerido: { select: { id: true, nombre: true } },
                 aplicaCursado: true,
                 aplicaRendir: true
               }
@@ -343,6 +361,12 @@ class ExamenRepository {
       },
       orderBy: [{ fecha: 'asc' }, { id: 'asc' }]
     });
+    return mesas.map(mesa => {
+      if (!mesa.fecha || !mesa.tipoExamen || mesa.llamado === null) {
+        throw new AppError(500, 'La mesa ordinaria tiene fecha, modalidad o llamado incompleto');
+      }
+      return { ...mesa, fecha: mesa.fecha, tipoExamen: mesa.tipoExamen, llamado: mesa.llamado };
+    });
   }
 
   async updateExamen(id: number, data: ExamenUpdateData, expectedVersion?: number): Promise<any> {
@@ -353,7 +377,7 @@ class ExamenRepository {
 
     return await prisma.$transaction(async tx => {
       await this.lockMesa(tx, id);
-      const mesa = await tx.mesa.findUnique({ where: { id } });
+      const mesa = await tx.mesa.findUnique({ where: { id, origen: 'ORDINARIA' } });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
       this.assertVersion(mesa.version, expectedVersion);
       if (mesa.estadoMesa === 'FINALIZADA') {
@@ -369,10 +393,12 @@ class ExamenRepository {
   }
 
   async deleteExamen(id: number): Promise<any> {
-    return await prisma.mesa.update({
-      where: { id },
+    const result = await prisma.mesa.updateMany({
+      where: { id, origen: 'ORDINARIA' },
       data: { activo: false }
     });
+    if (result.count !== 1) throw new AppError(404, 'Examen no encontrado');
+    return await prisma.mesa.findUnique({ where: { id, origen: 'ORDINARIA' } });
   }
 
   // ===== TRIBUNALES =====
@@ -380,7 +406,7 @@ class ExamenRepository {
     return await prisma.$transaction(async tx => {
       await this.lockMesa(tx, data.mesaId);
       const mesa = await tx.mesa.findUnique({
-        where: { id: data.mesaId },
+        where: { id: data.mesaId, origen: 'ORDINARIA' },
         include: { tribunales: true }
       });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
@@ -417,7 +443,7 @@ class ExamenRepository {
       const tribunal = await tx.mesaTribunal.findUnique({ where: { id } });
       if (!tribunal) throw new AppError(404, 'Tribunal no encontrado');
       await this.lockMesa(tx, tribunal.mesaId);
-      const mesa = await tx.mesa.findUnique({ where: { id: tribunal.mesaId } });
+      const mesa = await tx.mesa.findUnique({ where: { id: tribunal.mesaId, origen: 'ORDINARIA' } });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
       this.assertVersion(mesa.version, expectedVersion);
       if (mesa.estadoMesa === 'FINALIZADA') {
@@ -431,7 +457,7 @@ class ExamenRepository {
 
   async getTribunalesByExamen(mesaId: number): Promise<any[]> {
     return await prisma.mesaTribunal.findMany({
-      where: { mesaId },
+      where: { mesaId, mesa: { origen: 'ORDINARIA' } },
       include: {
         profesor: {
           select: {
@@ -447,7 +473,7 @@ class ExamenRepository {
   // ===== INSCRIPCIÓN A EXÁMENES =====
   async findInscripcionByMesaAndAlumno(mesaId: number, alumnoId: number): Promise<any> {
     return await prisma.inscripcionExamen.findFirst({
-      where: { mesaId, alumnoId }
+      where: { mesaId, alumnoId, mesa: { origen: 'ORDINARIA' } }
     });
   }
 
@@ -457,7 +483,7 @@ class ExamenRepository {
       if (!previous) throw new AppError(404, 'Inscripción no encontrada');
       await this.lockMesa(tx, previous.mesaId);
       const mesa = await tx.mesa.findUnique({
-        where: { id: previous.mesaId },
+        where: { id: previous.mesaId, origen: 'ORDINARIA' },
         include: { tribunales: true }
       });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
@@ -489,7 +515,7 @@ class ExamenRepository {
   async inscribirAlumno(mesaId: number, alumnoId: number, condicion: string, expectedVersion?: number): Promise<any> {
     return await prisma.$transaction(async tx => {
       await this.lockMesa(tx, mesaId);
-      const mesa = await tx.mesa.findUnique({ where: { id: mesaId }, include: { tribunales: true } });
+      const mesa = await tx.mesa.findUnique({ where: { id: mesaId, origen: 'ORDINARIA' }, include: { tribunales: true } });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
       this.assertVersion(mesa.version, expectedVersion);
       this.assertMutacionNominaPermitida(mesa);
@@ -519,7 +545,7 @@ class ExamenRepository {
   async desinscribirAlumno(mesaId: number, alumnoId: number, expectedVersion?: number): Promise<any> {
     return await prisma.$transaction(async tx => {
       await this.lockMesa(tx, mesaId);
-      const mesa = await tx.mesa.findUnique({ where: { id: mesaId } });
+      const mesa = await tx.mesa.findUnique({ where: { id: mesaId, origen: 'ORDINARIA' } });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
       this.assertVersion(mesa.version, expectedVersion);
       this.assertMutacionNominaPermitida(mesa);
@@ -535,7 +561,8 @@ class ExamenRepository {
     return await prisma.inscripcionExamen.findMany({
       where: {
         mesaId,
-        fechaBaja: null
+        fechaBaja: null,
+        mesa: { origen: 'ORDINARIA' }
       },
       include: {
         alumno: {
@@ -566,7 +593,8 @@ class ExamenRepository {
     return await prisma.inscripcionExamen.findMany({
       where: {
         alumnoId,
-        fechaBaja: null
+        fechaBaja: null,
+        mesa: { origen: 'ORDINARIA' }
       },
       include: {
         mesa: {
@@ -594,7 +622,7 @@ class ExamenRepository {
     return await prisma.$transaction(async tx => {
       await this.lockMesa(tx, mesaId);
       const mesa = await tx.mesa.findUnique({
-        where: { id: mesaId },
+        where: { id: mesaId, origen: 'ORDINARIA' },
         include: { materia: true, tribunales: true }
       });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
@@ -616,7 +644,7 @@ class ExamenRepository {
         }
       });
       await tx.mesa.update({
-        where: { id: mesaId },
+        where: { id: mesaId, origen: 'ORDINARIA' },
         data: { estadoMesa: 'EN_PROCESO' }
       });
       const version = await this.bumpMesaVersion(tx, mesaId);
@@ -638,12 +666,21 @@ class ExamenRepository {
 
   async cerrarMesa(mesaId: number, actor: ExamenActor, expectedVersion: number): Promise<any> {
     return await prisma.$transaction(async tx => {
+      const initial = await tx.mesa.findUnique({
+        where: { id: mesaId, origen: 'ORDINARIA' },
+        select: { materia: { select: { carreraId: true } } }
+      });
+      if (!initial) throw new AppError(404, 'Examen no encontrado');
+      await lockCareerForAcademicMutation(tx, initial.materia.carreraId);
       await this.lockMesa(tx, mesaId);
       const mesa = await tx.mesa.findUnique({
-        where: { id: mesaId },
+        where: { id: mesaId, origen: 'ORDINARIA' },
         include: { materia: true, tribunales: true, inscripciones: { where: { fechaBaja: null } } }
       });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
+      if (mesa.materia.carreraId !== initial.materia.carreraId) {
+        throw new AppError(409, 'La carrera de la mesa cambió durante la operación; volvé a cargarla');
+      }
       this.assertActorPuedeEditarResultados(mesa.tribunales, actor, true);
       this.assertVersion(mesa.version, expectedVersion);
       if (mesa.estadoMesa === 'FINALIZADA') throw new AppError(409, 'La mesa ya está finalizada');
@@ -651,7 +688,11 @@ class ExamenRepository {
       const pendientes = mesa.inscripciones.filter(i => !i.ausenteBorrador && i.notaBorrador === null);
       if (pendientes.length > 0) throw new AppError(409, 'No se puede cerrar una mesa con resultados pendientes');
       const minimo = mesa.materia.notaMinima ?? 6;
+      const newlyApproved = new Set<number>();
       for (const inscripcion of mesa.inscripciones) {
+        if (!inscripcion.ausenteBorrador && inscripcion.notaBorrador !== null && inscripcion.notaBorrador >= minimo) {
+          newlyApproved.add(inscripcion.alumnoId);
+        }
         await tx.inscripcionExamen.update({
           where: { id: inscripcion.id },
           data: {
@@ -673,18 +714,37 @@ class ExamenRepository {
       await tx.mesaResultadoAuditoria.create({
         data: { mesaId, actorId: actor.id, accion: 'CIERRE', motivo: 'Publicación de resultados' }
       });
+      for (const alumnoId of newlyApproved) {
+        await latchSpaceIfStudentCompleted({
+          tx,
+          carreraId: mesa.materia.carreraId,
+          espacioCurricularId: mesa.materia.espacioCurricularId,
+          materiaId: mesa.materia.id,
+          alumnoId,
+          newlyApproved: true
+        });
+      }
       return updated;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async reabrirMesa(mesaId: number, actorId: number, motivo: string, expectedVersion: number): Promise<any> {
     return await prisma.$transaction(async tx => {
+      const initial = await tx.mesa.findUnique({
+        where: { id: mesaId, origen: 'ORDINARIA' },
+        select: { materia: { select: { carreraId: true } } }
+      });
+      if (!initial) throw new AppError(404, 'Examen no encontrado');
+      await lockCareerForAcademicMutation(tx, initial.materia.carreraId);
       await this.lockMesa(tx, mesaId);
       const mesa = await tx.mesa.findUnique({
-        where: { id: mesaId },
-        include: { inscripciones: { where: { fechaBaja: null } } }
+        where: { id: mesaId, origen: 'ORDINARIA' },
+        include: { materia: true, inscripciones: { where: { fechaBaja: null } } }
       });
       if (!mesa) throw new AppError(404, 'Examen no encontrado');
+      if (mesa.materia.carreraId !== initial.materia.carreraId) {
+        throw new AppError(409, 'La carrera de la mesa cambió durante la operación; volvé a cargarla');
+      }
       this.assertVersion(mesa.version, expectedVersion);
       if (mesa.estadoMesa !== 'FINALIZADA') throw new AppError(409, 'Sólo se puede reabrir una mesa finalizada');
       for (const inscripcion of mesa.inscripciones) {
@@ -702,6 +762,16 @@ class ExamenRepository {
         data: { estadoMesa: 'EN_PROCESO', reabiertaEn: now, reabiertaPor: actorId, motivoReapertura: motivo, version: { increment: 1 } }
       });
       await tx.mesaResultadoAuditoria.create({ data: { mesaId, actorId, accion: 'REAPERTURA', motivo } });
+      for (const inscripcion of mesa.inscripciones) {
+        await latchSpaceIfStudentCompleted({
+          tx,
+          carreraId: mesa.materia.carreraId,
+          espacioCurricularId: mesa.materia.espacioCurricularId,
+          materiaId: mesa.materia.id,
+          alumnoId: inscripcion.alumnoId,
+          newlyApproved: inscripcion.aprobado === true
+        });
+      }
       return updated;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }

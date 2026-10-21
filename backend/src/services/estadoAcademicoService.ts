@@ -17,6 +17,7 @@ import {
   type TrayectoriaSnapshot
 } from '../domain/academico/trayectoriaAcademica.js';
 import type { CalificacionSnapshot } from '../domain/academico/calificaciones.js';
+import { evaluarEspacios, resumirUnidadesAcademicas } from '../domain/academico/espaciosAcademicos.js';
 
 type CurrentUser = { id: number; rol: string } | undefined;
 
@@ -115,6 +116,14 @@ function asistenciasSnapshot(asistencias: AsistenciaRecord[]): AsistenciaRecord[
   }));
 }
 
+function fechaRealFinal(examen: { mesa?: { fecha?: Date | null; fechaCivil?: Date | null }; id: number }): number {
+  return (examen.mesa?.fechaCivil ?? examen.mesa?.fecha)?.getTime() ?? 0;
+}
+
+function ordenarFinalesPorFechaReal<T extends { id: number; mesa?: { fecha?: Date | null; fechaCivil?: Date | null } }>(examenes: T[]): T[] {
+  return [...examenes].sort((a, b) => fechaRealFinal(b) - fechaRealFinal(a) || b.id - a.id);
+}
+
 function requisitosPendientes(resultado: ReturnType<typeof evaluarCursada>): string[] {
   const pendientes: string[] = [];
   if (resultado.asistencia.cumpleRegularidad !== true) pendientes.push('ASISTENCIA');
@@ -143,7 +152,7 @@ class EstadoAcademicoService {
     }
 
     const idAlumno = await getAlumnoIdByUsuarioId(alumnoUsuarioId);
-    const [inscripciones, examenes, homologaciones, inscripcionesHistoricas] = await Promise.all([
+    const [inscripciones, examenes, homologaciones, promocionesHistoricas, inscripcionesHistoricas] = await Promise.all([
       prisma.inscripcionMateria.findMany({
         where: { alumnoId: idAlumno, materia: { carreraId }, estado: { not: 'BAJA' } },
         include: {
@@ -168,6 +177,11 @@ class EstadoAcademicoService {
         include: { materia: true },
         orderBy: { updatedAt: 'desc' }
       }),
+      (prisma as any).promocionHistorica.findMany({
+        where: { alumnoId: idAlumno, inscripcionMateria: { materia: { carreraId } } },
+        include: { inscripcionMateria: { include: { materia: true, cursada: true } } },
+        orderBy: [{ fechaAcreditacion: 'desc' }, { id: 'desc' }]
+      }),
       prisma.inscripcionMateria.findMany({
         where: { alumnoId: idAlumno, materia: { carreraId } },
         select: {
@@ -188,12 +202,17 @@ class EstadoAcademicoService {
       porMateria.set(inscripcion.materiaId, filas);
     }
     const examenPorMateria = new Map<number, any>();
-    for (const examen of examenes as any[]) {
+    for (const examen of ordenarFinalesPorFechaReal(examenes as any[])) {
       if (!examenPorMateria.has(examen.mesa.materiaId)) examenPorMateria.set(examen.mesa.materiaId, examen);
     }
     const homologacionPorMateria = new Map<number, any>();
     for (const homologacion of homologaciones as any[]) {
       if (!homologacionPorMateria.has(homologacion.materiaId)) homologacionPorMateria.set(homologacion.materiaId, homologacion);
+    }
+    const promocionHistoricaPorMateria = new Map<number, any>();
+    for (const promocion of promocionesHistoricas as any[]) {
+      const materiaId = promocion.inscripcionMateria.materiaId;
+      if (!promocionHistoricaPorMateria.has(materiaId)) promocionHistoricaPorMateria.set(materiaId, promocion);
     }
     const inscripcionesHistoricasPorMateria = new Map<number, any[]>();
     for (const inscripcion of inscripcionesHistoricas) {
@@ -226,16 +245,20 @@ class EstadoAcademicoService {
       const ultimoResultado = cursadas[0] ?? null;
       const examenFinal = examenPorMateria.get(materia.id) ?? null;
       const homologacion = homologacionPorMateria.get(materia.id) ?? null;
+      const promocionHistorica = promocionHistoricaPorMateria.get(materia.id) ?? null;
       const promocion = cursadas.find((cursada: any) => cursada.estado === 'PROMOCIONADO') ?? null;
 
       let estado = ultimoResultado?.estado ?? 'PENDIENTE';
       let definitiva: any = null;
       if (examenFinal) {
         estado = 'APROBADA';
-        definitiva = { via: 'EXAMEN_FINAL', nota: examenFinal.notaFinal, fecha: examenFinal.mesa?.fecha ?? examenFinal.updatedAt };
+        definitiva = { via: 'EXAMEN_FINAL', nota: examenFinal.notaFinal, fecha: examenFinal.mesa?.fechaCivil ?? examenFinal.mesa?.fecha ?? examenFinal.updatedAt };
       } else if (homologacion) {
         estado = 'HOMOLOGADA';
         definitiva = { via: 'HOMOLOGACION', nota: homologacion.calificacion, fecha: homologacion.fechaHomologacion };
+      } else if (promocionHistorica) {
+        estado = 'PROMOCIONADO';
+        definitiva = { via: 'PROMOCION_DIRECTA', nota: promocionHistorica.notaFinal, fecha: promocionHistorica.fechaAcreditacion, fuente: 'HISTORICA', version: promocionHistorica.version };
       } else if (promocion) {
         estado = 'PROMOCIONADO';
         definitiva = { via: 'PROMOCION_DIRECTA', nota: promocion.examenFinalNota, fecha: null };
@@ -265,6 +288,9 @@ class EstadoAcademicoService {
 
       return {
         materia: { id: materia.id, nombre: materia.nombre },
+        espacioCurricular: materia.espacioCurricular?.activo
+          ? { id: materia.espacioCurricular.id, nombre: materia.espacioCurricular.nombre }
+          : null,
         plan: { cursoId: materia.cursoId ?? null, anio: materia.curso?.anio ?? null, posicion: indice + 1 },
         estado,
         inscripcion: ultimaInscripcion ? {
@@ -280,26 +306,31 @@ class EstadoAcademicoService {
         tps: ultimoResultado?.tps ?? null,
         parcialesEfectivos: ultimoResultado?.parcialesEfectivos ?? [],
         regularidad: ultimoResultado ? { hasta: ultimoResultado.regularHasta, vencida: ultimoResultado.regularidadVencida } : null,
-        promocionDirecta: promocion ? { habilitada: true, nota: promocion.examenFinalNota } : null,
-        examenFinal: examenFinal ? { mesaId: examenFinal.mesaId, nota: examenFinal.notaFinal, aprobado: examenFinal.aprobado, fecha: examenFinal.mesa?.fecha ?? examenFinal.updatedAt } : null,
+        promocionDirecta: promocionHistorica
+          ? { habilitada: true, nota: promocionHistorica.notaFinal, fecha: promocionHistorica.fechaAcreditacion, fuente: 'HISTORICA', version: promocionHistorica.version }
+          : promocion ? { habilitada: true, nota: promocion.examenFinalNota } : null,
+        examenFinal: examenFinal ? { mesaId: examenFinal.mesaId, nota: examenFinal.notaFinal, aprobado: examenFinal.aprobado, fecha: examenFinal.mesa?.fechaCivil ?? examenFinal.mesa?.fecha ?? examenFinal.updatedAt } : null,
         homologacion: homologacion ? { id: homologacion.id, nota: homologacion.calificacion, tipo: homologacion.tipoHomologacion, fecha: homologacion.fechaHomologacion } : null,
         definitiva,
         categoriaTrayectoria
       };
     });
 
-    const notasDefinitivas = materias
-      .map((materia: any) => materia.definitiva?.nota)
-      .filter((nota: unknown): nota is number => typeof nota === 'number');
-    const promedioGeneral = notasDefinitivas.length > 0
-      ? Number((notasDefinitivas.reduce((total: number, nota: number) => total + nota, 0) / notasDefinitivas.length).toFixed(2))
-      : null;
+    const espaciosConfigurados = (carrera.espaciosCurriculares ?? []).map((espacio: any) => ({
+      id: espacio.id,
+      nombre: espacio.nombre,
+      materias: espacio.materias ?? []
+    }));
+    const espaciosCurriculares = evaluarEspacios(espaciosConfigurados, materias);
+    const unidades = resumirUnidadesAcademicas(materias, espaciosCurriculares);
 
     return {
       alumnoUsuarioId,
       carrera: { id: carrera.id, nombre: carrera.nombre, duracionAnios: carrera.duracionAnios },
-      promedioGeneral,
-      cantidadMateriasAprobadas: notasDefinitivas.length,
+      promedioGeneral: unidades.promedio,
+      cantidadMateriasAprobadas: unidades.aprobadas,
+      cantidadUnidadesTotal: unidades.total,
+      espaciosCurriculares,
       materias
     };
   }
@@ -521,7 +552,12 @@ class EstadoAcademicoService {
       );
       evaluaciones.push({ materiaId: cursada.materia.id, estado: fila.estado });
     }
-    return consolidarTrayectoria({ evaluaciones });
+    const estados = consolidarTrayectoria({ evaluaciones });
+    const promociones = await (prisma as any).promocionHistorica.findMany({
+      where: { alumnoId: idAlumno }, select: { inscripcionMateria: { select: { materiaId: true } } }
+    });
+    for (const promocion of promociones as any[]) estados.set(promocion.inscripcionMateria.materiaId, 'PROMOCIONADO');
+    return estados;
   }
 
   async getMateriasAprobadasSet(
@@ -540,6 +576,11 @@ class EstadoAcademicoService {
       select: { materiaId: true }
     });
     for (const homologacion of homologaciones) aprobadas.add(homologacion.materiaId);
+
+    const promocionesHistoricas = await (prisma as any).promocionHistorica.findMany({
+      where: { alumnoId: idAlumno }, select: { inscripcionMateria: { select: { materiaId: true } } }
+    });
+    for (const promocion of promocionesHistoricas as any[]) aprobadas.add(promocion.inscripcionMateria.materiaId);
 
     const mapa = mapaExistente ?? await this.getMapaEstadosPorMateria(idAlumno);
     for (const [materiaId, estado] of mapa) {
@@ -582,7 +623,7 @@ class EstadoAcademicoService {
       include: { mesa: { include: { materia: { select: { id: true, nombre: true, carreraId: true } } } } },
       orderBy: { updatedAt: 'desc' }
     });
-    for (const examen of examenes) {
+    for (const examen of ordenarFinalesPorFechaReal(examenes as any[])) {
       const materia = examen.mesa.materia;
       if (examen.notaFinal !== null) {
         this.agregarDefinitiva(definitivas, {
@@ -608,6 +649,19 @@ class EstadoAcademicoService {
         nombre: materia.nombre,
         nota: homologacion.calificacion,
         via: 'HOMOLOGACION'
+      });
+    }
+
+    const promocionesHistoricas = await (prisma as any).promocionHistorica.findMany({
+      where: { alumnoId: idAlumno },
+      include: { inscripcionMateria: { include: { materia: { select: { id: true, nombre: true, carreraId: true } } } } },
+      orderBy: [{ fechaAcreditacion: 'desc' }, { id: 'desc' }]
+    });
+    for (const promocion of promocionesHistoricas as any[]) {
+      const materia = promocion.inscripcionMateria.materia;
+      this.agregarDefinitiva(definitivas, {
+        materiaId: materia.id, carreraId: materia.carreraId, nombre: materia.nombre,
+        nota: promocion.notaFinal, via: 'PROMOCION_DIRECTA'
       });
     }
 
@@ -648,17 +702,54 @@ class EstadoAcademicoService {
 
     let materiasFinales = Array.from(definitivas.values());
     if (carreraId) materiasFinales = materiasFinales.filter(materia => materia.carreraId === carreraId);
-    const cantidad = materiasFinales.length;
-    const promedioGeneral =
-      cantidad > 0
-        ? Number((materiasFinales.reduce((acc, materia) => acc + materia.nota, 0) / cantidad).toFixed(2))
-        : null;
+    const filtroCarrera = carreraId === undefined ? {} : { carreraId };
+    const [materiasDelPlan, espaciosDelPlan] = await Promise.all([
+      prisma.materia.findMany({
+        where: { ...filtroCarrera, activo: true },
+        select: { id: true, nombre: true, espacioCurricularId: true }
+      }),
+      prisma.espacioCurricular.findMany({
+        where: { ...filtroCarrera, activo: true, carreraId: { not: null } },
+        include: { materias: { where: { activo: true }, select: { id: true, nombre: true } } }
+      })
+    ]);
+    const definitivasPorMateria = new Map(materiasFinales.map(definitiva => [definitiva.materiaId, definitiva]));
+    const registrosMateria = materiasDelPlan.map(materia => {
+      const definitiva = definitivasPorMateria.get(materia.id);
+      return {
+        materia: { id: materia.id, nombre: materia.nombre },
+        estado: definitiva ? 'APROBADA' : 'PENDIENTE',
+        definitiva: definitiva ? { nota: definitiva.nota, via: definitiva.via } : null
+      };
+    });
+    const espaciosCurriculares = evaluarEspacios(espaciosDelPlan.map(espacio => ({
+      id: espacio.id,
+      nombre: espacio.nombre,
+      materias: espacio.materias
+    })), registrosMateria);
+    const unidades = resumirUnidadesAcademicas(registrosMateria, espaciosCurriculares);
+    const componentesEnEspacio = new Set(espaciosCurriculares.flatMap(espacio => espacio.componentes.map(componente => componente.materiaId)));
+    const materiasSueltas = registrosMateria
+      .filter(materia => !componentesEnEspacio.has(materia.materia.id) && materia.definitiva)
+      .map(materia => ({ materiaId: materia.materia.id, nombre: materia.materia.nombre, nota: materia.definitiva!.nota, via: materia.definitiva!.via }));
+    const unidadesAprobadas = [
+      ...materiasSueltas,
+      ...espaciosCurriculares.filter(espacio => espacio.nota !== null).map(espacio => ({
+        espacioCurricularId: espacio.id,
+        nombre: espacio.nombre,
+        nota: espacio.nota!,
+        via: 'ESPACIO_CURRICULAR'
+      }))
+    ];
 
     return {
       alumnoUsuarioId,
       ...(carreraId ? { carreraId } : {}),
-      promedioGeneral,
-      cantidadMateriasAprobadas: cantidad,
+      promedioGeneral: unidades.promedio,
+      cantidadMateriasAprobadas: unidades.aprobadas,
+      cantidadUnidadesTotal: unidades.total,
+      unidades: unidadesAprobadas,
+      espaciosCurriculares,
       materias: materiasFinales.map(({ materiaId, nombre, nota, via }) => ({ materiaId, nombre, nota, via }))
     };
   }

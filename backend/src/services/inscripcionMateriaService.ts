@@ -8,8 +8,10 @@ import { ROLES } from '../constants/roles.js';
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { AppError } from '../utils/AppError.js';
 import estadoAcademicoService from './estadoAcademicoService.js';
-import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
+import { evaluarRequisitosAcademicos, type RequisitoAcademico } from '../domain/academico/correlatividadesEspacios.js';
+import { prisma } from '../config/prisma.js';
 import { verificarPermisoMateria } from '../utils/docenteHelper.js';
+import { anioInstitucionalActual } from '../utils/cicloLectivo.js';
 
 class InscripcionMateriaService {
   async inscribirAlumno(data: InscripcionMateriaCreateData, currentUser: any) {
@@ -27,12 +29,18 @@ class InscripcionMateriaService {
     const idAlumno = await getAlumnoIdByUsuarioId(data.alumnoId);
 
     // Si no se indica ciclo lectivo, se usa el año en curso
-    const cicloLectivo = data.cicloLectivo ?? new Date().getFullYear();
+    const cicloLectivo = data.cicloLectivo ?? anioInstitucionalActual();
+    if (currentUser.rol === ROLES.ALUMNO && cicloLectivo < anioInstitucionalActual()) {
+      throw new AppError(409, 'La inscripción a ciclos anteriores se gestiona como antecedente histórico por administración');
+    }
 
     // Verificar que la materia existe
     const materia = await materiaRepository.findById(data.materiaId);
     if (!materia) {
       throw new Error('Materia no encontrada');
+    }
+    if (materia.espacioCurricular?.activo) {
+      throw new AppError(409, `La materia pertenece al espacio ${materia.espacioCurricular.nombre}; la inscripción se realiza al espacio completo`);
     }
 
     // Períodos de inscripción (RAM Art. 20a): el alumno solo puede auto-inscribirse
@@ -89,16 +97,24 @@ class InscripcionMateriaService {
   }
 
   async verificarCorrelatividades(idAlumno: number, materiaId: number) {
-    // Obtener correlatividades de la materia
-    const correlatividades = (await materiaRepository.getCorrelatividades(materiaId))
-      .filter(correlatividad => correlatividad.aplicaCursado);
-
-    if (correlatividades.length === 0) {
-      return; // No hay correlatividades, todo ok
+    const target = await prisma.materia.findUnique({ where: { id: materiaId }, select: { espacioCurricularId: true, espacioCurricular: { select: { id: true, nombre: true, activo: true, materias: { select: { id: true } } } } } });
+    const space = target?.espacioCurricular?.activo ? target.espacioCurricular : null;
+    let reglas: RequisitoAcademico[] = [];
+    if (space) {
+      const spaceRules = await prisma.espacioCorrelatividad.findMany({ where: { espacioOrigenId: space.id, aplicaCursado: true }, include: { materiaRequerida: { select: { id: true, nombre: true } }, espacioRequerido: { select: { id: true, nombre: true, materias: { select: { id: true } } } } } });
+      reglas = [
+        ...spaceRules.flatMap<RequisitoAcademico>(rule => rule.materiaRequerida
+          ? [{ tipo: 'MATERIA' as const, requisitoId: rule.id, nombre: rule.materiaRequerida.nombre, materiaId: rule.materiaRequerida.id }]
+          : rule.espacioRequerido ? [{ tipo: 'ESPACIO' as const, requisitoId: rule.id, nombre: rule.espacioRequerido.nombre, espacioId: rule.espacioRequerido.id, componentesIds: rule.espacioRequerido.materias.map(item => item.id) }] : [])
+      ];
+    } else {
+      const legacy = await prisma.correlatividad.findMany({ where: { materiaOrigenId: materiaId, tipoRequisito: 'OBLIGATORIA', suspendidaPorEspacio: false, aplicaCursado: true }, include: { materiaRequerida: { select: { id: true, nombre: true } }, espacioRequerido: { select: { id: true, nombre: true, materias: { select: { id: true } } } } } });
+      reglas = legacy.flatMap<RequisitoAcademico>(rule => rule.materiaRequerida
+        ? [{ tipo: 'MATERIA', requisitoId: rule.id, nombre: rule.materiaRequerida.nombre, materiaId: rule.materiaRequerida.id }]
+        : rule.espacioRequerido ? [{ tipo: 'ESPACIO', requisitoId: rule.id, nombre: rule.espacioRequerido.nombre, espacioId: rule.espacioRequerido.id, componentesIds: rule.espacioRequerido.materias.map(item => item.id) }] : []);
     }
+    if (reglas.length === 0) return;
 
-    // Régimen oficial: para CURSAR basta tener la correlativa REGULARIZADA
-    // (o aprobada). El estado se deriva de notas + asistencia (RAI Arts. 26-37).
     const estadosPorMateria = await estadoAcademicoService.getMapaEstadosPorMateria(idAlumno);
     const aprobadasSet = await estadoAcademicoService.getMateriasAprobadasSet(
       idAlumno,
@@ -112,17 +128,17 @@ class InscripcionMateriaService {
       }
     }
 
-    const resultado = evaluarCorrelatividades({
-      modo: 'CURSAR',
-      correlatividades,
-      materiasCumplidas
-    });
+    const resultado = evaluarRequisitosAcademicos({ modo: 'CURSAR', reglas, materiasCumplidas });
 
     if (!resultado.cumple) {
       const error = resultado.primerError;
-      throw new Error(
-        `Correlatividad no cumplida: necesitás tener REGULARIZADO ${error.nombreMateria}`
-      );
+      if (error) {
+        const requisito = reglas.find(regla => regla.requisitoId === error.requisitoId);
+        const mensaje = requisito?.tipo === 'ESPACIO'
+          ? `Correlatividad no cumplida: necesitás tener regularizado o aprobado ${error.nombre}`
+          : `Correlatividad no cumplida: necesitás tener REGULARIZADO ${error.nombre}`;
+        throw new Error(mensaje);
+      }
     }
   }
 
@@ -138,6 +154,10 @@ class InscripcionMateriaService {
       if (idAlumno !== inscripcion.alumnoId) {
         throw new Error('No tienes permisos para dar de baja esta inscripción');
       }
+    }
+
+    if (inscripcion.inscripcionEspacioId !== null && inscripcion.inscripcionEspacioId !== undefined) {
+      throw new AppError(409, 'La inscripción pertenece a una matrícula de espacio; usá la baja del espacio completo');
     }
 
     return await inscripcionMateriaRepository.delete(id);
@@ -177,6 +197,10 @@ class InscripcionMateriaService {
 
     if (currentUser.rol !== ROLES.ADMINISTRATIVO) {
       throw new Error('Solo administrativos pueden cambiar la modalidad');
+    }
+
+    if (inscripcion.inscripcionEspacioId !== null && inscripcion.inscripcionEspacioId !== undefined) {
+      throw new AppError(409, 'La modalidad de un componente inscripto a un espacio no se cambia por separado');
     }
 
     return await inscripcionMateriaRepository.update(id, { modalidadElegida: modalidad });

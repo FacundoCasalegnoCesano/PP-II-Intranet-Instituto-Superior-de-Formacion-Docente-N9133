@@ -25,7 +25,7 @@ function parsedPositive(value: unknown): number | undefined { const parsed = Num
 function listQuery(): Record<string, string> {
   return { ...(search.value.trim() ? { search: search.value.trim() } : {}), ...(careerId.value ? { carreraId: String(careerId.value) } : {}), ...(pagination.value.page > 1 ? { page: String(pagination.value.page) } : {}) }
 }
-const routeSignature = computed(() => `${route.name}|${route.params.id ?? ''}|${route.query.search ?? ''}|${route.query.carreraId ?? ''}|${route.query.page ?? ''}|${route.query.selectedCareerId ?? ''}`)
+const routeSignature = computed(() => `${String(route.name ?? '')}|${String(route.params.id ?? '')}|${String(route.query.search ?? '')}|${String(route.query.carreraId ?? '')}|${String(route.query.page ?? '')}|${String(route.query.selectedCareerId ?? '')}`)
 const sessionSignature = computed(() => `${auth.status}|${auth.activeRole ?? ''}|${auth.user?.idUsuario ?? ''}`)
 let disposed = false
 

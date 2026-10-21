@@ -4,6 +4,7 @@ import { afterEach, test } from 'node:test';
 import alumnoRepository from '../src/repositories/alumnoRepository.js';
 import calificacionRepository from '../src/repositories/calificacionRepository.js';
 import calificacionService from '../src/services/calificacionService.js';
+import cursadaRepository from '../src/repositories/cursadaRepository.js';
 import { ROLES } from '../src/constants/roles.js';
 
 const restorations: Array<() => void> = [];
@@ -52,6 +53,11 @@ test('cargarLote usa una cantidad constante de consultas agrupadas y no N+1', as
       { id: 46, cursadaId: 1, alumnoId: 9, tipoCalificacion: 'PARCIAL', numero: 1 }
     ];
   });
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 1,
+    materiaId: 3,
+    materia: { id: 3, carreraId: 1, nombre: 'Materia de prueba', esPromocionable: false }
+  }));
   replaceMethod(calificacionRepository, 'upsertLote', async (_cursadaId: number, filas: any[]) => {
     escrituras += 1;
     return filas;

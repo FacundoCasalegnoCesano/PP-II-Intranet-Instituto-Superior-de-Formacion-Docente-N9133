@@ -67,7 +67,15 @@ test('documenta las cuatro operaciones de clases, correlativasIds y el resumen a
   assert.equal(document.components.schemas.MateriaUpdateRequest.properties.correlativasIds.nullable, undefined);
 
   const correlatividadRequest = document.components.schemas.CorrelatividadRequest;
-  assert.deepEqual(Object.keys(correlatividadRequest.properties), ['materiaRequeridaId']);
+  assert.deepEqual(Object.keys(correlatividadRequest.properties), [
+    'materiaRequeridaId', 'espacioRequeridoId', 'aplicaCursado', 'aplicaRendir'
+  ]);
+  assert.deepEqual(correlatividadRequest.oneOf, [
+    { required: ['materiaRequeridaId'] },
+    { required: ['espacioRequeridoId'] }
+  ]);
+  assert.equal(correlatividadRequest.properties.aplicaCursado.default, false);
+  assert.equal(correlatividadRequest.properties.aplicaRendir.default, true);
   assert.equal(correlatividadRequest.properties.tipoRequisito, undefined);
 
   const resumen = document.components.schemas.EstadoAcademicoCursadaAlumno;

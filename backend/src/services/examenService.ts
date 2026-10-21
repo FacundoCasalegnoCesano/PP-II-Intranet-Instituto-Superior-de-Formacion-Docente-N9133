@@ -6,7 +6,8 @@ import type { ExamenActor, ExamenCreateData, ExamenUpdateData, TribunalCreateDat
 import { getAlumnoIdByUsuarioId } from '../utils/alumnoHelper.js';
 import { ROLES } from '../constants/roles.js';
 import estadoAcademicoService from './estadoAcademicoService.js';
-import { evaluarCorrelatividades } from '../domain/academico/correlatividades.js';
+import { evaluarRequisitosAcademicos, type RequisitoAcademico } from '../domain/academico/correlatividadesEspacios.js';
+import { prisma } from '../config/prisma.js';
 import { AppError } from '../utils/AppError.js';
 
 type CurrentUser = {
@@ -14,12 +15,31 @@ type CurrentUser = {
   rol: string;
 };
 
-interface MotivoDisponibilidad {
-  codigo: 'PERIODO' | 'CORRELATIVA' | 'CONDICION';
-  materiaRequeridaId?: number;
-  materiaRequeridaNombre?: string;
-  mensaje: string;
-}
+type MotivoDisponibilidad =
+  | {
+      codigo: 'CORRELATIVA';
+      tipo: 'MATERIA';
+      id: number;
+      materiaRequeridaId: number;
+      materiaRequeridaNombre: string;
+      mensaje: string;
+    }
+  | {
+      codigo: 'CORRELATIVA';
+      tipo: 'ESPACIO';
+      id: number;
+      materiaRequeridaId?: never;
+      materiaRequeridaNombre: string;
+      mensaje: string;
+    }
+  | {
+      codigo: 'PERIODO' | 'CONDICION';
+      tipo?: never;
+      id?: never;
+      materiaRequeridaId?: never;
+      materiaRequeridaNombre?: never;
+      mensaje: string;
+    };
 
 interface MesaDisponibleBase {
   id: number;
@@ -337,16 +357,16 @@ class ExamenService {
       estadoAcademicoService.getMateriasAprobadasSet(idAlumno)
     ]);
 
+    const evaluacionesCorrelativas = new Map(await Promise.all(mesas.map(async mesa => [
+      mesa.materiaId,
+      await this.evaluarCorrelatividadesAcademicas(idAlumno, mesa.materiaId, 'RENDIR', materiasAprobadas)
+    ] as const)));
     return mesas.flatMap<MesaDisponibleAlumno>(mesa => {
       const inscripcionActiva = mesa.inscripciones.find(inscripcion => inscripcion.fechaBaja === null);
       if (includeNoHabilitadas && inscripcionActiva) {
         return [this.mapMesaDisponible(mesa, inscripcionActiva.condicion === 'LIBRE' ? 'LIBRE' : 'REGULAR', true, 'YA_INSCRIPTO', [])];
       }
-      const correlatividades = evaluarCorrelatividades({
-        modo: 'RENDIR',
-        correlatividades: mesa.materia.correlatividadesOrigen,
-        materiasCumplidas: materiasAprobadas
-      });
+      const correlatividades = evaluacionesCorrelativas.get(mesa.materiaId)!;
       const condicion = regularidadesVigentes.has(mesa.materiaId)
         ? 'REGULAR'
         : mesa.materia.inscripciones.length > 0
@@ -364,12 +384,26 @@ class ExamenService {
       );
       if (!periodoVigente) motivos.push({ codigo: 'PERIODO', mensaje: 'No hay un período de inscripción vigente para esta mesa' });
       if (!correlatividades.cumple && correlatividades.primerError) {
-        motivos.push({
-          codigo: 'CORRELATIVA',
-          materiaRequeridaId: correlatividades.primerError.materiaRequeridaId,
-          materiaRequeridaNombre: correlatividades.primerError.nombreMateria,
-          mensaje: `Debés aprobar ${correlatividades.primerError.nombreMateria} antes de rendir esta materia`
-        });
+        const requisito = (correlatividades as typeof correlatividades & {
+          primerError: NonNullable<typeof correlatividades.primerError> & {
+            materiaRequeridaId?: number;
+            espacioRequeridoId?: number;
+          };
+        }).primerError;
+        const mensaje = `Debés aprobar ${requisito.nombre} antes de rendir esta materia`;
+        if (requisito.tipo === 'MATERIA') {
+          const materiaRequeridaId = requisito.materiaRequeridaId ?? requisito.requisitoId;
+          motivos.push({
+            codigo: 'CORRELATIVA', tipo: 'MATERIA', id: materiaRequeridaId,
+            materiaRequeridaId, materiaRequeridaNombre: requisito.nombre, mensaje
+          });
+        } else {
+          motivos.push({
+            codigo: 'CORRELATIVA', tipo: 'ESPACIO',
+            id: requisito.espacioRequeridoId ?? requisito.requisitoId,
+            materiaRequeridaNombre: requisito.nombre, mensaje
+          });
+        }
       }
       if (condicion === null) motivos.push({ codigo: 'CONDICION', mensaje: 'No cumplís con una condición académica para rendir esta mesa' });
       return [this.mapMesaDisponible(mesa, condicion, false, motivos.length ? 'NO_HABILITADA' : 'HABILITADA', motivos)];
@@ -423,7 +457,7 @@ class ExamenService {
 
     const examen = await examenRepository.findExamenById(id);
     if (!examen) {
-      throw new Error('Examen no encontrado');
+      throw new AppError(404, 'Examen no encontrado');
     }
 
     return await examenRepository.deleteExamen(id);
@@ -536,25 +570,52 @@ class ExamenService {
   }
 
   async verificarCorrelatividadesParaExamen(idAlumno: number, materiaId: number) {
-    // Obtener correlatividades que aplican para rendir (aplicaRendir = true)
-    const correlatividades = await materiaRepository.getCorrelatividades(materiaId);
-    if (correlatividades.length === 0) {
-      return;
+    const resultado = await this.evaluarCorrelatividadesAcademicas(idAlumno, materiaId, 'RENDIR');
+    if (!resultado.cumple && resultado.primerError) {
+      throw new Error(`Falta correlatividad obligatoria para rendir: ${resultado.primerError.nombre}`);
     }
+  }
 
-    // Obtener materias aprobadas del alumno con la derivación RAI completa
-    // (examen final ante tribunal, homologación, promoción Art. 37d)
-    const materiasAprobadas = await estadoAcademicoService.getMateriasAprobadasSet(idAlumno);
-
-    const resultado = evaluarCorrelatividades({
-      modo: 'RENDIR',
-      correlatividades,
-      materiasCumplidas: materiasAprobadas
-    });
-
-    if (!resultado.cumple && resultado.primerError.tipo === 'OBLIGATORIA_NO_CUMPLIDA') {
-      throw new Error(`Falta correlatividad obligatoria para rendir: ${resultado.primerError.nombreMateria}`);
+  private async evaluarCorrelatividadesAcademicas(
+    idAlumno: number,
+    materiaId: number,
+    modo: 'CURSAR' | 'RENDIR',
+    materiasAprobadasInput?: ReadonlySet<number>
+  ) {
+    const target = await prisma.materia.findUnique({ where: { id: materiaId }, select: { espacioCurricular: { select: { id: true, nombre: true, activo: true, materias: { select: { id: true } } } } } });
+    const space = target?.espacioCurricular?.activo ? target.espacioCurricular : null;
+    let reglas: RequisitoAcademico[] = [];
+    if (space) {
+      const spaceRules = await prisma.espacioCorrelatividad.findMany({ where: { espacioOrigenId: space.id, aplicaRendir: true }, include: { materiaRequerida: { select: { id: true, nombre: true } }, espacioRequerido: { select: { id: true, nombre: true, materias: { select: { id: true } } } } } });
+      reglas = [
+        ...spaceRules.flatMap<RequisitoAcademico>(rule => rule.materiaRequerida
+          ? [{ tipo: 'MATERIA' as const, requisitoId: rule.id, nombre: rule.materiaRequerida.nombre, materiaId: rule.materiaRequerida.id }]
+          : rule.espacioRequerido ? [{ tipo: 'ESPACIO' as const, requisitoId: rule.id, nombre: rule.espacioRequerido.nombre, espacioId: rule.espacioRequerido.id, componentesIds: rule.espacioRequerido.materias.map(item => item.id) }] : [])
+      ];
+    } else {
+      const legacy = await prisma.correlatividad.findMany({ where: { materiaOrigenId: materiaId, tipoRequisito: 'OBLIGATORIA', suspendidaPorEspacio: false, aplicaRendir: true }, include: { materiaRequerida: { select: { id: true, nombre: true } }, espacioRequerido: { select: { id: true, nombre: true, materias: { select: { id: true } } } } } });
+      reglas = legacy.flatMap<RequisitoAcademico>(rule => rule.materiaRequerida
+        ? [{ tipo: 'MATERIA', requisitoId: rule.id, nombre: rule.materiaRequerida.nombre, materiaId: rule.materiaRequerida.id }]
+        : rule.espacioRequerido ? [{ tipo: 'ESPACIO', requisitoId: rule.id, nombre: rule.espacioRequerido.nombre, espacioId: rule.espacioRequerido.id, componentesIds: rule.espacioRequerido.materias.map(item => item.id) }] : []);
     }
+    if (reglas.length === 0) return { cumple: true, pendientes: [], primerError: null } as const;
+    const materiasAprobadas = materiasAprobadasInput ?? await estadoAcademicoService.getMateriasAprobadasSet(idAlumno);
+    const cumplidas = new Set(materiasAprobadas);
+    if (modo === 'CURSAR') {
+      const estados = await estadoAcademicoService.getMapaEstadosPorMateria(idAlumno);
+      for (const [id, estado] of estados) if (estadoAcademicoService.esRegularizado(estado)) cumplidas.add(id);
+    }
+    const resultado = evaluarRequisitosAcademicos({ modo, reglas, materiasCumplidas: cumplidas });
+    if (resultado.cumple || !resultado.primerError) return resultado;
+    const requisito = reglas.find(regla => regla.requisitoId === resultado.primerError!.requisitoId);
+    return {
+      ...resultado,
+      primerError: {
+        ...resultado.primerError,
+        ...(requisito?.tipo === 'MATERIA' ? { materiaRequeridaId: requisito.materiaId } : {}),
+        ...(requisito?.tipo === 'ESPACIO' ? { espacioRequeridoId: requisito.espacioId } : {})
+      }
+    } as typeof resultado & { primerError: typeof resultado.primerError & { materiaRequeridaId?: number } };
   }
 
   async desinscribirAlumno(examenId: number, alumnoId: number, currentUser: any, expectedVersion?: number) {

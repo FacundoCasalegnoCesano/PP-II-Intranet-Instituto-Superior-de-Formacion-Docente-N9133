@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { normalizePagination } from '../utils/pagination.js';
 import type { AlumnoData } from './alumnoRepository.js';
@@ -92,7 +93,7 @@ class UserRepository {
             create: {
               domicilio: alumnoData.domicilio ?? '',
               institucionProcedencia: alumnoData.institucionProcedencia ?? null,
-              anioEgreso: alumnoData.anioEgreso ?? new Date().getFullYear()
+              anioEgreso: alumnoData.anioEgreso ?? null
             }
           }
         } : {})
@@ -139,31 +140,29 @@ class UserRepository {
     const { rol, activo, search, page = 1, limit = 20 } = filters;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
-    
+    const conditions: Prisma.UsuarioWhereInput[] = [];
     if (rol) {
-      where.OR = rol.includes(',')
-        ? rol.split(',').map((r: string) => ({ rol: { contains: r } }))
-        : [{ rol: { contains: rol } }];
+      const roleFilters = rol.split(',').map((value) => value.trim()).filter(Boolean)
+        .map((value) => ({ rol: { contains: value } }));
+      if (roleFilters.length) conditions.push({ OR: roleFilters });
     }
-    
+
     if (activo !== undefined && activo !== '') {
-      where.activo = activo === 'true' || activo === true;
+      conditions.push({ activo: activo === 'true' || activo === true });
     }
-    
+
     if (search && search !== '') {
-      where.OR = where.OR || [];
-      where.OR.push(
+      const searchFilters: Prisma.UsuarioWhereInput[] = [
         { apellidoNombre: { contains: search } },
         { email: { contains: search } },
-        { dni: { equals: /^\d{7,8}$/.test(search) ? parseInt(search) : undefined } }
-      );
-      // Filter out undefined values
-      where.OR = where.OR.filter((c: any) => c.dni === undefined ? false : true).filter((c: any) => {
-        if (c.dni && c.dni.equals === undefined) return false;
-        return true;
-      });
+      ];
+      if (/^\d{7,8}$/.test(search)) searchFilters.push({ dni: { equals: parseInt(search, 10) } });
+      conditions.push({ OR: searchFilters });
     }
+
+    const where: Prisma.UsuarioWhereInput = conditions.length > 1
+      ? { AND: conditions }
+      : conditions[0] ?? {};
 
     const [usuarios, total] = await Promise.all([
       prisma.usuario.findMany({
@@ -466,7 +465,7 @@ class UserRepository {
     });
   }
 
-  async findOrCreateAlumno(usuarioId: number, alumnoData: { domicilio: string; anioEgreso: number; institucionProcedencia?: string | null }) {
+  async findOrCreateAlumno(usuarioId: number, alumnoData: { domicilio: string; anioEgreso?: number | null; institucionProcedencia?: string | null }) {
     const alumno = await prisma.alumno.findUnique({
       where: { idCuenta: usuarioId }
     });
@@ -479,7 +478,7 @@ class UserRepository {
       data: {
         idCuenta: usuarioId,
         domicilio: alumnoData.domicilio,
-        anioEgreso: alumnoData.anioEgreso,
+        anioEgreso: alumnoData.anioEgreso ?? null,
         institucionProcedencia: alumnoData.institucionProcedencia ?? null
       }
     });

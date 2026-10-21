@@ -7,18 +7,27 @@ import type {
   GradeRecord,
   GradeType,
   SaveGradesPayload,
-  TeacherCourse,
 } from '../types/teacherCourses'
 
+type GradeCourseContext = {
+  id: number
+  anioLectivo: number
+  materia: { id: number; nombre: string; esPromocionable?: boolean; carrera?: { id: number; nombre: string } }
+  activo?: boolean
+  editable?: boolean
+}
+
 const props = withDefaults(defineProps<{
-  course: TeacherCourse
+  course: GradeCourseContext
   students: EnrolledStudent[]
   grades: GradeRecord[]
   saving?: boolean
+  allowHistorical?: boolean
 }>(), {
   students: () => [],
   grades: () => [],
   saving: false,
+  allowHistorical: false,
 })
 
 const emit = defineEmits<{
@@ -52,8 +61,10 @@ const pendingSelectionDiscardAll = ref(false)
 const selectionOpener = ref<HTMLElement | null>(null)
 
 const editable = computed(() => (
-  (props.course.editable ?? (props.course.activo && props.course.anioLectivo === currentYear))
-  && props.course.anioLectivo === currentYear
+  props.allowHistorical
+    ? true
+    : (props.course.editable ?? Boolean(props.course.activo && props.course.anioLectivo === currentYear))
+      && props.course.anioLectivo === currentYear
 ))
 
 const evaluationOptions = computed<Array<{ value: GradeType; label: string }>>(() => [
@@ -353,7 +364,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload)
           </select>
         </label>
         <label v-if="selectedType !== 'RECUPERATORIO'" class="block text-sm font-semibold" for="grade-number">Número de evaluación
-          <input id="grade-number" :value="selectedNumber" type="number" min="1" max="99" step="1" :aria-required="selectedType !== 'RECUPERATORIO' ? 'true' : undefined" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @input="setNumber(($event.target as HTMLInputElement).value, $event)" />
+          <input id="grade-number" :value="selectedNumber" type="number" min="1" max="99" step="1" aria-required="true" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @input="setNumber(($event.target as HTMLInputElement).value, $event)" />
         </label>
         <p v-else class="rounded-md border border-dashed border-[var(--color-border)] p-3 text-sm text-[var(--color-graphite)]">El número se deriva del parcial original seleccionado.</p>
         <label class="block text-sm font-semibold" for="grade-date">Fecha de evaluación
@@ -370,14 +381,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload)
             <legend class="px-1 font-semibold"><span>{{ row.apellidoNombre }}</span><span class="font-normal"> · DNI {{ row.dni }}</span></legend>
             <div class="mt-2 grid gap-3 sm:grid-cols-[minmax(7rem,10rem)_1fr]">
               <label class="block text-sm font-semibold" :for="`grade-note-${row.alumnoId}`">Nota
-                <input :id="`grade-note-${row.alumnoId}`" :value="row.draft.nota" type="number" min="0" max="10" step="1" inputmode="numeric" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @input="updateDraftValue(row.alumnoId, 'nota', ($event.target as HTMLInputElement).value)" />
+                <input :id="`grade-note-${row.alumnoId}`" :value="row.draft.nota" type="number" min="0" max="10" step="1" inputmode="numeric" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-normal" @input="updateDraftValue(row.alumnoId, 'nota', ($event.target as HTMLInputElement).value)" />
               </label>
               <label class="block text-sm font-semibold" :for="`grade-observation-${row.alumnoId}`">Observación
-                <textarea :id="`grade-observation-${row.alumnoId}`" :value="row.draft.observacion" rows="2" maxlength="5000" class="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2 font-normal" @input="updateDraftValue(row.alumnoId, 'observacion', ($event.target as HTMLTextAreaElement).value)" />
+                <textarea :id="`grade-observation-${row.alumnoId}`" :value="row.draft.observacion" rows="2" maxlength="5000" :disabled="!editable || props.saving" class="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2 font-normal" @input="updateDraftValue(row.alumnoId, 'observacion', ($event.target as HTMLTextAreaElement).value)" />
               </label>
             </div>
             <label v-if="selectedType === 'RECUPERATORIO'" class="mt-3 block text-sm font-semibold" :for="`grade-original-${row.alumnoId}`">Parcial original
-              <select :id="`grade-original-${row.alumnoId}`" :value="row.draft.parcialOriginalId" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="setOriginalPartials(row.alumnoId, ($event.target as HTMLSelectElement).value, $event)">
+              <select :id="`grade-original-${row.alumnoId}`" :value="row.draft.parcialOriginalId" :disabled="!editable || props.saving" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="setOriginalPartials(row.alumnoId, ($event.target as HTMLSelectElement).value, $event)">
                 <option value="">Seleccioná un parcial</option>
                 <option v-for="original in originalPartialsForStudent(row.alumnoId)" :key="original.id" :value="String(original.id)">{{ originalLabel(original) }}</option>
               </select>

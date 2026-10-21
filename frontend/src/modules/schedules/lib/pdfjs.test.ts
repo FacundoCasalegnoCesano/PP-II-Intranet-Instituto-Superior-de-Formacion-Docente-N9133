@@ -25,7 +25,7 @@ describe('createPdfLoadingTask', () => {
   it('configures the local worker and forwards the Blob bytes to PDF.js', async () => {
     const loadingTask = { promise: Promise.resolve() }
     getDocument.mockReturnValue(loadingTask)
-    const file = new NodeBlob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' })
+    const file = new NodeBlob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' }) as unknown as Blob
 
     const result = await createPdfLoadingTask(file)
 

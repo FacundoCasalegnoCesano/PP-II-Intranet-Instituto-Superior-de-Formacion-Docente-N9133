@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 
 import { prisma } from '../src/config/prisma.js';
 import { ROLES } from '../src/constants/roles.js';
@@ -18,6 +18,10 @@ import homologacionController from '../src/controllers/homologacionController.js
 import { listarHomologacionesSchema } from '../src/validations/homologacionValidation.js';
 
 const restorations: Array<() => void> = [];
+
+beforeEach(() => {
+  replaceMethod((prisma as any).promocionHistorica, 'findMany', async () => []);
+});
 
 function replaceMethod(target: any, key: string, replacement: any) {
   const original = target[key];
@@ -44,9 +48,16 @@ function stubPendingPartial(notaExamenHomologacion: number | null = null) {
     tipoHomologacion: 'PARCIAL',
     estado: 'PENDIENTE',
     calificacion: null,
-    notaExamenHomologacion
+    notaExamenHomologacion,
+    materia: { carreraId: 3 }
   }));
   replaceMethod(materiaRepository, 'findById', async () => ({ id: 30, notaMinima: 6 }));
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({
+    $queryRaw: async () => [],
+    homologacion: { findUnique: async () => rawHomologacion({ id: 1, notaExamenHomologacion }) },
+    espacioCurricular: { findMany: async () => [], update: async () => ({}) }
+  }));
+  replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set<number>());
 }
 
 afterEach(() => {
@@ -135,6 +146,28 @@ test('al aprobar una parcial copia el complementario como nota definitiva', asyn
   assert.equal(result.calificacion, 7);
 });
 
+test('serializa la aprobación con la configuración del espacio y fija el latch al completar el grupo', async () => {
+  const calls: string[] = [];
+  const latched: number[] = [];
+  const current = rawHomologacion({ id: 1, tipoHomologacion: 'PARCIAL', notaExamenHomologacion: 7 });
+  replaceMethod(homologacionRepository, 'findById', async () => current);
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({
+    $queryRaw: async (strings: TemplateStringsArray) => { calls.push(strings.join('?')); return []; },
+    homologacion: { findUnique: async () => current },
+    espacioCurricular: {
+      findMany: async () => [{ id: 55, composicionBloqueadaAt: null, materias: [{ id: 30 }, { id: 31 }] }],
+      update: async ({ where }: any) => { latched.push(where.id); return {}; }
+    }
+  }));
+  replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set([31]));
+  replaceMethod(homologacionRepository, 'update', async (_id: number, data: any) => rawHomologacion({ id: 1, ...data }));
+
+  await homologacionService.resolver(1, 'APROBAR', admin);
+
+  assert.match(calls[0], /SELECT id FROM carreras WHERE id = \?/);
+  assert.deepEqual(latched, [55]);
+});
+
 test('integra la copia parcial con su consumo académico como definitiva', async () => {
   const updates: any[] = [];
   let stored = rawHomologacion({
@@ -146,6 +179,12 @@ test('integra la copia parcial con su consumo académico como definitiva', async
   });
   replaceMethod(homologacionRepository, 'findById', async () => stored);
   replaceMethod(materiaRepository, 'findById', async () => ({ id: 30, notaMinima: 6 }));
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({
+    $queryRaw: async () => [],
+    homologacion: { findUnique: async () => stored },
+    espacioCurricular: { findMany: async () => [], update: async () => ({}) }
+  }));
+  replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set<number>());
   replaceMethod(homologacionRepository, 'update', async (_id: number, data: any) => {
     updates.push(data);
     stored = { ...stored, ...data };
@@ -161,6 +200,8 @@ test('integra la copia parcial con su consumo académico como definitiva', async
   replaceMethod(prisma.inscripcionExamen, 'findMany', async () => []);
   replaceMethod(prisma.inscripcionMateria, 'findMany', async () => []);
   replaceMethod(prisma.homologacion, 'findMany', async () => [stored]);
+  replaceMethod(prisma.materia, 'findMany', async () => [{ id: 30, nombre: 'Álgebra y Geometría', espacioCurricularId: null }]);
+  replaceMethod(prisma.espacioCurricular, 'findMany', async () => []);
   const promedio = await estadoAcademicoService.getPromedioGeneral(20, admin);
 
   assert.deepEqual(promedio.materias, [{ materiaId: 30, nombre: 'Álgebra y Geometría', nota: 7, via: 'HOMOLOGACION' }]);
@@ -270,6 +311,8 @@ test('el promedio sólo consume homologaciones APROBADA con nota definitiva', as
       (args.where.calificacion ? row.calificacion !== null : true));
   });
   replaceMethod(prisma.inscripcionMateria, 'findMany', async () => []);
+  replaceMethod(prisma.materia, 'findMany', async () => []);
+  replaceMethod(prisma.espacioCurricular, 'findMany', async () => []);
 
   const result = await estadoAcademicoService.getPromedioGeneral(
     20,

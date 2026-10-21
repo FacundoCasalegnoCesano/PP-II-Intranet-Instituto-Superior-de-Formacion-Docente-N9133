@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Download, ExternalLink, FileText, History, Upload } from 'lucide-vue-next'
 import { schedulesApi } from '../api/schedulesApi'
-import type { PublishedSchedule, ScheduleCareer, ScheduleOptions } from '../types/schedules'
+import type { PublishedSchedule, ScheduleOptions } from '../types/schedules'
 import SchedulePdfViewer from '../components/SchedulePdfViewer.vue'
 import { normalizeApiError } from '@/core/api/errors'
 import { useAuthStore } from '@/stores/authStore'
@@ -43,7 +43,6 @@ const actionTitle = computed(() => pendingAction.value?.kind === 'restore' ? 'Vo
 const actionDescription = computed(() => pendingAction.value?.kind === 'restore'
   ? `Esta versión quedará vigente para ${scopeLabel(pendingAction.value.document)}.`
   : `El nuevo PDF reemplazará la publicación vigente para ${uploadScopeLabel()}.`)
-const selectedCareer = computed(() => options.value.carreras.find(career => career.id === selectedCareerId.value) ?? null)
 const uploadCareer = computed(() => options.value.carreras.find(career => career.id === uploadCareerId.value) ?? null)
 const hasUploadSelection = computed(() => uploadCareerId.value !== null)
 const hasScheduleAvailability = computed(() => options.value.generalDisponible || options.value.carreras.length > 0)

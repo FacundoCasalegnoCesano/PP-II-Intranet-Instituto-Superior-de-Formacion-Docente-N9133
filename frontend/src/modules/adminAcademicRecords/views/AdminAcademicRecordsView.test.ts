@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/vue'
+import { render, screen, waitFor } from '@testing-library/vue'
 import { flushPromises } from '@vue/test-utils'
 import userEvent from '@testing-library/user-event'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
@@ -17,9 +17,9 @@ vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authState }))
 const activeCareer = { id: 3, nombre: 'Profesorado de Inglés', duracionAnios: 4, activo: true }
 const historicalCareer = { id: 2, nombre: 'Profesorado de Historia', duracionAnios: 4, activo: false }
 const student = { idUsuario: 13, apellidoNombre: 'Lucía Test Fernández', dni: '42666888', activo: false, email: 'lucia@instituto.edu.ar' }
-const trajectory = { alumnoUsuarioId: 13, carrera: { id: 3, nombre: activeCareer.nombre, duracionAnios: 4 }, promedioGeneral: 8.5, cantidadMateriasAprobadas: 1, materias: [{ materia: { id: 14, nombre: 'Álgebra y Geometría' }, plan: { anio: 1 }, estado: 'APROBADA', asistencia: { porcentaje: 91 }, parcialesEfectivos: [{ numero: 1, nota: 8 }], regularidad: { vencida: false, hasta: '2027-12-31' }, homologacion: null, definitiva: { nota: 8, via: 'EXAMEN_FINAL' } }] }
+const trajectory = { alumnoUsuarioId: 13, carrera: { id: 3, nombre: activeCareer.nombre, duracionAnios: 4 }, promedioGeneral: 8.5, cantidadMateriasAprobadas: 1, materias: [{ materia: { id: 14, nombre: 'Álgebra y Geometría' }, plan: { anio: 1 }, estado: 'APROBADA', asistencia: { porcentaje: 91 }, parcialesEfectivos: [{ numero: 1, notaOriginal: 4, notaEfectiva: 8, recuperado: true }], regularidad: { vencida: false, hasta: '2027-12-31' }, homologacion: null, definitiva: { nota: 8, via: 'EXAMEN_FINAL' } }] }
 
-function createRouterAt(path: string) {
+function createRouterAt() {
   return createRouter({ history: createMemoryHistory(), routes: [
     { path: '/app/administracion/trayectorias', name: 'admin-academic-records', component: AdminAcademicRecordsView },
     { path: '/app/administracion/trayectorias/:id', name: 'admin-academic-record-detail', component: AdminAcademicRecordsView },
@@ -27,7 +27,7 @@ function createRouterAt(path: string) {
 }
 
 async function renderAt(path = '/app/administracion/trayectorias') {
-  const router = createRouterAt(path)
+  const router = createRouterAt()
   await router.push(path); await router.isReady()
   render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
   return router
@@ -61,6 +61,7 @@ describe('AdminAcademicRecordsView', () => {
     expect(screen.getByText('Cuenta inactiva')).toBeVisible()
     expect(screen.getByText('Promedio general')).toBeVisible()
     expect(screen.getByText('Álgebra y Geometría')).toBeVisible()
+    expect(screen.getByText('Notas').nextElementSibling).toHaveTextContent('8')
     expect(mocks.fetchAdminStudent).toHaveBeenCalledWith(13)
     expect(mocks.fetchAdminStudentCareers).toHaveBeenCalledWith(13)
     expect(mocks.fetchAdminStudentTrajectory).toHaveBeenCalledWith(13, 3)
@@ -69,6 +70,28 @@ describe('AdminAcademicRecordsView', () => {
     await userEvent.setup().selectOptions(screen.getByRole('combobox'), '2')
     await waitFor(() => expect(mocks.fetchAdminStudentTrajectory).toHaveBeenLastCalledWith(13, 2))
     expect(router.currentRoute.value.query.selectedCareerId).toBe('2')
+  })
+
+  it('presenta los espacios como unidades y anida sus materias componentes', async () => {
+    mocks.fetchAdminStudentTrajectory.mockResolvedValue({
+      alumnoUsuarioId: 13,
+      carrera: { id: 3, nombre: activeCareer.nombre, duracionAnios: 4 },
+      promedioGeneral: 8.5,
+      cantidadMateriasAprobadas: 1,
+      cantidadUnidadesTotal: 2,
+      espaciosCurriculares: [{ id: 31, nombre: 'Campo de la Práctica', estado: 'APROBADA', nota: 8, definitiva: { nota: 8, via: 'ESPACIO_CURRICULAR' }, componentes: [{ materiaId: 14, nombre: 'Práctica I', estado: 'APROBADA', definitiva: { nota: 8, via: 'PROMOCION_DIRECTA' } }] }],
+      materias: [
+        { materia: { id: 14, nombre: 'Práctica I' }, espacioCurricular: { id: 31, nombre: 'Campo de la Práctica' }, estado: 'APROBADA', definitiva: { nota: 8, via: 'PROMOCION_DIRECTA' } },
+        { materia: { id: 15, nombre: 'Pedagogía' }, espacioCurricular: null, estado: 'REGULAR', definitiva: null },
+      ],
+    } as never)
+    await renderAt('/app/administracion/trayectorias/13')
+
+    expect(await screen.findByText('1 de 2')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Campo de la Práctica' })).toBeVisible()
+    expect(screen.getByText('Práctica I')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Pedagogía' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Práctica I' })).not.toBeInTheDocument()
   })
 
   it('muestra error y limpia los resultados si falla una carga', async () => {

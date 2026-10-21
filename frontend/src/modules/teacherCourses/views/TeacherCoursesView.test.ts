@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   getClass: vi.fn(),
   saveClass: vi.fn(),
   push: vi.fn(),
-  route: { name: 'teacher-courses', params: {}, query: {} as Record<string, string>, fullPath: '/profesor/cursadas' },
+  route: { name: 'teacher-courses', params: {}, query: {} as Record<string, string | string[] | undefined>, fullPath: '/profesor/cursadas' },
 }))
 
 vi.mock('../api/teacherCoursesApi', () => ({
@@ -141,11 +141,27 @@ beforeEach(() => {
     mocks.route.name = target.name
     mocks.route.params = target.params ?? {}
     mocks.route.query = target.query ?? {}
-    mocks.route.fullPath = `/profesor/cursadas${target.params?.id ? `/${target.params.id}` : ''}${Object.keys(mocks.route.query).length ? `?${new URLSearchParams(mocks.route.query).toString()}` : ''}`
+    const query = new URLSearchParams()
+    for (const [key, value] of Object.entries(mocks.route.query)) {
+      if (Array.isArray(value)) value.forEach((entry) => query.append(key, entry))
+      else if (value !== undefined) query.set(key, value)
+    }
+    const serializedQuery = query.toString()
+    mocks.route.fullPath = `/profesor/cursadas${target.params?.id ? `/${target.params.id}` : ''}${serializedQuery ? `?${serializedQuery}` : ''}`
   })
 })
 
 describe('TeacherCoursesView', () => {
+  it('shows the parent space while keeping navigation tied to the component course', async () => {
+    const component = { ...course(5, 2026, true, 'Práctica I'), espacioCurricular: { id: 30, nombre: 'Práctica profesional' } }
+    mocks.list.mockResolvedValue(result([component]))
+    const user = userEvent.setup()
+    renderView()
+    expect(await screen.findByText('Espacio curricular: Práctica profesional')).toBeVisible()
+    await user.click(screen.getAllByRole('button', { name: 'Ver alumnos' })[0])
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({ name: 'teacher-course-students', params: { id: 5 }, query: { anioLectivo: '2026' } })))
+  })
+
   it('starts with the current institutional year and shows current and historical text', async () => {
     mocks.list.mockResolvedValue(result([course(1, new Date().getFullYear(), true), course(2, new Date().getFullYear() - 1, false)]))
 
@@ -484,13 +500,14 @@ describe('TeacherCoursesView', () => {
     expect(mocks.saveGrades).toHaveBeenCalledTimes(1)
   })
 
-  it.each([
-    ['clases', 'teacher-course-classes', 'Ver clases'],
-    ['calificaciones', 'teacher-course-grades', 'Ver calificaciones'],
-    ['resumen', 'teacher-course-summary', 'Ver resumen'],
-  ] as Array<[TeacherCourseSection, string, string]>)('maps ?seccion=%s to %s from the list', async (section, routeName, label) => {
-    mocks.route.query = { seccion: section }
-    mocks.route.fullPath = `/profesor/cursadas?seccion=${section}`
+  const sections: Array<[TeacherCourseSection, string, string, string]> = [
+    ['classes', 'clases', 'teacher-course-classes', 'Ver clases'],
+    ['grades', 'calificaciones', 'teacher-course-grades', 'Ver calificaciones'],
+    ['summary', 'resumen', 'teacher-course-summary', 'Ver resumen'],
+  ]
+  it.each(sections)('maps ?seccion=%s to %s from the list', async (_section, querySection, routeName, label) => {
+    mocks.route.query = { seccion: querySection }
+    mocks.route.fullPath = `/profesor/cursadas?seccion=${querySection}`
     mocks.list.mockResolvedValue(result([course(18, new Date().getFullYear(), true)]))
     mocks.get.mockResolvedValue(course(18, new Date().getFullYear(), true))
     const user = userEvent.setup()

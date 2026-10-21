@@ -107,7 +107,8 @@ function confirmAction(): void {
   const action = confirmation.value
   if (!action || !isPending.value || actionsDisabled.value || (action === 'APROBAR' && !canApprove.value)) return
   confirmation.value = null
-  emit(action === 'APROBAR' ? 'approve' : 'reject')
+  if (action === 'APROBAR') emit('approve')
+  else emit('reject')
 }
 
 function saveGrade(): void {

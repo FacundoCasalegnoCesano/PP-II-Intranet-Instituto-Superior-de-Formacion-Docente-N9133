@@ -132,13 +132,13 @@ describe('HomeView', () => {
     state.activeRole = 'ALUMNO'
     vi.clearAllMocks()
     vi.mocked(fetchStudentCareers).mockResolvedValue([{ id: 7, carreraId: 3, carrera: { id: 3, nombre: 'Profesorado', materias: [{ id: 1 }, { id: 2 }] } }])
-    vi.mocked(fetchStudentTrajectory).mockResolvedValue({ cantidadMateriasAprobadas: 1, promedioGeneral: 8, materias: [{}, {}] })
+    vi.mocked(fetchStudentTrajectory).mockResolvedValue({ alumnoUsuarioId: 13, carrera: { id: 3, nombre: 'Profesorado', duracionAnios: 4 }, cantidadMateriasAprobadas: 1, promedioGeneral: 8, materias: [{}, {}] })
     vi.mocked(fetchMyExamEnrollments).mockResolvedValue([])
   })
 
   it('shows real student career progress and average', async () => {
     renderHome()
-    expect(await screen.findByText('1 de 2 materias aprobadas')).toBeVisible()
+    expect(await screen.findByText('1 de 2 unidades aprobadas')).toBeVisible()
     expect(screen.getByText('Promedio general: 8')).toBeVisible()
     expect(screen.getByLabelText('Carrera')).toBeVisible()
   })
@@ -209,7 +209,7 @@ describe('HomeView', () => {
 
   it('shows the complete student access matrix and preserves its progress requests', async () => {
     renderHome()
-    await screen.findByText('1 de 2 materias aprobadas')
+    await screen.findByText('1 de 2 unidades aprobadas')
 
     expect(screen.getByRole('heading', { level: 2, name: launcherTitles.ALUMNO })).toBeVisible()
     expect(screen.getByText(launcherCopy)).toBeVisible()

@@ -1,6 +1,6 @@
 import { apiClient } from '@/core/api/client'
 import type { PaginatedResult } from '@/core/api/contracts'
-import type { AvailableSubject, SubjectEnrollment, SubjectEnrollmentInput, SubjectEnrollmentVerification } from '../types/subjectEnrollments'
+import type { AvailableSubject, SubjectEnrollment, SubjectEnrollmentInput, SubjectEnrollmentVerification, SpaceEnrollment, SpaceEnrollmentOffer } from '../types/subjectEnrollments'
 
 interface SubjectEnrollmentClient {
   get<T>(path: string): Promise<T>
@@ -27,4 +27,20 @@ export function enrollInSubject(input: SubjectEnrollmentInput, client: Pick<Subj
 
 export function dropSubjectEnrollment(id: number, client: Pick<SubjectEnrollmentClient, 'delete'> = apiClient): Promise<SubjectEnrollment> {
   return client.delete<SubjectEnrollment>(`/inscripciones-materias/${id}`)
+}
+
+export function fetchAvailableSpaceEnrollments(cicloLectivo: number, client: Pick<SubjectEnrollmentClient, 'get'> = apiClient): Promise<SpaceEnrollmentOffer[]> {
+  return client.get<SpaceEnrollmentOffer[]>(`/inscripciones-espacios/disponibles?cicloLectivo=${cicloLectivo}`)
+}
+export function fetchMySpaceEnrollments(client: Pick<SubjectEnrollmentClient, 'get'> = apiClient): Promise<SpaceEnrollment[]> {
+  return client.get<SpaceEnrollment[]>('/inscripciones-espacios')
+}
+export function verifySpaceEnrollment(cursadaEspacioId: number, client: Pick<SubjectEnrollmentClient, 'get'> = apiClient): Promise<SpaceEnrollmentOffer> {
+  return client.get<SpaceEnrollmentOffer>(`/inscripciones-espacios/verificar/${cursadaEspacioId}`)
+}
+export function enrollInSpace(cursadaEspacioId: number, client: Pick<SubjectEnrollmentClient, 'post'> = apiClient): Promise<SpaceEnrollment> {
+  return client.post<SpaceEnrollment>('/inscripciones-espacios', { cursadaEspacioId })
+}
+export function dropSpaceEnrollment(id: number, client: Pick<SubjectEnrollmentClient, 'delete'> = apiClient): Promise<SpaceEnrollment> {
+  return client.delete<SpaceEnrollment>(`/inscripciones-espacios/${id}`)
 }

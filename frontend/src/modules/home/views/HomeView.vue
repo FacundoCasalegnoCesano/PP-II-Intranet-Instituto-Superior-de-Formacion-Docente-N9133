@@ -217,7 +217,7 @@ onUnmounted(() => { mounted = false; careerRequest++; trajectoryRequest++; upcom
         <div class="max-w-xl">
           <label for="career" class="mb-1.5 block font-semibold text-[var(--color-text)]">Carrera</label>
           <select id="career" v-model="selectedCareerId" class="min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2">
-            <option v-for="career in careers" :key="career.id" :value="career.carreraId">{{ career.carrera.nombre }}</option>
+            <option v-for="career in careers" :key="career.id" :value="career.carreraId">{{ career.carrera.nombre }}{{ career.anioCohorte ? ` · cohorte ${career.anioCohorte}` : '' }}</option>
           </select>
         </div>
         <div v-if="loadingTrajectory" role="status" class="mt-5 rounded-lg border border-[var(--color-border)] bg-white p-5 text-[var(--color-graphite)]">Actualizando el progreso de {{ selectedCareer?.nombre }}…</div>

@@ -32,7 +32,9 @@ describe('periodsPresentation', () => {
     expect(periodTitle(exam)).toBe('Inscripción a exámenes · Ciclo 2026')
     expect(periodDateRange(exam)).toContain('10/09/2026')
     expect(periodScope(exam)).toBe('8 mesas habilitadas')
-    expect(periodScope(base)).toBe('3 materias habilitadas')
+    expect(periodTitle(base)).toBe('Inscripción a materias y espacios curriculares · Ciclo 2026')
+    expect(periodScope(base)).toBe('3 materias y 0 espacios curriculares habilitados')
+    expect(periodScope({ ...base, cantidadEspacios: 2 })).toBe('3 materias y 2 espacios curriculares habilitados')
   })
 
   it('formats a mesa date near midnight in the institutional timezone', () => {

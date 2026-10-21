@@ -13,7 +13,7 @@ const alumnoUpdateSchema = Joi.object({
 
 const alumnoRoleSchema = Joi.object({
   domicilio: Joi.string().max(255).required(),
-  anioEgreso: Joi.number().integer().min(1900).max(2100).required(),
+  anioEgreso: Joi.number().integer().min(1900).max(2100).allow(null),
   institucionProcedencia: Joi.string().max(255).allow('', null)
 });
 

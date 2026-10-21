@@ -73,8 +73,16 @@ export const createMateriaSchema = Joi.object({
     }),
   cursoAnio: Joi.number().integer().min(1).max(20),
   espacioCurricularId: Joi.number().integer().min(1).allow(null),
-  correlativasIds: Joi.array().items(Joi.number().integer().min(1)).unique()
-}).or('cursoAnio', 'cursoId');
+  correlativasIds: Joi.array().items(Joi.number().integer().min(1)).unique(),
+  correlatividades: Joi.array().items(Joi.object({
+    materiaRequeridaId: Joi.number().integer().min(1),
+    espacioRequeridoId: Joi.number().integer().min(1),
+    aplicaCursado: Joi.boolean().default(false),
+    aplicaRendir: Joi.boolean().default(true)
+  }).oxor('materiaRequeridaId', 'espacioRequeridoId').or('materiaRequeridaId', 'espacioRequeridoId').custom((value, helpers) =>
+    value.aplicaCursado || value.aplicaRendir ? value : helpers.error('any.invalid')
+  )).unique((a, b) => (a.materiaRequeridaId !== undefined ? `M${a.materiaRequeridaId}` : `E${a.espacioRequeridoId}`) === (b.materiaRequeridaId !== undefined ? `M${b.materiaRequeridaId}` : `E${b.espacioRequeridoId}`))
+}).or('cursoAnio', 'cursoId').without('correlativasIds', 'correlatividades');
 
 export const updateMateriaSchema = Joi.object({
   nombre: Joi.string().max(255),
@@ -96,8 +104,16 @@ export const updateMateriaSchema = Joi.object({
   cursoAnio: Joi.number().integer().min(1).max(20),
   espacioCurricularId: Joi.number().integer().min(1).allow(null),
   activo: Joi.boolean(),
-  correlativasIds: Joi.array().items(Joi.number().integer().min(1)).unique()
-});
+  correlativasIds: Joi.array().items(Joi.number().integer().min(1)).unique(),
+  correlatividades: Joi.array().items(Joi.object({
+    materiaRequeridaId: Joi.number().integer().min(1),
+    espacioRequeridoId: Joi.number().integer().min(1),
+    aplicaCursado: Joi.boolean().default(false),
+    aplicaRendir: Joi.boolean().default(true)
+  }).oxor('materiaRequeridaId', 'espacioRequeridoId').or('materiaRequeridaId', 'espacioRequeridoId').custom((value, helpers) =>
+    value.aplicaCursado || value.aplicaRendir ? value : helpers.error('any.invalid')
+  )).unique((a, b) => (a.materiaRequeridaId !== undefined ? `M${a.materiaRequeridaId}` : `E${a.espacioRequeridoId}`) === (b.materiaRequeridaId !== undefined ? `M${b.materiaRequeridaId}` : `E${b.espacioRequeridoId}`))
+}).without('correlativasIds', 'correlatividades');
 
 export const listMateriasSchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
@@ -121,12 +137,10 @@ export const asignarProfesorSchema = Joi.object({
 });
 
 export const correlatividadSchema = Joi.object({
-  materiaRequeridaId: Joi.number()
-    .required()
-    .integer()
-    .min(1)
-    .messages({
-      'number.base': 'El ID de materia requerida debe ser un número',
-      'number.integer': 'El ID de materia requerida debe ser un número entero'
-    }),
-});
+  materiaRequeridaId: Joi.number().integer().min(1),
+  espacioRequeridoId: Joi.number().integer().min(1),
+  aplicaCursado: Joi.boolean().default(false),
+  aplicaRendir: Joi.boolean().default(true)
+}).oxor('materiaRequeridaId', 'espacioRequeridoId').or('materiaRequeridaId', 'espacioRequeridoId').custom((value, helpers) =>
+  value.aplicaCursado === false && value.aplicaRendir === false ? helpers.error('any.invalid') : value
+);

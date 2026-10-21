@@ -1,6 +1,8 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { AppError } from '../utils/AppError.js';
+import { lockCareerForAcademicMutation } from '../services/espacioComposicionLatch.js';
+import { recomputeSpaceCompletionForPromotions } from '../services/recomputeSpaceCompletion.js';
 
 export interface ClaseAsistenciaPersistida {
   idAlumno: number;
@@ -147,6 +149,15 @@ class ClaseRepository {
 
   async saveAtomic(input: SaveClaseInput) {
     return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const cursada = await tx.cursada.findUnique({
+        where: { id: input.cursadaId },
+        select: { id: true, materiaId: true, materia: { select: { carreraId: true } } }
+      });
+      if (!cursada || cursada.materiaId !== input.materiaId) throw new AppError(404, 'Cursada no encontrada');
+      const carreraId = cursada.materia.carreraId;
+      if (!carreraId) throw new AppError(409, 'La materia no tiene una carrera asociada');
+      await lockCareerForAcademicMutation(tx, carreraId);
+
       // Sin UNIQUE(materia_id, fecha) —pendiente hasta resolver duplicados
       // históricos— el lock de la materia serializa el check-then-create.
       await tx.$queryRaw<Array<{ id: number }>>`
@@ -197,12 +208,28 @@ class ClaseRepository {
         }
       })));
 
+      await recomputeSpaceCompletionForPromotions({
+        tx,
+        cursadaId: input.cursadaId,
+        carreraId,
+        alumnoIds: input.filas.map(fila => fila.idAlumno)
+      });
+
       return libro;
     });
   }
 
   async deleteAtomic(cursadaId: number, materiaId: number, fecha: Date) {
     return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const cursada = await tx.cursada.findUnique({
+        where: { id: cursadaId },
+        select: { id: true, materiaId: true, materia: { select: { carreraId: true } } }
+      });
+      if (!cursada || cursada.materiaId !== materiaId) throw new AppError(404, 'Cursada no encontrada');
+      const carreraId = cursada.materia.carreraId;
+      if (!carreraId) throw new AppError(409, 'La materia no tiene una carrera asociada');
+      await lockCareerForAcademicMutation(tx, carreraId);
+
       const libros = await tx.libroDeTema.findMany({
         where: { materiaId, fecha },
         select: { idLibroDeTema: true }
@@ -211,10 +238,17 @@ class ClaseRepository {
         throw new AppError(409, 'Existen registros duplicados del libro de temas para esta fecha');
       }
 
+      const affected = await tx.asistencia.findMany({ where: { cursadaId, fecha }, select: { alumnoId: true } });
       const asistencias = await tx.asistencia.deleteMany({ where: { cursadaId, fecha } });
       if (libros[0]) {
         await tx.libroDeTema.delete({ where: { idLibroDeTema: libros[0].idLibroDeTema } });
       }
+      await recomputeSpaceCompletionForPromotions({
+        tx,
+        cursadaId,
+        carreraId,
+        alumnoIds: affected.map(row => row.alumnoId)
+      });
       return { asistencias: asistencias.count, tema: libros.length };
     });
   }

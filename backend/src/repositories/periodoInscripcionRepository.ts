@@ -1,12 +1,24 @@
 import { prisma } from '../config/prisma.js';
 import { normalizePagination, paginated, type PaginatedResult, type PaginationInput } from '../utils/pagination.js';
 
+export const cursadaEspacioResumenSelect = {
+  id: true,
+  espacioCurricularId: true,
+  anioLectivo: true,
+  periodo: true,
+  activo: true,
+  espacioCurricular: {
+    select: { id: true, nombre: true, carreraId: true, carrera: { select: { id: true, nombre: true } } }
+  }
+};
+
 export interface PeriodoInscripcionCreateData {
   tipo: string;
   cicloLectivo: number;
   fechaInicio: Date | string;
   fechaFin: Date | string;
   materiasIds?: number[]; // requerido si tipo=MATERIA
+  cursadasEspaciosIds?: number[];
   mesasIds?: number[];    // requerido si tipo=EXAMEN
   descripcion?: string | null;
 }
@@ -17,6 +29,7 @@ export interface PeriodoInscripcionUpdateData {
   fechaInicio?: Date | string;
   fechaFin?: Date | string;
   materiasIds?: number[];
+  cursadasEspaciosIds?: number[];
   mesasIds?: number[];
   descripcion?: string | null;
   activo?: boolean;
@@ -30,8 +43,21 @@ export interface PeriodoInscripcionListadoRecord {
   fechaFin: Date;
   descripcion: string | null;
   activo: boolean;
+  cursadasEspacios: Array<{
+    id: number;
+    cursadaEspacioId: number;
+    cursadaEspacio: {
+      id: number;
+      espacioCurricularId: number;
+      anioLectivo: number;
+      periodo: string;
+      activo: boolean;
+      espacioCurricular: { id: number; nombre: string; carreraId: number | null; carrera: { id: number; nombre: string } | null };
+    };
+  }>;
   _count: {
     materias: number;
+    cursadasEspacios: number;
     mesas: number;
   };
 }
@@ -49,12 +75,16 @@ class PeriodoInscripcionRepository {
         ...(data.tipo === 'MATERIA' && data.materiasIds?.length
           ? { materias: { create: data.materiasIds.map(materiaId => ({ materiaId })) } }
           : {}),
+        ...(data.tipo === 'MATERIA' && data.cursadasEspaciosIds?.length
+          ? { cursadasEspacios: { create: data.cursadasEspaciosIds.map(cursadaEspacioId => ({ cursadaEspacioId })) } }
+          : {}),
         ...(data.tipo === 'EXAMEN' && data.mesasIds?.length
           ? { mesas: { create: data.mesasIds.map(mesaId => ({ mesaId })) } }
           : {})
       },
       include: {
         materias: true,
+        cursadasEspacios: { include: { cursadaEspacio: { select: cursadaEspacioResumenSelect } } },
         mesas: true
       }
     });
@@ -96,6 +126,38 @@ class PeriodoInscripcionRepository {
     return new Set(filas.map(fila => fila.materiaId));
   }
 
+  async cursadaEspacioHabilitadaEnPeriodoVigente(cursadaEspacioId: number): Promise<boolean> {
+    const ahora = new Date();
+    const count = await prisma.periodoEspacioHabilitado.count({
+      where: {
+        cursadaEspacioId,
+        periodoInscripcion: {
+          tipo: 'MATERIA', activo: true,
+          fechaInicio: { lte: ahora }, fechaFin: { gte: ahora }
+        },
+        cursadaEspacio: { activo: true }
+      }
+    });
+    return count > 0;
+  }
+
+  async cursadasEspacioHabilitadasEnPeriodoVigente(cursadaEspacioIds: number[]): Promise<Set<number>> {
+    if (cursadaEspacioIds.length === 0) return new Set();
+    const ahora = new Date();
+    const rows = await prisma.periodoEspacioHabilitado.findMany({
+      where: {
+        cursadaEspacioId: { in: cursadaEspacioIds },
+        periodoInscripcion: {
+          tipo: 'MATERIA', activo: true,
+          fechaInicio: { lte: ahora }, fechaFin: { gte: ahora }
+        },
+        cursadaEspacio: { activo: true }
+      },
+      select: { cursadaEspacioId: true }, distinct: ['cursadaEspacioId']
+    });
+    return new Set(rows.map(row => row.cursadaEspacioId));
+  }
+
   /**
    * ¿Existe un período EXAMEN vigente que incluya explícitamente esta mesa?
    */
@@ -120,6 +182,7 @@ class PeriodoInscripcionRepository {
       where: { id },
       include: {
         materias: { include: { materia: true } },
+        cursadasEspacios: { include: { cursadaEspacio: { select: cursadaEspacioResumenSelect } } },
         mesas: { include: { mesa: true } }
       }
     });
@@ -137,7 +200,10 @@ class PeriodoInscripcionRepository {
       skip,
       take: limit,
       orderBy: [{ fechaInicio: 'desc' }, { id: 'desc' }],
-      include: { _count: { select: { materias: true, mesas: true } } }
+      include: {
+        _count: { select: { materias: true, cursadasEspacios: true, mesas: true } },
+        cursadasEspacios: { select: { id: true, cursadaEspacioId: true, cursadaEspacio: { select: cursadaEspacioResumenSelect } } }
+      }
     }), prisma.periodoInscripcion.count({ where })]);
     return paginated(data as unknown as PeriodoInscripcionListadoRecord[], total, page, limit);
   }
@@ -150,7 +216,8 @@ class PeriodoInscripcionRepository {
         activo: true,
         fechaInicio: { lte: ahora },
         fechaFin: { gte: ahora }
-      }
+      },
+      include: { materias: true, cursadasEspacios: { include: { cursadaEspacio: { select: cursadaEspacioResumenSelect } } }, mesas: true }
     });
   }
 
@@ -172,6 +239,7 @@ class PeriodoInscripcionRepository {
       data: cleanData,
       include: {
         materias: true,
+        cursadasEspacios: { include: { cursadaEspacio: { select: cursadaEspacioResumenSelect } } },
         mesas: true
       }
     });

@@ -32,7 +32,7 @@ export function periodStatusLabel(status: PeriodStatus): string {
 }
 
 export function periodTitle(period: Pick<EnrollmentPeriod, 'tipo' | 'cicloLectivo'>): string {
-  return `Inscripción a ${period.tipo === 'EXAMEN' ? 'exámenes' : 'materias'} · Ciclo ${period.cicloLectivo}`
+  return `Inscripción a ${period.tipo === 'EXAMEN' ? 'exámenes' : 'materias y espacios curriculares'} · Ciclo ${period.cicloLectivo}`
 }
 
 export function formatPeriodDate(value: string): string {
@@ -49,7 +49,8 @@ export function periodDateRange(period: Pick<EnrollmentPeriod, 'fechaInicio' | '
   return `Del ${formatPeriodDate(period.fechaInicio)} al ${formatPeriodDate(period.fechaFin)}`
 }
 
-export function periodScope(period: Pick<EnrollmentPeriod, 'tipo' | 'cantidadMaterias' | 'cantidadMesas'>): string {
+export function periodScope(period: Pick<EnrollmentPeriod, 'tipo' | 'cantidadMaterias' | 'cantidadMesas' | 'cantidadEspacios'>): string {
+  if (period.tipo === 'MATERIA') return `${period.cantidadMaterias} materias y ${period.cantidadEspacios ?? 0} espacios curriculares habilitados`
   const count = period.tipo === 'EXAMEN' ? period.cantidadMesas : period.cantidadMaterias
   return `${count} ${period.tipo === 'EXAMEN' ? 'mesas' : 'materias'} habilitadas`
 }

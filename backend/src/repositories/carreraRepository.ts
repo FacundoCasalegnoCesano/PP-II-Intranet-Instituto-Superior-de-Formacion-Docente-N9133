@@ -136,8 +136,13 @@ class CarreraRepository {
           where: { activo: true },
           orderBy: [{ curso: { anio: 'asc' } }, { nombre: 'asc' }],
           include: {
-            curso: true
+            curso: true,
+            espacioCurricular: true
           }
+        },
+        espaciosCurriculares: {
+          where: { activo: true },
+          include: { materias: { where: { activo: true }, select: { id: true, nombre: true } } }
         }
       }
     });

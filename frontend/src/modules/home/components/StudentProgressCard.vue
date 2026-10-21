@@ -10,7 +10,7 @@ defineProps<{
 <template>
   <section class="rounded-lg border border-[var(--color-border)] bg-white p-5" aria-labelledby="academic-progress-title">
     <h2 id="academic-progress-title" class="text-xl font-semibold text-[var(--color-text)]">Mi progreso académico</h2>
-    <p class="mt-4 text-lg font-semibold text-[var(--color-text)]">{{ approved }} de {{ total }} materias aprobadas</p>
+    <p class="mt-4 text-lg font-semibold text-[var(--color-text)]">{{ approved }} de {{ total }} unidades aprobadas</p>
     <div class="mt-3 h-3 overflow-hidden rounded-full bg-[#e9eeea]" role="progressbar" aria-label="Progreso académico" :aria-valuenow="percent" aria-valuemin="0" aria-valuemax="100">
       <div class="h-full bg-[var(--color-brand)] transition-[width]" :style="{ width: `${percent}%` }" />
     </div>

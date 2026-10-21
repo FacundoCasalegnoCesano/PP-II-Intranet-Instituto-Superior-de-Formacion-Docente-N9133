@@ -11,7 +11,7 @@ import { passwordPolicy } from '../validations/authValidation.js';
 
 interface AlumnoProfileInput {
   domicilio: string;
-  anioEgreso: number;
+  anioEgreso?: number | null;
   institucionProcedencia?: string | null;
 }
 

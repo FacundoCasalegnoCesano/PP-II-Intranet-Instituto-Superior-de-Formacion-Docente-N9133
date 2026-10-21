@@ -13,12 +13,13 @@ const mocks = vi.hoisted(() => ({
   getSubjectsByYear: vi.fn(),
   listExams: vi.fn(),
   updatePeriod: vi.fn(),
+  listSpaceCourses: vi.fn(),
 }))
 
 vi.mock('../api/adminApi', () => ({ adminApi: mocks }))
 vi.mock('@/ui/feedback', () => ({ useFeedback: () => ({ success: vi.fn(), error: vi.fn() }) }))
 
-const period = {
+const period: EnrollmentPeriod = {
   id: 9,
   tipo: 'EXAMEN',
   cicloLectivo: 2026,
@@ -73,10 +74,34 @@ async function renderEdit() {
   return { router, ...view }
 }
 
-beforeEach(() => { vi.resetAllMocks() })
+beforeEach(() => { vi.resetAllMocks(); mocks.listSpaceCourses.mockResolvedValue({ data: [], pagination: { page: 1, limit: 100, total: 0, totalPages: 0 } }) })
 afterEach(() => { cleanup() })
 
 describe('AdminPeriodsView', () => {
+  it('hydrates and submits selected space course IDs for a MATERIA period', async () => {
+    const offer = { id: 44, espacioCurricularId: 12, espacioCurricular: { id: 12, nombre: 'Práctica profesional', carreraId: 3 }, anioLectivo: 2026, periodo: 'ANUAL', activo: true, componentes: [{ cursadaId: 50, materiaId: 8, materia: { id: 8, nombre: 'Práctica I' } }] }
+    mocks.listCareers.mockResolvedValue({ data: [{ id: 3, nombre: 'Profesorado' }] })
+    const periodOfferReference = { id: offer.id, espacioCurricularId: offer.espacioCurricularId, anioLectivo: offer.anioLectivo, periodo: offer.periodo, activo: offer.activo, espacioCurricular: offer.espacioCurricular }
+    mocks.getPeriod.mockResolvedValue({ ...period, tipo: 'MATERIA', cantidadMesas: 0, materias: [], cursadasEspacios: [{ cursadaEspacioId: offer.id, cursadaEspacio: periodOfferReference }] })
+    mocks.listSpaceCourses.mockResolvedValue({ data: [offer], pagination: { page: 1, limit: 100, total: 1, totalPages: 1 } })
+    mocks.updatePeriod.mockResolvedValue({})
+    await renderEdit()
+    const checkbox = await screen.findByRole('checkbox', { name: /Práctica profesional/ })
+    expect(checkbox).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar período' }))
+    await waitFor(() => expect(mocks.updatePeriod).toHaveBeenCalledWith(9, expect.objectContaining({ tipo: 'MATERIA', materiasIds: [], cursadasEspaciosIds: [44] })))
+  })
+  it('shows and edits an offering from the minimal period DTO', async () => {
+    const reference = { id: 44, espacioCurricularId: 12, anioLectivo: 2026, periodo: 'ANUAL', activo: true, espacioCurricular: { id: 12, nombre: 'Práctica profesional', carreraId: 3, carrera: { id: 3, nombre: 'Profesorado' } } }
+    mocks.getPeriod.mockResolvedValue({ ...period, id: 9, tipo: 'MATERIA', cantidadMaterias: 0, cantidadEspacios: 1, cantidadMesas: 0, materias: [], mesas: [], cursadasEspacios: [{ id: 91, cursadaEspacioId: 44, cursadaEspacio: reference }] })
+    mocks.listCareers.mockResolvedValue({ data: [{ id: 3, nombre: 'Profesorado' }] })
+    mocks.listSpaceCourses.mockResolvedValue({ data: [], pagination: { page: 1, limit: 100, total: 0, totalPages: 0 } })
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsView }] })
+    await router.push('/app/administracion/periodos/9'); await router.isReady()
+    render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
+    expect(await screen.findByText('Práctica profesional · 2026 · Anual')).toBeInTheDocument()
+    expect(screen.queryByText('No hay elementos informados en el detalle.')).not.toBeInTheDocument()
+  })
   it('shows an understandable exam summary in desktop and mobile layouts', async () => {
     await renderList()
     expect((await screen.findAllByText('Inscripción a exámenes · Ciclo 2026')).length).toBeGreaterThan(0)

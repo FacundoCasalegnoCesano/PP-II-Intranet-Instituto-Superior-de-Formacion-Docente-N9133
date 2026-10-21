@@ -1,5 +1,5 @@
 import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
-import { createRouter, createWebHistory, type RouteLocationNormalized, useRoute, useRouter } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import type { Role } from '@/core/auth/contracts'
 import { useAuthStore } from '@/stores/authStore'
 import LoginView from '@/modules/auth/views/LoginView.vue'
@@ -24,11 +24,6 @@ export type RouteMeta = {
   roleSelection?: boolean
   allowedRoles?: Role[]
 }
-
-const PlaceholderPage = (title: string) => defineComponent({
-  name: `${title.replaceAll(' ', '')}Placeholder`,
-  setup: () => () => h('main', { 'aria-label': title }, [h('h1', title)]),
-})
 
 const PasswordResetPage = ResetPasswordView
 /* const PasswordResetPage = defineComponent({
@@ -83,6 +78,7 @@ function lazyAppPage(name: string, loader: () => Promise<{ default: Component }>
 const AdminCareersPage = lazyAppPage('AdminCareersPage', () => import('@/modules/admin/views/AdminCareersView.vue'))
 const AdminSubjectsPage = lazyAppPage('AdminSubjectsPage', () => import('@/modules/admin/views/AdminSubjectsView.vue'))
 const AdminCoursesPage = lazyAppPage('AdminCoursesPage', () => import('@/modules/admin/views/AdminCoursesView.vue'))
+const AdminCourseGradesPage = lazyAppPage('AdminCourseGradesPage', () => import('@/modules/admin/views/AdminCourseGradesView.vue'))
 const AdminPeriodsPage = lazyAppPage('AdminPeriodsPage', () => import('@/modules/admin/views/AdminPeriodsView.vue'))
 const AdminCareerEnrollmentsPage = defineComponent({ name: 'AdminCareerEnrollmentsPage', render: () => h(AppShell, null, { default: () => h(CareerEnrollmentsView) }) })
 const SchedulesPage = lazyAppPage('SchedulesPage', () => import('@/modules/schedules/views/SchedulesView.vue'))
@@ -92,6 +88,7 @@ const ExamsPage = lazyAppPage('ExamsPage', () => import('@/modules/exams/views/E
 const CareerCatalogPage = defineComponent({ name: 'CareerCatalogPage', render: () => h(AppShell, null, { default: () => h(CareerCatalogView) }) })
 const TeacherCoursesPage = lazyAppPage('TeacherCoursesPage', () => import('@/modules/teacherCourses/views/TeacherCoursesView.vue'))
 const AdminExamsPage = lazyAppPage('AdminExamsPage', () => import('@/modules/examManagement/views/AdminExamsView.vue'))
+const AdminHistoricalExamsPage = lazyAppPage('AdminHistoricalExamsPage', () => import('@/modules/examManagement/views/AdminHistoricalExamsView.vue'))
 const TeacherExamsPage = lazyAppPage('TeacherExamsPage', () => import('@/modules/examManagement/views/TeacherExamsView.vue'))
 const AdminHomologationsPage = defineComponent({ name: 'AdminHomologationsPage', render: () => h(AppShell, null, { default: () => h(AdminHomologationsView) }) })
 const AdminAcademicRecordsPage = defineComponent({ name: 'AdminAcademicRecordsPage', render: () => h(AppShell, null, { default: () => h(AdminAcademicRecordsView) }) })
@@ -162,6 +159,7 @@ export function createAppRouter() {
       { path: '/app/administracion/materias/:id', name: 'admin-subject-detail', component: AdminSubjectsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/materias/:id/editar', name: 'admin-subject-edit', component: AdminSubjectsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/cursadas', name: 'admin-courses', component: AdminCoursesPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/calificaciones', name: 'admin-course-grades', component: AdminCourseGradesPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/cursadas/nueva', name: 'admin-course-create', component: AdminCoursesPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/cursadas/:id', name: 'admin-course-detail', component: AdminCoursesPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/cursadas/:id/editar', name: 'admin-course-edit', component: AdminCoursesPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
@@ -170,6 +168,7 @@ export function createAppRouter() {
       { path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
+      { path: '/app/administracion/mesas-historicas', name: 'admin-historical-exams', component: AdminHistoricalExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/mesas/nueva', name: 'admin-exam-new', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },
       { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsPage, meta: { requiresSession: true, allowedRoles: ['ADMINISTRATIVO'] } },

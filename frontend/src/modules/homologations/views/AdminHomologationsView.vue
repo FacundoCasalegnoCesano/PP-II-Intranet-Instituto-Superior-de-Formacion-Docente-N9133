@@ -67,6 +67,10 @@ function queryValue(key: string): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+function focusRetryFeedback(): void {
+  if (detailFeedback.value?.retry) focusDetailFeedback()
+}
+
 function positiveId(value: string | undefined): number | undefined {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
@@ -415,7 +419,7 @@ async function saveComplementaryGrade(grade: number): Promise<void> {
     setDetailFeedback({ kind: 'alert', message })
   } finally {
     detailActionBusy.value = false
-    if (detailFeedback.value?.retry) focusDetailFeedback()
+    focusRetryFeedback()
   }
 }
 
@@ -453,7 +457,7 @@ async function resolveDetail(action: 'APROBAR' | 'RECHAZAR'): Promise<void> {
     setDetailFeedback({ kind: 'alert', message })
   } finally {
     detailActionBusy.value = false
-    if (detailFeedback.value?.retry) focusDetailFeedback()
+    focusRetryFeedback()
   }
 }
 

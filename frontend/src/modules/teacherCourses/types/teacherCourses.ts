@@ -30,7 +30,9 @@ export interface TeacherCourse {
   docente?: { idUsuario: number; apellidoNombre: string; email: string } | null
   horarios: TeacherCourseSchedule[]
   activo: boolean
+  estadoCursada?: 'FINALIZADA' | 'ACTIVA' | 'INACTIVA'
   editable?: boolean
+  espacioCurricular?: { id: number; nombre: string } | null
 }
 
 export type TeacherCourseListResult = PaginatedResult<TeacherCourse>

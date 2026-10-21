@@ -51,6 +51,11 @@ test('un recuperatorio exige parcial original pero no observacion', () => {
 });
 
 test('el recuperatorio toma numero y vinculo del parcial seleccionado', async () => {
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 1,
+    materiaId: 3,
+    materia: { id: 3, carreraId: 1, nombre: 'Materia de prueba', esPromocionable: false }
+  }));
   replaceMethod(alumnoRepository, 'findByUsuarioIds', async () => ([{ idCuenta: 10, idAlumno: 7 }]));
   replaceMethod(calificacionRepository, 'findInscripcionesByCursada', async (_cursadaId: number, alumnoIds: number[]) => alumnoIds.map(alumnoId => ({ alumnoId })));
   const parcial = { id: 44, cursadaId: 1, alumnoId: 7, tipoCalificacion: 'PARCIAL', numero: 2 };
@@ -100,6 +105,11 @@ test('rechaza un parcial original de otro alumno', async () => {
 });
 
 test('valida los parciales recuperados con una sola consulta', async () => {
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 1,
+    materiaId: 3,
+    materia: { id: 3, carreraId: 1, nombre: 'Materia de prueba', esPromocionable: false }
+  }));
   replaceMethod(alumnoRepository, 'findByUsuarioIds', async (idCuentas: number[]) => idCuentas.map(idCuenta => ({
     idCuenta,
     idAlumno: idCuenta === 10 ? 7 : 8

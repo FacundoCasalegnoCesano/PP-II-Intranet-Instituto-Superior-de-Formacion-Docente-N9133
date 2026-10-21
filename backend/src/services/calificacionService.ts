@@ -13,6 +13,8 @@ import {
   type FilaCargaCalificaciones
 } from '../domain/academico/calificaciones.js';
 import type { TipoCalificacion } from '@prisma/client';
+import { lockCareerForAcademicMutation } from './espacioComposicionLatch.js';
+import { recomputeSpaceCompletionForPromotions } from './recomputeSpaceCompletion.js';
 
 type FilaCarga = FilaCargaCalificaciones;
 
@@ -70,8 +72,9 @@ class CalificacionService {
   ) {
     await verificarPermisoMutacionCursada(currentUser, data.cursadaId);
 
+    let cursada: any = null;
     if (data.calificaciones.some(fila => fila.tipoCalificacion === 'EXAMEN_FINAL')) {
-      const cursada = await cursadaRepository.findById(data.cursadaId);
+      cursada = await cursadaRepository.findById(data.cursadaId);
       if (!cursada) throw new AppError(404, 'Cursada no encontrada');
       if (cursada.materia?.esPromocionable !== true) {
         throw new AppError(400, 'EXAMEN_FINAL solo está permitido para materias promocionables');
@@ -125,7 +128,29 @@ class CalificacionService {
       );
     }
 
-    const resultado = await calificacionRepository.upsertLote(data.cursadaId, preparacion.filas);
+    if (!cursada) cursada = await cursadaRepository.findById(data.cursadaId);
+    if (!cursada) throw new AppError(404, 'Cursada no encontrada');
+
+    let resultado: any[];
+    if (cursada.materia?.esPromocionable === true) {
+      resultado = await calificacionRepository.withTransaction(async (tx) => {
+        const carreraId = cursada.materia.carreraId ?? cursada.materia.carrera?.id;
+        if (!carreraId) throw new AppError(409, 'La materia no tiene una carrera asociada');
+        await lockCareerForAcademicMutation(tx, carreraId);
+        const lockedCursada = await tx.cursada.findUnique({
+          where: { id: data.cursadaId },
+          include: { materia: true }
+        });
+        if (!lockedCursada) throw new AppError(404, 'Cursada no encontrada');
+        if (lockedCursada.materia.carreraId !== carreraId) throw new AppError(409, 'La carrera de la materia cambió durante la operación');
+
+        const saved = await calificacionRepository.upsertLote(data.cursadaId, preparacion.filas, tx);
+        await recomputeSpaceCompletionForPromotions({ tx, cursadaId: data.cursadaId, carreraId, alumnoIds: preparacion.filas.map(fila => fila.idAlumno) });
+        return saved;
+      });
+    } else {
+      resultado = await calificacionRepository.upsertLote(data.cursadaId, preparacion.filas);
+    }
 
     return { registros: resultado.length };
   }

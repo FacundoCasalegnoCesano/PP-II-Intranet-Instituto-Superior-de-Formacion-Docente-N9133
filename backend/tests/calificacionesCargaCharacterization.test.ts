@@ -19,6 +19,7 @@ function replaceMethod(target: any, key: string, replacement: any) {
 
 const admin = { id: 1, rol: ROLES.ADMINISTRATIVO };
 const profesor = { id: 22, rol: ROLES.PROFESOR };
+const findCursadaOriginal = cursadaRepository.findById;
 
 function parcial(alumnoId: number, numero = 1) {
   return {
@@ -43,6 +44,13 @@ function configurarAlumno(idCuenta: number, idAlumno: number | null = 7) {
   replaceMethod(alumnoRepository, 'findByUsuarioIds', async () => {
     return idAlumno === null ? [] : [{ idCuenta, idAlumno }];
   });
+  if (cursadaRepository.findById === findCursadaOriginal) {
+    replaceMethod(cursadaRepository, 'findById', async () => ({
+      id: 1,
+      materiaId: 3,
+      materia: { id: 3, carreraId: 1, nombre: 'Materia de prueba', esPromocionable: false }
+    }));
+  }
 }
 
 function configurarInscripcion(inscripto: boolean) {
@@ -199,6 +207,9 @@ test('rechaza duplicados del lote después de validar todas las filas', async ()
 });
 
 test('permite el mismo número de parcial para alumnos distintos', async () => {
+  replaceMethod(cursadaRepository, 'findById', async () => ({
+    id: 1, materiaId: 3, materia: { id: 3, carreraId: 1, nombre: 'Materia de prueba', esPromocionable: false }
+  }));
   replaceMethod(alumnoRepository, 'findByUsuarioIds', async (idCuentas: number[]) => idCuentas.map(idCuenta => ({
     idCuenta,
     idAlumno: idCuenta === 10 ? 7 : 8
@@ -256,6 +267,29 @@ test('permite recargar una misma nota mediante upsert', async () => {
   assert.equal(escrituras, 2);
 });
 
+test('admin puede cargar una nota individual para matrícula FINALIZADA sin cambiar su estado', async () => {
+  configurarAlumno(10, 7);
+  let estadoMatricula = 'FINALIZADA';
+  replaceMethod(calificacionRepository, 'findInscripcionesByCursada', async (_cursadaId: number, alumnoIds: number[]) =>
+    alumnoIds.map(alumnoId => ({ alumnoId, estado: estadoMatricula }))
+  );
+  let guardadas: any[] = [];
+  replaceMethod(calificacionRepository, 'upsertLote', async (_cursadaId: number, filas: any[]) => {
+    guardadas = filas;
+    return filas;
+  });
+
+  const result = await calificacionService.cargarLote(
+    { cursadaId: 1, calificaciones: [parcial(10)] },
+    admin
+  );
+
+  assert.deepEqual(result, { registros: 1 });
+  assert.equal(guardadas.length, 1);
+  assert.equal(guardadas[0].idAlumno, 7);
+  assert.equal(estadoMatricula, 'FINALIZADA');
+});
+
 test('rechaza EXAMEN_FINAL cuando la materia no es promocionable', async () => {
   replaceMethod(cursadaRepository, 'findById', async () => ({
     id: 1,
@@ -284,13 +318,25 @@ test('permite EXAMEN_FINAL como instancia integradora en materia promocionable',
   replaceMethod(cursadaRepository, 'findById', async () => ({
     id: 1,
     materiaId: 3,
-    materia: { esPromocionable: true }
+    materia: { id: 3, carreraId: 3, esPromocionable: true }
   }));
   configurarAlumno(10, 7);
   configurarInscripcion(true);
+  replaceMethod(calificacionRepository, 'withTransaction', async (operation: any) => operation({
+    $queryRaw: async () => [],
+    cursada: { findUnique: async () => ({
+      id: 1, materiaId: 3, anioLectivo: 2026, periodo: 'ANUAL', activo: true,
+      materia: { id: 3, nombre: 'Materia de prueba', carreraId: 3, esPromocionable: true }
+    }) },
+    alumno: { findMany: async () => [] },
+    calificacion: { findMany: async () => [] },
+    asistencia: { findMany: async () => [] },
+    espacioCurricular: { findMany: async () => [], update: async () => ({}) }
+  }));
   let guardadas: any[] = [];
-  replaceMethod(calificacionRepository, 'upsertLote', async (_cursadaId: number, filas: any[]) => {
+  replaceMethod(calificacionRepository, 'upsertLote', async (_cursadaId: number, filas: any[], tx?: any) => {
     guardadas = filas;
+    assert.ok(tx);
     return filas;
   });
 

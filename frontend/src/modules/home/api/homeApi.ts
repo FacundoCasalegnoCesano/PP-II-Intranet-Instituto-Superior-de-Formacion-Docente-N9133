@@ -13,8 +13,9 @@ export function fetchStudentTrajectory(userId: number, careerId: number, client:
   return client.get<StudentTrajectory>(`/estado-academico/alumno/${userId}/trayectoria?carreraId=${careerId}`)
 }
 
-export function progressFromTrajectory(trajectory: Pick<StudentTrajectory, 'cantidadMateriasAprobadas' | 'materias'>): AcademicProgress {
-  const total = trajectory.materias.length
+export function progressFromTrajectory(trajectory: Pick<StudentTrajectory, 'cantidadMateriasAprobadas' | 'cantidadUnidadesTotal' | 'espaciosCurriculares' | 'materias'>): AcademicProgress {
+  const standaloneSubjects = trajectory.materias.filter((subject) => !subject.espacioCurricular).length
+  const total = trajectory.cantidadUnidadesTotal ?? standaloneSubjects + (trajectory.espaciosCurriculares?.length ?? 0)
   const approved = Math.min(Math.max(trajectory.cantidadMateriasAprobadas, 0), total)
   return { approved, total, percent: total === 0 ? 0 : Math.round((approved / total) * 100) }
 }

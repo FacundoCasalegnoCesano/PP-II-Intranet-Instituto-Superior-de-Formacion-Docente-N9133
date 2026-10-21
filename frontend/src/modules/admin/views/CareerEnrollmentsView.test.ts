@@ -4,6 +4,8 @@ import { reactive } from 'vue'
 import CareerEnrollmentsView from './CareerEnrollmentsView.vue'
 import { adminApi } from '../api/adminApi'
 
+const apiClientMock = vi.hoisted(() => ({ request: vi.fn() }))
+
 vi.mock('../api/adminApi', () => ({
   adminApi: {
     listActiveStudents: vi.fn(),
@@ -13,6 +15,7 @@ vi.mock('../api/adminApi', () => ({
     removeCareerEnrollment: vi.fn(),
   },
 }))
+vi.mock('@/core/api/client', () => ({ apiClient: apiClientMock }))
 
 const route = reactive({ query: {} as Record<string, string | undefined>, fullPath: '/app/administracion/inscripciones-carreras' })
 const router = { replace: vi.fn() }
@@ -30,7 +33,7 @@ vi.mock('@/ui/feedback', () => ({ useFeedback: () => feedback }))
 
 const students = { data: [{ idUsuario: 13, apellidoNombre: 'Lucía Test', dni: '42666888', email: 'lucia@test.edu', activo: true, rol: 'ALUMNO' }], pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } }
 const careers = { data: [{ id: 3, nombre: 'Profesorado de Inicial', duracionAnios: 4, activo: true }, { id: 4, nombre: 'Profesorado de Primaria', duracionAnios: 4, activo: true }], pagination: { page: 1, limit: 100, total: 2, totalPages: 1 } }
-const enrollment = { id: 8, usuario: { idUsuario: 13, apellidoNombre: 'Lucía Test', dni: '42666888', email: 'lucia@test.edu' }, cicloLectivo: 2026, fechaInscripcion: '2026-03-10T12:00:00.000Z', activo: true }
+const enrollment = { id: 8, usuario: { idUsuario: 13, apellidoNombre: 'Lucía Test', dni: '42666888', email: 'lucia@test.edu' }, cicloLectivo: 2026, anioCohorte: 2024, fechaInscripcion: '2026-03-10T12:00:00.000Z', activo: true }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
@@ -41,10 +44,11 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 describe('CareerEnrollmentsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    apiClientMock.request.mockResolvedValue(undefined)
     vi.mocked(adminApi.listActiveStudents).mockResolvedValue(students)
     vi.mocked(adminApi.listActiveCareers).mockResolvedValue(careers)
     vi.mocked(adminApi.listCareerEnrollments).mockResolvedValue({ data: [enrollment], pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } })
-    vi.mocked(adminApi.enrollInCareer).mockResolvedValue({ data: { reactivada: true }, message: 'Inscripción a la carrera reactivada exitosamente' })
+    vi.mocked(adminApi.enrollInCareer).mockResolvedValue({ data: { ...enrollment, reactivada: true }, message: 'Inscripción a la carrera reactivada exitosamente' })
     vi.mocked(adminApi.removeCareerEnrollment).mockResolvedValue(undefined)
     applyRouteQuery({})
     router.replace.mockImplementation(async ({ query }: { query: Record<string, string | undefined> }) => { applyRouteQuery(query) })
@@ -59,14 +63,37 @@ describe('CareerEnrollmentsView', () => {
     expect(adminApi.listCareerEnrollments).toHaveBeenCalledWith(3, expect.any(Object))
   })
 
-  it('keeps the form selection and displays the backend reactivation message after an enrollment', async () => {
+  it('omits an empty cohort so the backend can reactivate and preserve the previous value', async () => {
     render(CareerEnrollmentsView)
     await screen.findAllByText('Lucía Test')
     await fireEvent.update(screen.getByLabelText('Alumno activo'), '13')
     await fireEvent.click(screen.getByRole('button', { name: 'Inscribir alumno' }))
-    await waitFor(() => expect(adminApi.enrollInCareer).toHaveBeenCalledWith({ alumnoId: 13, carreraId: 3, cicloLectivo: 2026 }))
+    await waitFor(() => expect(adminApi.enrollInCareer).toHaveBeenCalledWith({ alumnoId: 13, carreraId: 3 }))
     expect(feedback.success).toHaveBeenCalledWith('Inscripción a la carrera reactivada exitosamente')
     expect(screen.getByLabelText('Alumno activo')).toHaveValue('13')
+  })
+
+  it('sends the cohort year when the administrator provides one', async () => {
+    render(CareerEnrollmentsView)
+    await screen.findAllByText('Lucía Test')
+    await fireEvent.update(screen.getByLabelText('Alumno activo'), '13')
+    await fireEvent.update(screen.getByLabelText(/Año de cohorte.*requerido para alta nueva/), '2025')
+    await fireEvent.click(screen.getByRole('button', { name: 'Inscribir alumno' }))
+    await waitFor(() => expect(adminApi.enrollInCareer).toHaveBeenCalledWith({ alumnoId: 13, carreraId: 3, anioCohorte: 2025 }))
+    expect(screen.queryByLabelText('Ciclo lectivo')).not.toBeInTheDocument()
+  })
+
+  it('shows and updates the cohort year of an existing enrollment', async () => {
+    render(CareerEnrollmentsView)
+    const cohortInput = await screen.findByLabelText('Año de cohorte de Lucía Test')
+    expect(cohortInput).toHaveValue(2024)
+    await fireEvent.update(cohortInput, '2025')
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Guardar cohorte de Lucía Test' })[0])
+    await waitFor(() => expect(apiClientMock.request).toHaveBeenCalledWith('/inscripciones-carreras/8', {
+      method: 'PATCH',
+      body: { anioCohorte: 2025 },
+    }))
+    expect(feedback.success).toHaveBeenCalledWith('Año de cohorte actualizado.')
   })
 
   it('shows backend errors without clearing the selected form values', async () => {
@@ -127,7 +154,7 @@ describe('CareerEnrollmentsView', () => {
   })
 
   it('disables the complete enrollment fieldset while saving', async () => {
-    const pending = new Promise<{ data: { reactivada: boolean }; message: string }>(() => undefined)
+    const pending = new Promise<{ data: typeof enrollment & { reactivada?: boolean }; message: string }>(() => undefined)
     vi.mocked(adminApi.enrollInCareer).mockReturnValueOnce(pending)
     render(CareerEnrollmentsView)
     await screen.findAllByText('Lucía Test')
@@ -135,7 +162,7 @@ describe('CareerEnrollmentsView', () => {
     await fireEvent.submit(screen.getByRole('form'))
     await waitFor(() => expect(screen.getByRole('group')).toBeDisabled())
     expect(screen.getByLabelText('Carrera activa')).toBeDisabled()
-    expect(screen.getByLabelText('Ciclo lectivo')).toBeDisabled()
+    expect(screen.queryByLabelText('Ciclo lectivo')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Inscribiendo…' })).toBeDisabled()
   })
 

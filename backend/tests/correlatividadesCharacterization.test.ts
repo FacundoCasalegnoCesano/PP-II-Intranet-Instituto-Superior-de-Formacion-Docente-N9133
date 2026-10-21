@@ -64,10 +64,19 @@ function correlatividadFixture(overrides: Partial<CorrelatividadConMateria> = {}
 function configureVerificationBase(materiaDisponible: Record<string, unknown>) {
   replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 7 } as any));
   replaceMethod(materiaRepository, 'findById', async () => ({ id: 20, carreraId: 1 } as any));
+  replaceMethod(prisma.materia as any, 'findUnique', async () => ({ espacioCurricular: null }));
   replaceMethod(userRepository, 'findById', async () => ({ idUsuario: 10, rol: 'ALUMNO' } as any));
   replaceMethod(prisma.inscripcionCarrera as any, 'findFirst', async () => ({ id: 1 }));
   replaceMethod(prisma.inscripcionMateria as any, 'findFirst', async () => null);
   replaceMethod(materiaService, 'getMateriasDisponibles', async () => [materiaDisponible] as any);
+}
+
+function configureLegacyCorrelativities(rows: ReturnType<typeof correlatividadFixture>[]) {
+  replaceMethod(prisma.materia as any, 'findUnique', async () => ({ espacioCurricular: null }));
+  replaceMethod(prisma.correlatividad as any, 'findMany', async ({ where }: any) => rows.filter(row =>
+    (where.aplicaCursado === undefined || row.aplicaCursado === where.aplicaCursado)
+      && (where.aplicaRendir === undefined || row.aplicaRendir === where.aplicaRendir)
+  ));
 }
 
 afterEach(() => {
@@ -75,7 +84,7 @@ afterEach(() => {
 });
 
 test('CURSAR exige la correlativa obligatoria y conserva el texto de error', async () => {
-  replaceMethod(materiaRepository, 'getCorrelatividades', async () => [
+  configureLegacyCorrelativities([
     correlatividadFixture()
   ]);
   configureEstadoAcademico({});
@@ -87,7 +96,7 @@ test('CURSAR exige la correlativa obligatoria y conserva el texto de error', asy
 });
 
 test('CURSAR ignora correlativas que solo aplican al rendir', async () => {
-  replaceMethod(materiaRepository, 'getCorrelatividades', async () => [
+  configureLegacyCorrelativities([
     correlatividadFixture({
       aplicaCursado: false,
       aplicaRendir: true
@@ -99,7 +108,7 @@ test('CURSAR ignora correlativas que solo aplican al rendir', async () => {
 });
 
 test('RENDIR filtra las correlatividades obligatorias por aplicaRendir', async () => {
-  replaceMethod(materiaRepository, 'getCorrelatividades', async () => [
+  configureLegacyCorrelativities([
     correlatividadFixture({ aplicaRendir: false })
   ]);
   replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set());
@@ -108,7 +117,7 @@ test('RENDIR filtra las correlatividades obligatorias por aplicaRendir', async (
 });
 
 test('RENDIR bloquea la primera OBLIGATORIA pendiente con su mensaje actual', async () => {
-  replaceMethod(materiaRepository, 'getCorrelatividades', async () => [
+  configureLegacyCorrelativities([
     correlatividadFixture({ aplicaRendir: true }),
     correlatividadFixture({
       id: 2,
@@ -145,6 +154,7 @@ test('MOSTRAR_DISPONIBILIDAD conserva el orden y los duplicados de obligatorias'
       cursadas: [],
       correlatividadesOrigen: [
         {
+          id: 101,
           tipoRequisito: 'OBLIGATORIA',
           materiaRequeridaId: 11,
           materiaRequerida: { id: 11, nombre: 'Didáctica' },
@@ -152,6 +162,7 @@ test('MOSTRAR_DISPONIBILIDAD conserva el orden y los duplicados de obligatorias'
           aplicaRendir: true
         },
         {
+          id: 102,
           tipoRequisito: 'OBLIGATORIA',
           materiaRequeridaId: 11,
           materiaRequerida: { id: 11, nombre: 'Didáctica' },
@@ -159,6 +170,7 @@ test('MOSTRAR_DISPONIBILIDAD conserva el orden y los duplicados de obligatorias'
           aplicaRendir: true
         },
         {
+          id: 103,
           tipoRequisito: 'OBLIGATORIA',
           materiaRequeridaId: 13,
           materiaRequerida: { id: 13, nombre: 'Psicología' },
@@ -178,6 +190,61 @@ test('MOSTRAR_DISPONIBILIDAD conserva el orden y los duplicados de obligatorias'
     { id: 11, nombre: 'Didáctica' },
     { id: 11, nombre: 'Didáctica' },
     { id: 13, nombre: 'Psicología' }
+  ]);
+});
+
+test('MOSTRAR_DISPONIBILIDAD admite materias legacy sin espacio curricular', async () => {
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 7 } as any));
+  replaceMethod(prisma.inscripcionCarrera as any, 'findMany', async () => [
+    { carreraId: 1, carrera: { id: 1, nombre: 'Profesorado' } }
+  ]);
+  replaceMethod(materiaRepository, 'getMateriasDisponibles', async () => ({
+    materias: [{ id: 20, nombre: 'Materia legacy', cursadas: [], correlatividadesOrigen: [] }],
+    materiasInscriptasIds: [],
+    materiasAprobadasIds: []
+  }) as any);
+  replaceMethod(periodoInscripcionRepository, 'materiasHabilitadasEnPeriodoVigente', async () => new Set([20]));
+  configureEstadoAcademico({});
+
+  let consultoEspacios = false;
+  replaceMethod(prisma.espacioCurricular as any, 'findMany', async () => {
+    consultoEspacios = true;
+    return [];
+  });
+
+  const disponibles = await materiaService.getMateriasDisponibles(10, 2026);
+
+  assert.equal(consultoEspacios, false);
+  assert.equal(disponibles[0].cumpleCorrelativas, true);
+});
+
+test('DTO de materias disponibles distingue materia y espacio con el mismo ID', async () => {
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 7 } as any));
+  replaceMethod(prisma.inscripcionCarrera as any, 'findMany', async () => [
+    { carreraId: 1, carrera: { id: 1, nombre: 'Profesorado' } }
+  ]);
+  replaceMethod(materiaRepository, 'getMateriasDisponibles', async () => ({
+    materias: [{
+      id: 20,
+      nombre: 'Residencia',
+      espacioCurricularId: null,
+      carrera: { id: 1, nombre: 'Profesorado' },
+      cursadas: [],
+      correlatividadesOrigen: [
+        { id: 1, materiaRequeridaId: 40, materiaRequerida: { id: 40, nombre: 'Materia 40' }, espacioRequeridoId: null, espacioRequerido: null, aplicaCursado: true, suspendidaPorEspacio: false },
+        { id: 2, materiaRequeridaId: null, materiaRequerida: null, espacioRequeridoId: 40, espacioRequerido: { id: 40, nombre: 'Espacio 40', materias: [{ id: 41 }, { id: 42 }] }, aplicaCursado: true, suspendidaPorEspacio: false }
+      ]
+    }],
+    materiasInscriptasIds: [], materiasAprobadasIds: []
+  }) as any);
+  replaceMethod(periodoInscripcionRepository, 'materiasHabilitadasEnPeriodoVigente', async () => new Set([20]));
+  configureEstadoAcademico({});
+
+  const result = await materiaService.getMateriasDisponibles(10, 2026);
+
+  assert.deepEqual(result[0].correlativasPendientes, [
+    { tipo: 'MATERIA', id: 40, nombre: 'Materia 40' },
+    { tipo: 'ESPACIO', id: 40, nombre: 'Espacio 40' }
   ]);
 });
 

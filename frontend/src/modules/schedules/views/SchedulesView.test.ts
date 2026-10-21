@@ -188,6 +188,7 @@ describe('SchedulesView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos cargar los horarios publicados.')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Reintentar' }))
     await waitFor(() => expect(mocks.listYears).toHaveBeenCalledTimes(3))
+    failed.unmount()
   })
 
   it('lets an administrator publish the first PDF when no schedule exists yet', async () => {

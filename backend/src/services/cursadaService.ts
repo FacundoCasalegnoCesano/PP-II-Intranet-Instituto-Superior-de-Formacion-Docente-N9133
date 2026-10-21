@@ -39,15 +39,25 @@ function presentarMateriaPublica(materia: any): Record<string, unknown> | null {
   });
 }
 
+function estadoCursadaPublica(cursada: { anioLectivo: number; activo: boolean }): 'FINALIZADA' | 'ACTIVA' | 'INACTIVA' {
+  if (cursada.anioLectivo < anioInstitucionalActual()) return 'FINALIZADA';
+  return cursada.activo ? 'ACTIVA' : 'INACTIVA';
+}
+
 function presentarCursadaPublica(cursada: any, editable: boolean) {
   return {
     id: cursada.id,
     materiaId: cursada.materiaId,
     materia: presentarMateriaPublica(cursada.materia),
     anioLectivo: cursada.anioLectivo,
+    estadoCursada: estadoCursadaPublica(cursada),
     periodo: cursada.periodo,
     docenteId: cursada.docenteId ?? null,
     docente: cursada.docente ?? null,
+    ...(cursada.cursadaEspacio ? { espacioCurricular: {
+      id: cursada.cursadaEspacio.espacioCurricular.id,
+      nombre: cursada.cursadaEspacio.espacioCurricular.nombre
+    } } : {}),
     horarios: cursada.horarios ?? [],
     activo: cursada.activo,
     editable
@@ -95,8 +105,16 @@ class CursadaService {
     }
   }
 
+  private async validarMateriaNoEsComponenteDeEspacio(materiaId: number): Promise<void> {
+    const materia = await materiaRepository.findById(materiaId);
+    if (materia?.espacioCurricular?.activo) {
+      throw new AppError(409, `La materia pertenece al espacio ${materia.espacioCurricular.nombre}; creá la cursada desde el espacio curricular`);
+    }
+  }
+
   async createCursada(data: CursadaCreateData, currentUser: any) {
     this.esAdministrativo(currentUser);
+    await this.validarMateriaNoEsComponenteDeEspacio(data.materiaId);
     await this.validarDatos(data);
     return await cursadaRepository.create(data);
   }
@@ -126,7 +144,12 @@ class CursadaService {
           : materia;
         return {
           ...cursada,
+          estadoCursada: estadoCursadaPublica(cursada),
           ...(materia ? { materia: materiaSinAsignaciones } : {}),
+          ...(cursada.cursadaEspacio ? { espacioCurricular: {
+            id: cursada.cursadaEspacio.espacioCurricular.id,
+            nombre: cursada.cursadaEspacio.espacioCurricular.nombre
+          } } : {}),
           editable: currentUser ? puedeMutarCursada(currentUser, cursada) : false
         };
       })
@@ -154,20 +177,32 @@ class CursadaService {
 
   async updateCursada(id: number, data: CursadaUpdateData, currentUser: any) {
     this.esAdministrativo(currentUser);
-    await this.getCursadaById(id, currentUser);
+    const current = await this.getCursadaById(id, currentUser);
+    if (current.espacioCurricular && (
+      data.materiaId !== undefined || data.anioLectivo !== undefined || data.periodo !== undefined || data.activo === false
+    )) {
+      throw new AppError(409, 'La identidad y estado de una materia dentro de una cursada de espacio se administran desde la oferta completa');
+    }
+    if (data.materiaId !== undefined && data.materiaId !== current.materiaId) {
+      await this.validarMateriaNoEsComponenteDeEspacio(data.materiaId);
+    }
     await this.validarDatos(data, id);
     return await cursadaRepository.update(id, data);
   }
 
   async deleteCursada(id: number, currentUser: any) {
     this.esAdministrativo(currentUser);
-    await this.getCursadaById(id, currentUser);
+    const current = await this.getCursadaById(id, currentUser);
+    if (current.espacioCurricular) throw new AppError(409, 'No se puede dar de baja un componente por separado; administrá la cursada del espacio');
     return await cursadaRepository.delete(id);
   }
 
   async getInscriptosByCursada(cursadaId: number, currentUser: any): Promise<InscriptoPublico[]> {
-    await this.getCursadaById(cursadaId, currentUser);
-    return await cursadaRepository.findInscriptosByCursadaId(cursadaId);
+    const cursada = await this.getCursadaById(cursadaId, currentUser);
+    return await cursadaRepository.findInscriptosByCursadaId(
+      cursadaId,
+      cursada.estadoCursada === 'FINALIZADA'
+    );
   }
 }
 

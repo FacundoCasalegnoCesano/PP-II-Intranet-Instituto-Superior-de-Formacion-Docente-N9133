@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import type { Prisma } from '@prisma/client';
 import { normalizePagination, paginated, type PaginationInput } from '../utils/pagination.js';
 
 export interface HomologacionCreateData {
@@ -36,6 +37,8 @@ const homologacionInclude = {
     include: { carrera: true }
   }
 };
+
+type PrismaDb = typeof prisma | Prisma.TransactionClient;
 
 class HomologacionRepository {
   async create(data: HomologacionCreateData): Promise<any> {
@@ -96,7 +99,7 @@ class HomologacionRepository {
     return paginated(data, total, page, limit);
   }
 
-  async update(id: number, data: HomologacionUpdateData): Promise<any> {
+  async update(id: number, data: HomologacionUpdateData, db: PrismaDb = prisma): Promise<any> {
     const cleanData: any = { ...data };
     Object.keys(cleanData).forEach(key => {
       if (cleanData[key] === undefined) delete cleanData[key];
@@ -106,7 +109,7 @@ class HomologacionRepository {
       cleanData.estado = cleanData.estado as any;
     }
 
-    return await prisma.homologacion.update({
+    return await db.homologacion.update({
       where: { id },
       data: cleanData,
       include: homologacionInclude

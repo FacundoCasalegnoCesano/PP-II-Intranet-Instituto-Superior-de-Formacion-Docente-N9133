@@ -20,6 +20,11 @@ afterEach(() => { while (restorations.length) restorations.pop()?.(); });
 
 const admin = { id: 1, rol: ROLES.ADMINISTRATIVO };
 const rows = (count: number) => Array.from({ length: count }, (_, index) => ({ alumnoId: index + 10, presente: true }));
+const attendanceLocks: string[] = [];
+const attendanceTx = () => ({
+  $queryRaw: async (strings: TemplateStringsArray) => { attendanceLocks.push(strings.join('?')); return []; },
+  cursada: { findUnique: async () => ({ materia: { carreraId: 2, esPromocionable: false } }) }
+});
 
 test('rechaza más de 500 filas en el schema', () => {
   const result = cargaMasivaSchema.validate({ cursadaId: 1, fecha: '2026-08-20', asistencias: rows(501) });
@@ -38,7 +43,8 @@ test('valida alumnos y matrículas con una consulta agrupada para cargas de 1 y 
     let writtenRows: any[] = [];
     const inputRows = rows(size);
     inputRows[0] = { alumnoId: 10, presente: false, justificado: true, observacion: 'Constancia' };
-    replaceMethod(cursadaRepository, 'findById', async () => ({ anioLectivo: 2026 }));
+    replaceMethod(cursadaRepository, 'findById', async () => ({ anioLectivo: 2026, materiaId: 1, materia: { carreraId: 2 } }));
+    replaceMethod(asistenciaRepository, 'withTransaction', async (operation: any) => operation(attendanceTx() as any));
     replaceMethod(alumnoRepository, 'findByUsuarioIds', async (userIds: number[]) => {
       groupedStudentLookups += 1;
       return userIds.map((idCuenta, index) => ({ idCuenta, idAlumno: index + 100 }));
@@ -48,7 +54,12 @@ test('valida alumnos y matrículas con una consulta agrupada para cargas de 1 y 
       return alumnoIds.map(alumnoId => ({ alumnoId }));
     });
     replaceMethod(asistenciaRepository, 'isAlumnoInscripto', async () => { individualLookups += 1; return true; });
-    replaceMethod(asistenciaRepository, 'upsertClase', async (_id: number, _date: Date, values: any[]) => { writes += 1; writtenRows = values; return values; });
+    replaceMethod(asistenciaRepository, 'upsertClase', async (_id: number, _date: Date, values: any[], db: any) => {
+      writes += 1;
+      writtenRows = values;
+      assert.ok(db, 'asistencia se escribe con el cliente bloqueado');
+      return values;
+    });
 
     const result = await asistenciaService.cargarClase({ cursadaId: 1, fecha: '2026-08-20', asistencias: inputRows }, admin);
     assert.deepEqual(result, { registros: size, fecha: new Date('2026-08-20T00:00:00.000Z') });
@@ -56,6 +67,7 @@ test('valida alumnos y matrículas con una consulta agrupada para cargas de 1 y 
     assert.equal(groupedLookups, 1);
     assert.equal(individualLookups, 0);
     assert.equal(writes, 1);
+    assert.match(attendanceLocks.at(-1) ?? '', /carreras/);
     assert.deepEqual(writtenRows[0], { idAlumno: 100, presente: false, justificado: true, observacion: 'Constancia' });
   }
 });
@@ -64,7 +76,7 @@ test('rechaza identificadores de alumno repetidos antes de consultar o escribir'
   let validations = 0;
   let writes = 0;
   replaceMethod(alumnoRepository, 'findByUsuarioIds', async () => [{ idCuenta: 10, idAlumno: 7 }]);
-  replaceMethod(cursadaRepository, 'findById', async () => ({ anioLectivo: 2026 }));
+  replaceMethod(cursadaRepository, 'findById', async () => ({ anioLectivo: 2026, materiaId: 1, materia: { carreraId: 2 } }));
   replaceMethod(asistenciaRepository, 'findInscripcionesByCursadaAndAlumnoIds', async () => { validations += 1; return []; });
   replaceMethod(asistenciaRepository, 'upsertClase', async () => { writes += 1; return []; });
   await assert.rejects(
@@ -92,7 +104,8 @@ test('un permiso inválido falla antes de consultar identidades o inscripciones'
 test('un alumno sin inscripción en esta cursada es rechazado sin exponer datos de otros alumnos', async () => {
   let writes = 0;
   replaceMethod(alumnoRepository, 'findByUsuarioIds', async () => [{ idCuenta: 10, idAlumno: 7 }]);
-  replaceMethod(cursadaRepository, 'findById', async () => ({ anioLectivo: 2026 }));
+  replaceMethod(cursadaRepository, 'findById', async () => ({ anioLectivo: 2026, materiaId: 1, materia: { carreraId: 2 } }));
+  replaceMethod(asistenciaRepository, 'withTransaction', async (operation: any) => operation({ $queryRaw: async () => [] }));
   replaceMethod(asistenciaRepository, 'findInscripcionesByCursadaAndAlumnoIds', async () => []);
   replaceMethod(asistenciaRepository, 'upsertClase', async () => { writes += 1; return []; });
   await assert.rejects(
@@ -107,8 +120,9 @@ test('si falla la escritura en lote, propaga el error sin un segundo intento par
   replaceMethod(alumnoRepository, 'findByUsuarioIds', async (_ids: number[]) => [
     { idCuenta: 10, idAlumno: 100 }, { idCuenta: 11, idAlumno: 101 }
   ]);
-  replaceMethod(cursadaRepository, 'findById', async () => ({ anioLectivo: 2026 }));
+  replaceMethod(cursadaRepository, 'findById', async () => ({ anioLectivo: 2026, materiaId: 1, materia: { carreraId: 2 } }));
   replaceMethod(asistenciaRepository, 'findInscripcionesByCursadaAndAlumnoIds', async (_id: number, alumnoIds: number[]) => alumnoIds.map(alumnoId => ({ alumnoId })));
+  replaceMethod(asistenciaRepository, 'withTransaction', async (operation: any) => operation(attendanceTx() as any));
   replaceMethod(asistenciaRepository, 'upsertClase', async () => { writes += 1; throw new Error('transaction failed'); });
   await assert.rejects(
     asistenciaService.cargarClase({ cursadaId: 1, fecha: '2026-08-20', asistencias: rows(2) }, admin),

@@ -53,6 +53,12 @@ function fallbackDestination(): RouteLocationRaw {
 }
 
 function goBack(): void {
+  if (route.name === 'admin-subjects' && queryValue('tab') === 'spaces') {
+    const query = filteredQuery(['search', 'carreraId', 'page'])
+    void router.replace({ name: 'admin-subjects', ...(Object.keys(query).length ? { query } : {}) })
+    return
+  }
+
   const back = router.options.history.state.back
   if (typeof back === 'string' && back.startsWith('/app/')) {
     const previous = router.resolve(back)

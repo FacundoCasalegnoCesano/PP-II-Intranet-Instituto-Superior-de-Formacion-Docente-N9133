@@ -69,6 +69,51 @@ test('la consulta administrativa combina rol, búsqueda y carrera con AND', asyn
   assert.equal(result.pagination.page, 2);
 });
 
+test('la búsqueda de usuarios conserva nombre, email y DNI dentro del filtro de rol', async () => {
+  type UserQuery = { where?: unknown; skip?: number; take?: number };
+  const findCalls: UserQuery[] = [];
+  const countWheres: unknown[] = [];
+  replaceMethod(prisma.usuario, 'findMany', async (args: UserQuery) => {
+    findCalls.push(args);
+    return [];
+  });
+  replaceMethod(prisma.usuario, 'count', async (args: UserQuery) => {
+    countWheres.push(args.where);
+    return 0;
+  });
+
+  await userRepository.findAll({ rol: 'ALUMNO', search: 'Camila Ríos', activo: 'true', page: 1, limit: 100 });
+  await userRepository.findAll({ rol: 'ALUMNO', search: 'Ríos', page: 2, limit: 25 });
+  await userRepository.findAll({ rol: 'ALUMNO', search: '48000012', activo: false });
+  await userRepository.findAll({ rol: 'ALUMNO', search: 'camila@example.test' });
+
+  const roleFilter = { OR: [{ rol: { contains: 'ALUMNO' } }] };
+  assert.deepEqual(findCalls.map(({ where }) => where), [
+    { AND: [roleFilter, { activo: true }, { OR: [
+      { apellidoNombre: { contains: 'Camila Ríos' } },
+      { email: { contains: 'Camila Ríos' } }
+    ] }] },
+    { AND: [roleFilter, { OR: [
+      { apellidoNombre: { contains: 'Ríos' } },
+      { email: { contains: 'Ríos' } }
+    ] }] },
+    { AND: [roleFilter, { activo: false }, { OR: [
+      { apellidoNombre: { contains: '48000012' } },
+      { email: { contains: '48000012' } },
+      { dni: { equals: 48000012 } }
+    ] }] },
+    { AND: [roleFilter, { OR: [
+      { apellidoNombre: { contains: 'camila@example.test' } },
+      { email: { contains: 'camila@example.test' } }
+    ] }] }
+  ]);
+  assert.deepEqual(countWheres, findCalls.map(({ where }) => where));
+  assert.deepEqual(findCalls.slice(0, 2).map(({ skip, take }) => ({ skip, take })), [
+    { skip: 0, take: 100 },
+    { skip: 25, take: 25 }
+  ]);
+});
+
 test('la búsqueda numérica de alumnos usa DNI exacto y conserva cuentas inactivas sin filtro activo', async () => {
   let findArgs: any;
   replaceMethod(prisma.usuario, 'findMany', async (args: any) => {

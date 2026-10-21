@@ -30,8 +30,15 @@ export const inscripcionCarreraSchema = Joi.object({
       'number.integer': 'El ciclo lectivo debe ser un número entero',
       'number.min': 'El ciclo lectivo debe ser mayor o igual a 2000',
       'number.max': 'El ciclo lectivo no puede exceder 2100'
-    })
-});
+    }),
+  // La existencia de una inscripción previa determina si el servicio exige cohorte.
+  anioCohorte: Joi.number().integer().min(1900).max(2100).allow(null)
+}).unknown(false);
+
+export const updateInscripcionCarreraSchema = Joi.object({
+  anioCohorte: Joi.number().integer().min(1900).max(2100).allow(null).required()
+    .messages({ 'any.required': 'El año de cohorte es requerido (puede ser null para legados)' })
+}).unknown(false);
 
 export const inscripcionesCarreraQuerySchema = Joi.object({
   includeInactive: Joi.boolean()

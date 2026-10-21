@@ -12,8 +12,8 @@ export interface AlumnoProfile {
   idAlumno?: number
   usuarioId?: number
   domicilio: string
-  anioEgreso: number | null
-  institucionProcedencia: string | null
+  anioEgreso?: number | null
+  institucionProcedencia?: string | null
 }
 
 export interface Career {
@@ -35,6 +35,7 @@ export interface Subject {
   periodo?: string | null
   regimen?: string | null
   carreraId?: number
+  espacioCurricularId?: number | null
   carrera?: Career
   cursoId?: number | null
   curso?: { id: number; anio: number; carreraId?: number }
@@ -50,6 +51,7 @@ export interface SubjectWritePayload {
   cargaHoraria: number
   tipoEspacio: string
   correlativasIds?: number[]
+  correlatividades?: CorrelativityWrite[]
   descripcion?: string
   horasCatedra?: string
   modalidad?: string
@@ -66,11 +68,21 @@ export interface SubjectYearGroup {
 export interface Prerequisite {
   id: number
   materiaOrigenId: number
-  materiaRequeridaId: number
-  materiaRequerida: Subject
+  tipoDestino?: 'MATERIA' | 'ESPACIO'
+  materiaRequeridaId: number | null
+  espacioRequeridoId?: number | null
+  materiaRequerida: Subject | null
+  espacioRequerido?: { id: number; nombre: string; carreraId?: number } | null
   tipoRequisito: 'OBLIGATORIA'
   aplicaCursado?: boolean
   aplicaRendir?: boolean
+}
+
+export interface CorrelativityWrite {
+  materiaRequeridaId?: number
+  espacioRequeridoId?: number
+  aplicaCursado: boolean
+  aplicaRendir: boolean
 }
 
 export interface TeachingAssignment {
@@ -103,12 +115,33 @@ export interface CourseOffering {
   docente?: Pick<PublicUser, 'idUsuario' | 'apellidoNombre' | 'email'> | null
   horarios: Schedule[]
   activo: boolean
+  estadoCursada?: 'FINALIZADA' | 'ACTIVA' | 'INACTIVA'
 }
+
+export interface SpaceCourseOffering {
+  id: number
+  espacioCurricularId: number
+  espacioCurricular: { id: number; nombre: string; carreraId: number; carrera?: Career }
+  anioLectivo: number
+  periodo?: string | null
+  activo: boolean
+  estadoCursada?: 'FINALIZADA' | 'ACTIVA' | 'INACTIVA'
+  componentes: Array<{
+    cursadaId: number
+    materiaId: number
+    materia: Subject
+    docenteId?: number | null
+    docente?: Pick<PublicUser, 'idUsuario' | 'apellidoNombre' | 'email'> | null
+    anioLectivo?: number
+    periodo?: string | null
+  }>
+}
+export interface SpaceCourseOfferingReference extends Pick<SpaceCourseOffering, 'id' | 'espacioCurricularId' | 'espacioCurricular' | 'anioLectivo' | 'periodo' | 'activo'> {}
 
 export interface EnrollmentPeriod {
   id: number
   tipo: 'MATERIA' | 'EXAMEN'
-  cicloLectivo: number
+  cicloLectivo?: number | null
   fechaInicio: string
   fechaFin: string
   materias?: Array<Subject | { materia: Subject; materiaId: number }>
@@ -117,6 +150,8 @@ export interface EnrollmentPeriod {
   activo: boolean
   cantidadMaterias: number
   cantidadMesas: number
+  cantidadEspacios?: number
+  cursadasEspacios?: Array<{ id?: number; cursadaEspacioId: number; cursadaEspacio?: SpaceCourseOfferingReference }>
   estado: PeriodStatus
 }
 
@@ -144,7 +179,8 @@ export interface ActiveStudent {
 export interface CareerEnrollment {
   id: number
   usuario: Pick<ActiveStudent, 'idUsuario' | 'apellidoNombre' | 'dni' | 'email'>
-  cicloLectivo: number
+  cicloLectivo?: number | null
+  anioCohorte?: number | null
   fechaInscripcion: string
   activo: boolean
 }
@@ -152,7 +188,7 @@ export interface CareerEnrollment {
 export interface CareerEnrollmentWritePayload {
   alumnoId: number
   carreraId: number
-  cicloLectivo: number
+  anioCohorte?: number | null
 }
 
 export type AdminPageResult<T> = PaginatedResult<T>

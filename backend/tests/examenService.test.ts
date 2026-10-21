@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 
 import examenService from '../src/services/examenService.js';
 import examenRepository from '../src/repositories/examenRepository.js';
@@ -9,6 +9,7 @@ import alumnoRepository from '../src/repositories/alumnoRepository.js';
 import inscripcionMateriaRepository from '../src/repositories/inscripcionMateriaRepository.js';
 import estadoAcademicoService from '../src/services/estadoAcademicoService.js';
 import { ROLES } from '../src/constants/roles.js';
+import { prisma } from '../src/config/prisma.js';
 
 const restorations: Array<() => void> = [];
 
@@ -26,6 +27,12 @@ function replaceMethod<T extends object, K extends keyof T>(
 
 afterEach(() => {
   while (restorations.length > 0) restorations.pop()?.();
+});
+
+beforeEach(() => {
+  replaceMethod(prisma.materia as any, 'findUnique', async () => ({ espacioCurricular: null }));
+  replaceMethod(prisma.correlatividad as any, 'findMany', async () => []);
+  replaceMethod(prisma.espacioCorrelatividad as any, 'findMany', async () => []);
 });
 
 test('permite inscribirse a una mesa con regularidad vigente de una cursada anterior', async () => {

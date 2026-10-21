@@ -5,11 +5,11 @@ import userEvent from '@testing-library/user-event'
 import { reactive } from 'vue'
 import SubjectEnrollmentsView from './SubjectEnrollmentsView.vue'
 import { useCareerSelectionStore } from '@/stores/careerSelectionStore'
-import type { SubjectEnrollment } from '../types/subjectEnrollments'
+import type { AvailableSubject, SubjectEnrollment } from '../types/subjectEnrollments'
 
 const state = vi.hoisted(() => ({ user: { idUsuario: 13 }, activeRole: 'ALUMNO' }))
 const reactiveState = reactive(state)
-const api = vi.hoisted(() => ({ available: vi.fn(), mine: vi.fn(), verify: vi.fn(), enroll: vi.fn(), drop: vi.fn(), careers: vi.fn() }))
+const api = vi.hoisted(() => ({ available: vi.fn(), mine: vi.fn(), verify: vi.fn(), enroll: vi.fn(), drop: vi.fn(), careers: vi.fn(), spaceAvailable: vi.fn(), spaceMine: vi.fn(), spaceVerify: vi.fn(), spaceEnroll: vi.fn(), spaceDrop: vi.fn() }))
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason?: unknown) => void; const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej }); return { promise, resolve, reject } }
 function enrollmentResult(data: SubjectEnrollment[], page = 1, total = data.length) { return { data, pagination: { page, limit: 20, total, totalPages: Math.ceil(total / 20) } } }
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => reactiveState }))
@@ -19,6 +19,11 @@ vi.mock('../api/subjectEnrollmentsApi', () => ({
   verifySubjectEnrollment: api.verify,
   enrollInSubject: api.enroll,
   dropSubjectEnrollment: api.drop,
+  fetchAvailableSpaceEnrollments: api.spaceAvailable,
+  fetchMySpaceEnrollments: api.spaceMine,
+  verifySpaceEnrollment: api.spaceVerify,
+  enrollInSpace: api.spaceEnroll,
+  dropSpaceEnrollment: api.spaceDrop,
 }))
 vi.mock('@/modules/home/api/homeApi', () => ({ fetchStudentCareers: api.careers }))
 
@@ -32,6 +37,31 @@ describe('SubjectEnrollmentsView', () => {
       { id: 8, carreraId: 4, activo: true, carrera: { id: 4, nombre: 'Tecnicatura', activo: true, materias: [] } },
     ])
     api.available.mockReset(); api.mine.mockReset(); api.verify.mockReset(); api.enroll.mockReset(); api.drop.mockReset()
+    api.spaceAvailable.mockReset().mockResolvedValue([]); api.spaceMine.mockReset().mockResolvedValue([]); api.spaceVerify.mockReset(); api.spaceEnroll.mockReset(); api.spaceDrop.mockReset()
+  })
+  it('verifies, enrolls and drops one complete curricular space without student ID payloads', async () => {
+    const offer = { cursadaEspacioId: 44, espacioCurricular: { id: 9, nombre: 'Práctica profesional', carreraId: 3, carrera: { id: 3, nombre: 'Profesorado' } }, anioLectivo: 2026, periodo: 'ANUAL', componentes: [{ cursadaId: 50, materia: { id: 8, nombre: 'Práctica I' }, docente: { idUsuario: 71, apellidoNombre: 'Docente' }, yaCursada: false }], habilitada: true, yaInscripto: false, aprobado: false, motivos: [], pendientes: [] }
+    const enrollment = { ...offer, id: 80, fechaInscripcion: '2026-03-01', estado: 'ACTIVA' as const, componentes: [{ ...offer.componentes[0], idInscripcionMateria: 81 }] }
+    api.available.mockResolvedValue([{ id: 8, nombre: 'Práctica I', yaInscripto: false, yaAprobada: false, cumpleCorrelativas: true, correlativasPendientes: [], habilitada: true }])
+    api.mine.mockResolvedValue(enrollmentResult([{ id: 82, materiaId: 8, cicloLectivo: 2026, modalidadElegida: 'PRESENCIAL', estado: 'ACTIVA', inscripcionEspacioId: 80, materia: { id: 8, nombre: 'Práctica I' } }]))
+    api.spaceAvailable.mockResolvedValue([offer])
+    api.spaceMine.mockResolvedValueOnce([]).mockResolvedValue(enrollment ? [enrollment] : [])
+    api.spaceVerify.mockResolvedValue(offer)
+    api.spaceEnroll.mockResolvedValue(enrollment)
+    api.spaceDrop.mockResolvedValue({ ...enrollment, estado: 'BAJA' })
+    const user = userEvent.setup(); render(SubjectEnrollmentsView)
+    expect(await screen.findByText('Práctica profesional')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Verificar e inscribirme' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Práctica I · Presencial/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Verificar e inscribirme al espacio' }))
+    expect(await screen.findByRole('alertdialog', { name: 'Confirmar inscripción al espacio' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Inscribirme al espacio' }))
+    expect(api.spaceEnroll).toHaveBeenCalledWith(44)
+    await screen.findByText(/Te inscribiste al espacio Práctica profesional/)
+    const drop = await screen.findByRole('button', { name: 'Dar de baja el espacio' })
+    await user.click(drop)
+    await user.click(within(screen.getByRole('alertdialog', { name: 'Confirmar baja del espacio' })).getByRole('button', { name: 'Dar de baja el espacio' }))
+    expect(api.spaceDrop).toHaveBeenCalledWith(80)
   })
   it('verifies a subject before showing enrollment confirmation and links to official schedules', async () => {
     api.available.mockResolvedValue([{ id: 5, nombre: 'Pedagogía', curso: { anio: 1 }, carreras: [{ id: 3, nombre: 'Profesorado' }], modalidad: 'SEMIPRESENCIAL', yaInscripto: false, yaAprobada: false, cumpleCorrelativas: true, correlativasPendientes: [], habilitada: true }])
@@ -64,6 +94,30 @@ describe('SubjectEnrollmentsView', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Dar de baja' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('Diste de baja tu inscripción a Pedagogía.')
+  })
+
+  it('marks previous-cycle courses as finalized and keeps them read-only', async () => {
+    const pastYear = new Date().getFullYear() - 1
+    api.available.mockResolvedValue([{ id: 51, nombre: 'Didáctica I', yaInscripto: false, yaAprobada: false, cumpleCorrelativas: true, correlativasPendientes: [], habilitada: true }])
+    api.mine.mockResolvedValue(enrollmentResult([{ id: 52, materiaId: 51, cicloLectivo: pastYear, modalidadElegida: 'PRESENCIAL', estado: 'ACTIVA', materia: { id: 51, nombre: 'Didáctica I' } }]))
+    api.spaceAvailable.mockResolvedValue([{ cursadaEspacioId: 53, espacioCurricular: { id: 54, nombre: 'Práctica I', carreraId: 3 }, anioLectivo: pastYear, componentes: [], habilitada: true, yaInscripto: false, aprobado: false, motivos: [], pendientes: [] }])
+    api.spaceMine.mockResolvedValue([{ id: 55, espacioCurricular: { id: 54, nombre: 'Práctica I', carreraId: 3 }, anioLectivo: pastYear, estado: 'ACTIVA', fechaInscripcion: `${pastYear}-03-01`, componentes: [] }])
+    const user = userEvent.setup()
+    render(SubjectEnrollmentsView)
+
+    await fireEvent.update(screen.getByLabelText('Ciclo lectivo'), String(pastYear))
+
+    await waitFor(() => expect(api.available).toHaveBeenLastCalledWith(pastYear))
+    await waitFor(() => expect(screen.getAllByText('Finalizada').length).toBeGreaterThanOrEqual(2))
+    expect(screen.getByRole('button', { name: 'Verificar e inscribirme' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Verificar e inscribirme al espacio' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Dar de baja el espacio' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Verificar e inscribirme' }))
+    await user.click(screen.getByRole('button', { name: 'Verificar e inscribirme al espacio' }))
+    expect(api.verify).not.toHaveBeenCalled()
+    expect(api.spaceVerify).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Mis inscripciones' })).toBeVisible()
   })
 
   it('loads the next enrollment page and returns to the last valid page after dropping its only row', async () => {
@@ -150,7 +204,6 @@ describe('SubjectEnrollmentsView', () => {
     api.verify.mockClear()
     api.available.mockResolvedValue([{ id: 6, nombre: 'Historia', modalidad: 'PRESENCIAL', yaInscripto: true, yaAprobada: false, cumpleCorrelativas: true, correlativasPendientes: [], habilitada: true }])
     api.mine.mockResolvedValue(enrollmentResult([]))
-    const user = userEvent.setup()
     render(SubjectEnrollmentsView)
 
     expect(await screen.findByText('Ya estás inscripto/a')).toBeVisible()
@@ -161,7 +214,6 @@ describe('SubjectEnrollmentsView', () => {
   it('explains pending correlatives and keeps enrollment blocked', async () => {
     api.available.mockResolvedValue([{ id: 9, nombre: 'Residencia', modalidad: 'PRESENCIAL', yaInscripto: false, yaAprobada: false, cumpleCorrelativas: false, correlativasPendientes: [{ id: 3, nombre: 'Didáctica' }], habilitada: true }])
     api.mine.mockResolvedValue(enrollmentResult([]))
-    const user = userEvent.setup()
     render(SubjectEnrollmentsView)
 
     expect(await screen.findByText('Falta regularizar o aprobar: Didáctica')).toBeVisible()
@@ -198,7 +250,7 @@ describe('SubjectEnrollmentsView', () => {
     expect(await screen.findByText('Pedagogía')).toBeVisible()
     expect(screen.getByText('Campo común')).toBeVisible()
     expect(screen.queryByText('Historia')).not.toBeInTheDocument()
-    expect(screen.getByText(/Las inscripciones activas se muestran para todas tus carreras/)).toBeVisible()
+    expect(screen.getByText(/Las inscripciones se muestran para todas tus carreras/)).toBeVisible()
     expect(screen.getByText(/Historia.*2026/)).toBeVisible()
   })
 

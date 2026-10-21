@@ -29,8 +29,9 @@ let mounted = true
 const REGULARITY_ALERT_WINDOW_DAYS = 90
 
 const selectedCareer = computed(() => careers.value.find((career) => career.carreraId === selectedCareerId.value)?.carrera)
+const standaloneSubjects = computed(() => (trajectory.value?.materias ?? []).filter((subject) => !subject.espacioCurricular))
 const visibleSubjects = computed(() => {
-  const subjects = trajectory.value?.materias ?? []
+  const subjects = standaloneSubjects.value
   if (subjectFilter.value === 'TODAS') return subjects
   const category = subjectFilter.value === 'APROBADAS' ? 'APROBADA'
     : subjectFilter.value === 'REGULARES' ? 'REGULAR'
@@ -39,11 +40,18 @@ const visibleSubjects = computed(() => {
           : 'REGULARIDAD_VENCIDA'
   return subjects.filter((subject) => subject.categoriaTrayectoria === category)
 })
+const visibleSpaces = computed(() => (trajectory.value?.espaciosCurriculares ?? []).filter((space) => {
+  if (subjectFilter.value === 'TODAS') return true
+  if (subjectFilter.value === 'APROBADAS') return space.estado === 'APROBADA'
+  return subjectFilter.value === 'SIN_CURSAR' && space.estado === 'PENDIENTE'
+}))
+const totalUnits = computed(() => trajectory.value?.cantidadUnidadesTotal
+  ?? standaloneSubjects.value.length + (trajectory.value?.espaciosCurriculares?.length ?? 0))
 const regularityAlerts = computed(() => {
   if (!trajectory.value) return []
   const today = argentinaCalendarDate(new Date())
   if (!today) return []
-  return trajectory.value.materias
+  return standaloneSubjects.value
     .map((subject, index) => {
       const until = subject.regularidad?.hasta
       const deadline = parseCalendarDate(until)
@@ -231,13 +239,13 @@ onUnmounted(() => { mounted = false; loadRequest++; attendanceRequest++ })
     <template v-else-if="trajectory">
       <label for="academic-career" class="mt-7 block max-w-xl font-semibold text-[var(--color-text)]">Carrera
         <select id="academic-career" :value="selectedCareerId" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="changeCareer">
-          <option v-for="career in careers" :key="career.id" :value="career.carreraId">{{ career.carrera.nombre }}</option>
+          <option v-for="career in careers" :key="career.id" :value="career.carreraId">{{ career.carrera.nombre }}{{ career.anioCohorte ? ` · cohorte ${career.anioCohorte}` : '' }}</option>
         </select>
       </label>
       <section class="mt-6 rounded-lg border border-[var(--color-border)] bg-white p-5" aria-labelledby="record-summary">
         <h2 id="record-summary" class="text-xl font-semibold">{{ selectedCareer?.nombre }}</h2>
         <p class="mt-2 font-semibold">Promedio general: {{ trajectory.promedioGeneral ?? 'sin calificaciones definitivas' }}</p>
-        <p class="mt-1 text-sm text-[var(--color-graphite)]">{{ trajectory.cantidadMateriasAprobadas ?? 0 }} materias aprobadas</p>
+        <p class="mt-1 text-sm text-[var(--color-graphite)]">{{ trajectory.cantidadMateriasAprobadas ?? 0 }} de {{ totalUnits }} unidades aprobadas</p>
       </section>
       <nav class="mt-5 flex flex-wrap gap-3" aria-label="Próximos pasos académicos">
         <RouterLink :to="{ name: 'subject-enrollments' }" class="inline-flex min-h-11 items-center rounded-md border border-[var(--color-brand)] px-4 py-2 font-semibold text-[var(--color-brand)]">Consultar materias e inscripciones</RouterLink>
@@ -254,8 +262,8 @@ onUnmounted(() => { mounted = false; loadRequest++; attendanceRequest++ })
         </ul>
       </section>
 
-      <section class="mt-6 rounded-lg border border-[var(--color-border)] bg-white p-5" aria-label="Filtrar materias">
-        <label for="academic-subject-filter" class="block font-semibold">Filtrar materias
+      <section class="mt-6 rounded-lg border border-[var(--color-border)] bg-white p-5" aria-label="Filtrar trayectoria">
+        <label for="academic-subject-filter" class="block font-semibold">Filtrar materias y espacios
           <select id="academic-subject-filter" :value="subjectFilter" class="mt-1 min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 font-normal" @change="changeSubjectFilter">
             <option value="TODAS">Todas</option>
             <option value="APROBADAS">Aprobadas</option>
@@ -265,12 +273,31 @@ onUnmounted(() => { mounted = false; loadRequest++; attendanceRequest++ })
             <option value="VENCIDAS">Regularidad vencida</option>
           </select>
         </label>
-        <p class="mt-2 text-sm text-[var(--color-graphite)]">Mostrando {{ visibleSubjects.length }} de {{ trajectory.materias.length }} materias.</p>
+        <p class="mt-2 text-sm text-[var(--color-graphite)]">Mostrando {{ visibleSubjects.length + visibleSpaces.length }} de {{ totalUnits }} unidades: {{ visibleSpaces.length }} espacios curriculares y {{ visibleSubjects.length }} materias.</p>
       </section>
 
-      <p v-if="!visibleSubjects.length" class="mt-6 rounded-lg border border-[var(--color-border)] bg-white p-5">No hay materias en esta categoría.</p>
+      <p v-if="!visibleSubjects.length && !visibleSpaces.length" class="mt-6 rounded-lg border border-[var(--color-border)] bg-white p-5">No hay unidades en esta categoría.</p>
 
-      <ol v-else class="mt-6 grid gap-4" aria-label="Materias de la trayectoria">
+      <section v-if="visibleSpaces.length" class="mt-6" aria-labelledby="curriculum-spaces-title">
+        <h2 id="curriculum-spaces-title" class="text-xl font-semibold">Espacios curriculares</h2>
+        <ol class="mt-3 grid gap-4">
+          <li v-for="space in visibleSpaces" :key="space.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="text-lg font-semibold">{{ space.nombre }}</h3><p class="mt-1 text-sm text-[var(--color-graphite)]">Nota del espacio: {{ space.nota ?? 'Sin nota' }}</p></div><span class="rounded-full bg-[#f4e7e7] px-3 py-1 text-sm font-semibold text-[var(--color-brand)]">{{ academicLabel(space.estado) }}</span></div>
+            <p v-if="space.definitiva" class="mt-3 text-sm">Nota definitiva: {{ space.definitiva.nota }} · {{ academicLabel(space.definitiva.via) }}</p>
+            <h4 class="mt-4 font-semibold">Materias que componen el espacio</h4>
+            <ul v-if="space.componentes.length" class="mt-2 divide-y divide-[var(--color-border)]">
+              <li v-for="component in space.componentes" :key="component.materiaId" class="flex flex-wrap items-center justify-between gap-2 py-3">
+                <span class="font-medium">{{ component.nombre }}<span v-if="component.definitiva?.nota != null" class="block text-sm text-[var(--color-graphite)]">Nota: {{ component.definitiva.nota }}</span></span>
+                <span class="text-sm text-[var(--color-graphite)]">{{ academicLabel(component.estado) }}</span>
+              </li>
+            </ul>
+            <p v-else class="mt-2 text-sm text-[var(--color-graphite)]">No hay materias componentes informadas.</p>
+          </li>
+        </ol>
+      </section>
+
+      <h2 v-if="visibleSubjects.length" class="mt-6 text-xl font-semibold">Materias</h2>
+      <ol v-if="visibleSubjects.length" class="mt-3 grid gap-4" aria-label="Materias de la trayectoria">
         <li v-for="item in visibleSubjects" :key="item.materia.id" class="rounded-lg border border-[var(--color-border)] bg-white p-5">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div><h2 class="text-lg font-semibold">{{ item.materia.nombre }}</h2><p class="mt-1 text-sm text-[var(--color-graphite)]">{{ item.plan?.anio ? `${item.plan.anio}.º año` : 'Año no informado' }}</p></div>
@@ -280,7 +307,7 @@ onUnmounted(() => { mounted = false; loadRequest++; attendanceRequest++ })
             <p v-if="item.asistencia">Asistencia: {{ item.asistencia.porcentaje ?? 0 }}%</p>
             <p v-if="item.regularidad">Regularidad: {{ item.regularidad.vencida ? 'Vencida' : `Vigente hasta ${formatAcademicDate(item.regularidad.hasta)}` }}</p>
             <p v-if="item.definitiva">Aprobación: {{ item.definitiva.nota }} ({{ academicLabel(item.definitiva.via) }})</p>
-            <p v-if="item.parcialesEfectivos?.length">Notas: {{ item.parcialesEfectivos.map((partial) => partial.nota).filter((grade) => grade !== undefined).join(', ') }}</p>
+            <p v-if="item.parcialesEfectivos?.length">Notas: {{ item.parcialesEfectivos.map((partial) => partial.notaEfectiva).join(', ') }}</p>
           </div>
           <AppButton v-if="courseOptions(item).length" class="mt-4" variant="secondary" :aria-expanded="expanded === subjectKey(item)" :aria-controls="`attendance-${subjectKey(item)}`" @click="toggleAttendance(item)">{{ expanded === subjectKey(item) ? 'Ocultar asistencias' : 'Ver asistencias' }}</AppButton>
           <section v-if="expanded === subjectKey(item)" :id="`attendance-${subjectKey(item)}`" class="mt-4 border-t border-[var(--color-border)] pt-4" aria-live="polite">

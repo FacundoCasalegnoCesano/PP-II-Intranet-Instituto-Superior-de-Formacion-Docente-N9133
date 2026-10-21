@@ -7,7 +7,7 @@ interface ApiWriter { put<T>(path: string, body?: unknown): Promise<T> }
 const PROFILE_FIELDS = ['apellidoNombre', 'dni', 'email', 'fechaNacimiento', 'telefono', 'cuil', 'contactoEmergencia', 'foto'] as const
 
 export function profilePayload(input: OwnProfileInput): OwnProfileInput {
-  return Object.fromEntries(PROFILE_FIELDS.flatMap((field) => input[field] === undefined ? [] : [[field, input[field]]])) as OwnProfileInput
+  return Object.fromEntries(PROFILE_FIELDS.flatMap((field) => input[field] === undefined ? [] : [[field, input[field]]])) as unknown as OwnProfileInput
 }
 
 export function fetchOwnProfile(client: ApiReader = apiClient): Promise<OwnProfile> {

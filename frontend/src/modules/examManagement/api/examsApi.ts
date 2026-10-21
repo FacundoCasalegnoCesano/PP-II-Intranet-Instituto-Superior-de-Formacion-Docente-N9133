@@ -28,7 +28,7 @@ function query(params: Record<string, unknown>): string {
   return value ? `?${value}` : ''
 }
 
-export function listExamTables(filters: ExamFilters = {}, client: ExamClient = apiClient): Promise<PaginatedResult<ExamListItem>> {
+export function listExamTables(filters: ExamFilters = {}, client: Pick<ExamClient, 'getPaginated'> = apiClient): Promise<PaginatedResult<ExamListItem>> {
   return client.getPaginated<ExamListItem>(`/examenes${query({
     materiaId: filters.materiaId,
     carreraId: filters.carreraId,
@@ -41,29 +41,29 @@ export function listExamTables(filters: ExamFilters = {}, client: ExamClient = a
   })}`)
 }
 
-export function getExamTable(id: number, client: ExamClient = apiClient): Promise<ExamDetail> {
+export function getExamTable(id: number, client: Pick<ExamClient, 'get'> = apiClient): Promise<ExamDetail> {
   return client.get<ExamDetail>(`/examenes/${id}`)
 }
 
-export function getExamResults(id: number, client: ExamClient = apiClient): Promise<InscriptoResultado[]> {
+export function getExamResults(id: number, client: Pick<ExamClient, 'get'> = apiClient): Promise<InscriptoResultado[]> {
   return client.get<InscriptoResultado[]>(`/examenes/${id}/inscriptos`)
 }
 
-export async function getExamWorkspace(id: number, client: ExamClient = apiClient): Promise<ExamWorkspace> {
+export async function getExamWorkspace(id: number, client: Pick<ExamClient, 'get'> = apiClient): Promise<ExamWorkspace> {
   const [detail, results] = await Promise.all([getExamTable(id, client), getExamResults(id, client)])
   return { detail, results }
 }
 
-export async function reloadExamResults(id: number, client: ExamClient = apiClient): Promise<ExamResultsSnapshot> {
+export async function reloadExamResults(id: number, client: Pick<ExamClient, 'get'> = apiClient): Promise<ExamResultsSnapshot> {
   const [detail, results] = await Promise.all([getExamTable(id, client), getExamResults(id, client)])
   return { results, version: detail.version }
 }
 
-export function createExamTable(values: ExamFormValues & { fecha: string }, client: ExamClient = apiClient): Promise<ExamDetail> {
+export function createExamTable(values: ExamFormValues & { fecha: string }, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamDetail> {
   return client.post<ExamDetail>('/examenes', values)
 }
 
-export function updateExamTable(id: number, values: Partial<ExamFormValues> & { expectedVersion: number }, client: ExamClient = apiClient): Promise<ExamDetail> {
+export function updateExamTable(id: number, values: Partial<ExamFormValues> & { expectedVersion: number }, client: Pick<ExamClient, 'put'> = apiClient): Promise<ExamDetail> {
   const { materiaId: _materiaId, ...payload } = values
   return client.put<ExamDetail>(`/examenes/${id}`, payload)
 }
@@ -73,7 +73,7 @@ export function assignTribunalMember(
   profesorId: number,
   rolTribunal: TribunalRole,
   expectedVersion: number,
-  client: ExamClient = apiClient,
+  client: Pick<ExamClient, 'post'> = apiClient,
 ): Promise<TribunalMember & ExamWriteResponse> {
   return client.post<TribunalMember & ExamWriteResponse>('/examenes/tribunales', {
     mesaId,
@@ -83,11 +83,11 @@ export function assignTribunalMember(
   })
 }
 
-export function removeTribunalMember(id: number, expectedVersion: number, client: ExamClient = apiClient): Promise<void> {
+export function removeTribunalMember(id: number, expectedVersion: number, client: Pick<ExamClient, 'delete'> = apiClient): Promise<void> {
   return client.delete<void>(`/examenes/tribunales/${id}?expectedVersion=${expectedVersion}`)
 }
 
-export function saveExamResult(id: number, input: ResultWriteInput, client: ExamClient = apiClient): Promise<ExamWriteResponse> {
+export function saveExamResult(id: number, input: ResultWriteInput, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamWriteResponse> {
   const result = 'nota' in input
     ? { alumnoId: input.alumnoId, nota: input.nota, expectedVersion: input.expectedVersion }
     : { alumnoId: input.alumnoId, ausente: true, expectedVersion: input.expectedVersion }
@@ -96,31 +96,31 @@ export function saveExamResult(id: number, input: ResultWriteInput, client: Exam
   })
 }
 
-export function closeExamTable(id: number, expectedVersion: number, client: ExamClient = apiClient): Promise<ExamWriteResponse> {
+export function closeExamTable(id: number, expectedVersion: number, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamWriteResponse> {
   return client.post<ExamWriteResponse>(`/examenes/${id}/cerrar`, { expectedVersion })
 }
 
-export function reopenExamTable(id: number, motivo: string, expectedVersion: number, client: ExamClient = apiClient): Promise<ExamWriteResponse> {
+export function reopenExamTable(id: number, motivo: string, expectedVersion: number, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamWriteResponse> {
   return client.post<ExamWriteResponse>(`/examenes/${id}/reabrir`, { motivo, expectedVersion })
 }
 
-export function enrollStudent(id: number, alumnoId: number, condicion: 'REGULAR' | 'LIBRE', expectedVersion: number, client: ExamClient = apiClient): Promise<ExamWriteResponse> {
+export function enrollStudent(id: number, alumnoId: number, condicion: 'REGULAR' | 'LIBRE', expectedVersion: number, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamWriteResponse> {
   return client.post<ExamWriteResponse>(`/examenes/${id}/inscribir`, { alumnoId, condicion, expectedVersion })
 }
 
-export function withdrawStudent(id: number, alumnoId: number, expectedVersion: number, client: ExamClient = apiClient): Promise<ExamWriteResponse> {
+export function withdrawStudent(id: number, alumnoId: number, expectedVersion: number, client: Pick<ExamClient, 'post'> = apiClient): Promise<ExamWriteResponse> {
   return client.post<ExamWriteResponse>(`/examenes/${id}/desinscribir`, { alumnoId, expectedVersion })
 }
 
-export function listSubjectOptions(client: ExamClient = apiClient): Promise<PaginatedResult<SubjectOption>> {
+export function listSubjectOptions(client: Pick<ExamClient, 'getPaginated'> = apiClient): Promise<PaginatedResult<SubjectOption>> {
   return client.getPaginated<SubjectOption>('/materias?limit=100')
 }
 
-export function listCareerOptions(client: ExamClient = apiClient): Promise<PaginatedResult<CareerOption>> {
+export function listCareerOptions(client: Pick<ExamClient, 'getPaginated'> = apiClient): Promise<PaginatedResult<CareerOption>> {
   return client.getPaginated<CareerOption>('/carreras?limit=100')
 }
 
-export function listTeacherOptions(client: ExamClient = apiClient): Promise<PaginatedResult<TeacherOption>> {
+export function listTeacherOptions(client: Pick<ExamClient, 'getPaginated'> = apiClient): Promise<PaginatedResult<TeacherOption>> {
   return client.getPaginated<TeacherOption>('/users?rol=PROFESOR&limit=100')
 }
 

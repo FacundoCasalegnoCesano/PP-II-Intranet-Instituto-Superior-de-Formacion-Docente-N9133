@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { adminApi } from './adminApi'
-import type { SubjectWritePayload } from '../types/admin'
+import type { CorrelativityWrite, SubjectWritePayload } from '../types/admin'
 
 vi.mock('@/core/api/client', () => ({
   apiClient: {
@@ -72,17 +72,17 @@ describe('adminApi', () => {
     expect(payload).not.toHaveProperty('aplicaRendir')
   })
 
-  it('sends only materiaRequeridaId through the individual prerequisite endpoint', async () => {
+  it('sends a typed prerequisite through the individual prerequisite endpoint', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({})
 
-    await adminApi.addPrerequisite(9, {
+    const prerequisite: CorrelativityWrite = {
       materiaRequeridaId: 3,
-      tipoRequisito: 'OBLIGATORIA',
-    } as any)
+      aplicaCursado: false,
+      aplicaRendir: true,
+    }
+    await adminApi.addPrerequisite(9, prerequisite)
 
-    expect(apiClient.post).toHaveBeenCalledWith('/materias/9/correlatividades', {
-      materiaRequeridaId: 3,
-    })
+    expect(apiClient.post).toHaveBeenCalledWith('/materias/9/correlatividades', prerequisite)
   })
 
   it('uses the administrative enrollment endpoints with typed pagination', async () => {
@@ -94,13 +94,13 @@ describe('adminApi', () => {
     await adminApi.listActiveStudents('Ada')
     await adminApi.listActiveCareers()
     await adminApi.listCareerEnrollments(3, { page: 2, limit: 10 })
-    await adminApi.enrollInCareer({ alumnoId: 13, carreraId: 3, cicloLectivo: 2026 })
+    await adminApi.enrollInCareer({ alumnoId: 13, carreraId: 3 })
     await adminApi.removeCareerEnrollment(4)
 
-    expect(apiClient.getPaginated).toHaveBeenNthCalledWith(1, '/alumnos?search=Ada&activo=true&limit=50')
+    expect(apiClient.getPaginated).toHaveBeenNthCalledWith(1, '/alumnos?search=Ada&activo=true&page=1&limit=50')
     expect(apiClient.getPaginated).toHaveBeenNthCalledWith(2, '/carreras?activo=true&page=1&limit=20')
     expect(apiClient.getPaginated).toHaveBeenNthCalledWith(3, '/inscripciones-carreras/carrera/3/inscriptos?page=2&limit=10')
-    expect(apiClient.postWithMessage).toHaveBeenCalledWith('/inscripciones-carreras', { alumnoId: 13, carreraId: 3, cicloLectivo: 2026 })
+    expect(apiClient.postWithMessage).toHaveBeenCalledWith('/inscripciones-carreras', { alumnoId: 13, carreraId: 3 })
     expect(apiClient.delete).toHaveBeenCalledWith('/inscripciones-carreras/4')
   })
 
