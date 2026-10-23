@@ -46,3 +46,6 @@ La contraseña se solicita de forma interactiva. Ajustar nombre, destino y permi
 ## Cambios de esquema
 
 Desplegar migraciones existentes con `npm run prisma:deploy` desde `backend` y con `DATABASE_URL` de la instancia prevista. Revisar primero la migración y verificar una restauración en entorno aislado. No usar `prisma migrate reset` en producción: ese comando elimina datos.
+
+
+Para inicializar el latch de espacios con aprobaciones históricas por promoción, mantener la aplicación fuera de tráfico después de `prisma:deploy`, revisar el resultado de `npm run spaces:backfill-latches -- --dry-run` y luego ejecutar `npm run spaces:backfill-latches -- --apply` con la misma `DATABASE_URL`. Este backfill usa el evaluador académico canónico, sólo actualiza espacios activos de dos o más componentes que siguen sin latch y se puede repetir. Habilitar el tráfico de la aplicación cuando ambos comandos terminen correctamente.

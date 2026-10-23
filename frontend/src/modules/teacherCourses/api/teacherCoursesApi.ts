@@ -17,7 +17,7 @@ import type {
 
 type TeacherCoursesClient = Pick<ApiClient, 'get' | 'getPaginated' | 'post' | 'put'>
 
-function query(params: Record<string, unknown>): string {
+function query(params: object): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== '') search.set(key, String(value))

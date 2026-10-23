@@ -18,6 +18,10 @@ import calificacionRoutes from './calificacionRoutes.js';
 import estadoAcademicoRoutes from './estadoAcademicoRoutes.js';
 import homologacionRoutes from './homologacionRoutes.js';
 import horariosPublicadosRoutes from './horariosPublicadosRoutes.js';
+import espacioCurricularRoutes from './espacioCurricularRoutes.js';
+import cursadaEspacioRoutes from './cursadaEspacioRoutes.js';
+import inscripcionEspacioRoutes from './inscripcionEspacioRoutes.js';
+import promocionHistoricaRoutes from './promocionHistoricaRoutes.js';
 
 const router = Router();
 
@@ -33,13 +37,17 @@ router.use('/administrativos', administrativoRoutes);
 // Rutas de gestión académica
 router.use('/carreras', carreraRoutes);
 router.use('/materias', materiaRoutes);
+router.use('/espacios-curriculares', espacioCurricularRoutes);
+router.use('/cursadas-espacios', cursadaEspacioRoutes);
 
 // Rutas de inscripciones
 router.use('/inscripciones-carreras', inscripcionCarreraRoutes);
 router.use('/inscripciones-materias', inscripcionMateriaRoutes);
+router.use('/inscripciones-espacios', inscripcionEspacioRoutes);
 
 // Rutas de exámenes
 router.use('/examenes', examenRoutes);
+router.use('/promociones-historicas', promocionHistoricaRoutes);
 
 // Rutas de horarios
 router.use('/horarios', horarioRoutes);
@@ -86,6 +94,7 @@ router.get('/', (req, res) => {
       administrativos: '/api/administrativos',
       carreras: '/api/carreras',
       materias: '/api/materias',
+      espaciosCurriculares: '/api/espacios-curriculares',
       inscripcionesCarreras: '/api/inscripciones-carreras',
       inscripcionesMaterias: '/api/inscripciones-materias',
       examenes: '/api/examenes',

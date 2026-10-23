@@ -27,13 +27,14 @@ const partialGrades: GradeRecord[] = [
   { id: 103, cursadaId: 12, tipoCalificacion: 'PARCIAL', numero: 2, nota: 9, fechaEvaluacion: '2026-06-12', parcialOriginalId: null, observacion: null, alumno: { alumnoId: 13, apellidoNombre: 'Lucía Fernández', dni: 42666888 } },
 ]
 
-function renderGrid(options: { course?: TeacherCourse; grades?: GradeRecord[]; students?: EnrolledStudent[] } = {}) {
+function renderGrid(options: { course?: TeacherCourse; grades?: GradeRecord[]; students?: EnrolledStudent[]; allowHistorical?: boolean } = {}) {
   const onSave = vi.fn()
   const rendered = render(GradesGrid as Component, {
     props: {
       course: options.course ?? activeCourse,
       grades: options.grades ?? [],
       students: options.students ?? students,
+      allowHistorical: options.allowHistorical,
       onSave,
     },
   })
@@ -392,13 +393,61 @@ describe('GradesGrid', () => {
     expect(screen.getByRole('button', { name: 'Guardar calificaciones' })).toBeVisible()
   })
 
-  it('keeps a historical course consultable but removes editing controls', () => {
+  it('keeps a historical course consultable but disables its grade-row fields', () => {
     renderGrid({ course: { ...activeCourse, anioLectivo: new Date().getFullYear() - 1, editable: false }, grades: partialGrades })
 
     expect(screen.getByText('Solo lectura: cursada histórica')).toBeVisible()
     expect(screen.getByLabelText('Tipo de evaluación')).toBeDisabled()
     expect(screen.getByLabelText('Número de evaluación')).toBeDisabled()
-    expect(screen.getByRole('group', { name: /Lucía Fernández/ })).toHaveAttribute('aria-disabled', 'true')
+    const lucia = screen.getByRole('group', { name: /Lucía Fernández/ })
+    expect(within(lucia).getByLabelText('Nota')).toBeDisabled()
+    expect(within(lucia).getByLabelText('Observación')).toBeDisabled()
+    expect(screen.getByLabelText('Fecha de evaluación')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Guardar calificaciones' })).not.toBeInTheDocument()
+  })
+
+  it('disables the original-partial selector for a historical recovery', async () => {
+    const user = userEvent.setup()
+    const rendered = renderGrid({ grades: partialGrades })
+    await user.selectOptions(screen.getByLabelText('Tipo de evaluación'), 'RECUPERATORIO')
+    await rendered.rerender({ course: { ...activeCourse, anioLectivo: new Date().getFullYear() - 1, editable: false } })
+
+    expect(within(screen.getByRole('group', { name: /Lucía Fernández/ })).getByLabelText('Parcial original')).toBeDisabled()
+  })
+
+  it('keeps grade-row editors available for a current course', async () => {
+    const user = userEvent.setup()
+    renderGrid({ grades: partialGrades })
+    const lucia = screen.getByRole('group', { name: /Lucía Fernández/ })
+
+    expect(within(lucia).getByLabelText('Nota')).toBeEnabled()
+    expect(within(lucia).getByLabelText('Observación')).toBeEnabled()
+    await user.selectOptions(screen.getByLabelText('Tipo de evaluación'), 'RECUPERATORIO')
+    expect(within(lucia).getByLabelText('Parcial original')).toBeEnabled()
+    await user.selectOptions(screen.getByLabelText('Tipo de evaluación'), 'PARCIAL')
+  })
+
+  it('allows an administrator to edit a historical course only when explicitly enabled', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderGrid({
+      course: { ...activeCourse, anioLectivo: new Date().getFullYear() - 12, editable: false },
+      allowHistorical: true,
+      grades: partialGrades,
+      students: [students[0]],
+    })
+    const lucia = screen.getByRole('group', { name: /Lucía Fernández/ })
+    expect(within(lucia).getByLabelText('Nota')).toBeEnabled()
+    expect(within(lucia).getByLabelText('Observación')).toBeEnabled()
+    await user.selectOptions(screen.getByLabelText('Tipo de evaluación'), 'RECUPERATORIO')
+    expect(within(lucia).getByLabelText('Parcial original')).toBeEnabled()
+    await user.selectOptions(screen.getByLabelText('Tipo de evaluación'), 'PARCIAL')
+    fillNote('Lucía Fernández', '8')
+    fireEvent.update(screen.getByLabelText('Fecha de evaluación'), '2001-04-10')
+    await user.click(screen.getByRole('button', { name: 'Guardar calificaciones' }))
+
+    expect(onSave).toHaveBeenCalledWith({
+      cursadaId: 12,
+      calificaciones: [{ alumnoId: 13, tipoCalificacion: 'PARCIAL', numero: 1, fechaEvaluacion: '2001-04-10', nota: 8, observacion: 'Muy buen trabajo' }],
+    })
   })
 })

@@ -3,6 +3,15 @@ import inscripcionCarreraService from '../services/inscripcionCarreraService.js'
 import { ROLES } from '../constants/roles.js';
 
 class InscripcionCarreraController {
+  async actualizarCohorte(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await inscripcionCarreraService.actualizarCohorte(
+        Number(req.params.id), req.body.anioCohorte, req.user!
+      );
+      res.json({ success: true, message: 'Año de cohorte actualizado', data: result });
+    } catch (error) { next(error); }
+  }
+
   // Inscribir alumno a carrera (Alumno o Admin)
   async inscribirAlumno(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

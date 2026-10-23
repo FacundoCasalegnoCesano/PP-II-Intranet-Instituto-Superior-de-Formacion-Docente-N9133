@@ -1,7 +1,8 @@
 export interface AcademicRecordCareer {
   id: number
   carreraId: number
-  cicloLectivo?: number
+  cicloLectivo?: number | null
+  anioCohorte?: number | null
   activo?: boolean
   carrera: {
     id: number
@@ -15,13 +16,30 @@ export interface AcademicRecordSubject {
   materia: { id: number; nombre: string }
   plan?: { anio?: number | null; posicion?: number }
   estado: string
+  espacioCurricular?: { id: number; nombre: string } | null
   categoriaTrayectoria?: 'APROBADA' | 'REGULAR' | 'SIN_CURSAR' | 'CURSANDO' | 'REGULARIDAD_VENCIDA' | 'OTRA'
-  inscripcion?: { modalidad?: string; cicloLectivo?: number; estado?: string; fechaBaja?: string | null } | null
+  inscripcion?: { modalidad?: string; cicloLectivo?: number | null; estado?: string; fechaBaja?: string | null } | null
   asistencia?: { porcentaje?: number; presente?: number; totalClases?: number } | null
   cursadas?: AcademicRecordCourse[]
-  parcialesEfectivos?: Array<{ numero?: number; nota?: number; fechaEvaluacion?: string }>
+  parcialesEfectivos?: Array<{ numero: number; notaOriginal: number; notaEfectiva: number; recuperado: boolean }>
   regularidad?: { hasta?: string | null; vencida?: boolean } | null
   definitiva?: { nota?: number; via?: string; fecha?: string | null } | null
+}
+
+export interface AcademicRecordSpaceComponent {
+  materiaId: number
+  nombre: string
+  estado: string
+  definitiva?: { nota?: number | null; via?: string } | null
+}
+
+export interface AcademicRecordSpace {
+  id: number
+  nombre: string
+  estado: 'APROBADA' | 'PENDIENTE'
+  nota: number | null
+  definitiva: { nota: number; via: 'ESPACIO_CURRICULAR' } | null
+  componentes: AcademicRecordSpaceComponent[]
 }
 
 export interface AcademicRecordCourse {
@@ -47,5 +65,7 @@ export interface AcademicRecordTrajectory {
   carrera: { id: number; nombre: string; duracionAnios?: number | null }
   promedioGeneral?: number | null
   cantidadMateriasAprobadas?: number
+  cantidadUnidadesTotal?: number
+  espaciosCurriculares?: AcademicRecordSpace[]
   materias: AcademicRecordSubject[]
 }

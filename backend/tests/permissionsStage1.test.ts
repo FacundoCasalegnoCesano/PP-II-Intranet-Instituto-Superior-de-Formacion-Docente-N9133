@@ -7,8 +7,11 @@ import inscripcionCarreraService from '../src/services/inscripcionCarreraService
 import carreraService from '../src/services/carreraService.js';
 import carreraRepository from '../src/repositories/carreraRepository.js';
 import carreraController from '../src/controllers/carreraController.js';
+import materiaController from '../src/controllers/materiaController.js';
+import materiaService from '../src/services/materiaService.js';
 import { validationMiddleware } from '../src/middleware/validation.js';
 import { listCarrerasSchema } from '../src/validations/carreraValidation.js';
+import { listMateriasSchema } from '../src/validations/materiaValidation.js';
 import cursadaService from '../src/services/cursadaService.js';
 import cursadaRepository from '../src/repositories/cursadaRepository.js';
 import examenService from '../src/services/examenService.js';
@@ -95,7 +98,7 @@ test('un administrativo no puede quitarse a sí mismo el rol administrativo', as
 test('un alumno no puede crear una inscripción a carrera aunque la ruta exista', async () => {
   await assert.rejects(
     inscripcionCarreraService.inscribirAlumno(
-      { usuarioId: 8, carreraId: 2, cicloLectivo: 2026 },
+      { usuarioId: 8, carreraId: 2, cicloLectivo: 2026, anioCohorte: 2026 },
       { id: 8, rol: ROLES.ALUMNO }
     ),
     (error: any) => error.statusCode === 403
@@ -131,6 +134,25 @@ test('el listado de carreras conserva activo=true después de la conversión Joi
   await carreraController.listCarreras(req, res, next);
 
   assert.deepEqual(received, { page: 1, limit: 20, activo: true });
+});
+
+test('el listado de materias conserva activo=true tras la conversión Joi del query', async () => {
+  let received: unknown;
+  replaceMethod(materiaService, 'listMaterias', async (filters: unknown) => {
+    received = filters;
+    return { data: [], pagination: { page: 1, limit: 100, total: 0, totalPages: 0 } };
+  });
+
+  const req = { query: { carreraId: '1', activo: 'true', limit: '100' } } as any;
+  const res = { json: () => undefined } as any;
+  const next = (error?: unknown) => {
+    if (error) throw error;
+  };
+
+  validationMiddleware(listMateriasSchema, 'query')(req, res, next);
+  await materiaController.listMaterias(req, res, next);
+
+  assert.deepEqual(received, { page: 1, limit: 100, carreraId: 1, activo: true });
 });
 
 test('el profesor obtiene cursadas propias por docente directo o asignación activa', async () => {
@@ -182,6 +204,7 @@ test('un profesor no puede consultar la trayectoria integral de un alumno', asyn
 
 test('la trayectoria integral contiene una sola entrada por materia y conserva pendientes y aprobaciones', async () => {
   replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 4 }) as any);
+  replaceMethod((prisma as any).promocionHistorica, 'findMany', async () => []);
   replaceMethod(carreraRepository, 'getPlanEstudio', async () => ({
     id: 1,
     nombre: 'Profesorado',

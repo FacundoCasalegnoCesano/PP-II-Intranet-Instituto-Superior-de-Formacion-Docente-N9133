@@ -78,7 +78,7 @@ const studentCountLabel = computed(() => {
 })
 const gradeStudents = computed(() => selectedStudent.value ? [selectedStudent.value] : [])
 const invalidStudentSelection = computed(() => routeSection.value === 'grades' && studentIdFromRoute() !== null && selectedStudent.value === null)
-const courseStatus = computed(() => selectedCourse.value && courseIsCurrent(selectedCourse.value) ? 'Cursada actual' : 'Cursada histórica')
+const courseStatus = computed(() => selectedCourse.value?.estadoCursada === 'FINALIZADA' ? 'Finalizada' : selectedCourse.value && courseIsCurrent(selectedCourse.value) ? 'Cursada actual' : 'Cursada histórica')
 const sectionTitle = computed(() => ({ students: 'Alumnos inscriptos', classes: 'Clases', grades: 'Calificaciones', summary: 'Resumen académico' })[routeSection.value])
 const sectionRoutes: Record<TeacherCourseSection, string> = {
   students: 'teacher-course-students',
@@ -88,6 +88,7 @@ const sectionRoutes: Record<TeacherCourseSection, string> = {
 }
 
 function courseIsCurrent(course: TeacherCourse): boolean {
+  if (course.estadoCursada === 'FINALIZADA') return false
   return (course.editable ?? (course.activo && course.anioLectivo === currentYear)) && course.anioLectivo === currentYear
 }
 
@@ -308,7 +309,7 @@ watch(() => route.fullPath, () => {
 })
 
 onMounted(() => {
-  const candidate = router as unknown as { beforeEach?: (guard: (to: { fullPath: string }, from: { fullPath: string }) => Promise<boolean> | boolean) => () => void }
+  const candidate = router as unknown as { beforeEach?: (guard: (to: { fullPath: string; name?: string | symbol | null }, from: { fullPath: string; name?: string | symbol | null }) => Promise<boolean> | boolean) => () => void }
   if (candidate.beforeEach) removeRouteGuard = candidate.beforeEach(async (to, from) => {
     if (to.fullPath === from.fullPath) return true
     if (to.name === 'login') return true
@@ -351,7 +352,7 @@ onBeforeUnmount(() => removeRouteGuard?.())
         <div v-if="loadingSelection" role="status" aria-busy="true" aria-live="polite">Cargando cursada…</div>
         <div v-else-if="selectionError" role="alert"><p>{{ selectionError }}</p><AppButton class="mt-4" variant="secondary" @click="retry">Reintentar</AppButton></div>
         <template v-else-if="selectedCourse">
-          <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="selected-course-title" class="text-2xl font-semibold">{{ selectedCourse.materia.nombre }}</h2><p class="mt-1 text-[var(--color-graphite)]">{{ selectedCourse.materia.carrera?.nombre ?? 'Carrera no informada' }} · Año {{ selectedCourse.anioLectivo }} · {{ academicLabel(selectedCourse.periodo) }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]" aria-live="polite">Contexto: {{ studentCountLabel }}</p></div><p class="font-semibold" :class="courseIsCurrent(selectedCourse) ? 'text-[var(--color-brand)]' : 'text-[var(--color-graphite)]'">{{ courseStatus }}</p></div>
+          <div class="flex flex-wrap items-start justify-between gap-4"><div><h2 id="selected-course-title" class="text-2xl font-semibold">{{ selectedCourse.materia.nombre }}</h2><p v-if="selectedCourse.espacioCurricular" class="mt-1 font-medium text-[var(--color-graphite)]">Componente de {{ selectedCourse.espacioCurricular.nombre }}</p><p class="mt-1 text-[var(--color-graphite)]">{{ selectedCourse.materia.carrera?.nombre ?? 'Carrera no informada' }} · Año {{ selectedCourse.anioLectivo }} · {{ academicLabel(selectedCourse.periodo) }}</p><p class="mt-2 text-sm text-[var(--color-graphite)]" aria-live="polite">Contexto: {{ studentCountLabel }}</p></div><p class="font-semibold" :class="courseIsCurrent(selectedCourse) ? 'text-[var(--color-brand)]' : 'text-[var(--color-graphite)]'">{{ courseStatus }}</p></div>
           <TeacherCourseSectionNav class="mt-6" :course-id="selectedCourse.id" :section="routeSection" :anio-lectivo="selectedYear" />
           <section v-if="routeSection === 'students' || (routeSection === 'grades' && studentIdFromRoute() === null)" aria-labelledby="students-title">
             <h3 id="students-title" class="mt-6 text-xl font-semibold">Alumnos inscriptos</h3>

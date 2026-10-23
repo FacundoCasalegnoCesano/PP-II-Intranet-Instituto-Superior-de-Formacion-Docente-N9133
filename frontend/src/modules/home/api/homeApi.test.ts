@@ -21,7 +21,21 @@ describe('student home API', () => {
   })
 
   it('derives approved progress from the API trajectory without inventing metrics', () => {
-    expect(progressFromTrajectory({ cantidadMateriasAprobadas: 3, materias: [{}, {}, {}, {}, {}] })).toEqual({ approved: 3, total: 5, percent: 60 })
+    expect(progressFromTrajectory({ cantidadMateriasAprobadas: 3, cantidadUnidadesTotal: 5, materias: [{}, {}, {}, {}, {}] })).toEqual({ approved: 3, total: 5, percent: 60 })
     expect(progressFromTrajectory({ cantidadMateriasAprobadas: 0, materias: [] })).toEqual({ approved: 0, total: 0, percent: 0 })
+  })
+
+  it('counts each curricular space once and uses the backend unit total', () => {
+    const progress = progressFromTrajectory({
+      cantidadMateriasAprobadas: 1,
+      cantidadUnidadesTotal: 2,
+      materias: [
+        { materia: { id: 10, nombre: 'Práctica I' }, espacioCurricular: { id: 4, nombre: 'Práctica' } },
+        { materia: { id: 11, nombre: 'Práctica II' }, espacioCurricular: { id: 4, nombre: 'Práctica' } },
+        { materia: { id: 12, nombre: 'Pedagogía' }, espacioCurricular: null },
+      ],
+      espaciosCurriculares: [{ id: 4, nombre: 'Práctica', estado: 'APROBADA', nota: 8, definitiva: { nota: 8, via: 'ESPACIO_CURRICULAR' }, componentes: [] }],
+    })
+    expect(progress).toEqual({ approved: 1, total: 2, percent: 50 })
   })
 })

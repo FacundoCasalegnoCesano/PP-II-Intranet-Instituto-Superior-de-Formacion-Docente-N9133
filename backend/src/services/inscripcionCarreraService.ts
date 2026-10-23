@@ -31,8 +31,17 @@ class InscripcionCarreraService {
       throw new AppError(404, 'Carrera no encontrada');
     }
 
-    // Si no se indica ciclo lectivo, se usa el año en curso
-    data.cicloLectivo = data.cicloLectivo ?? new Date().getFullYear();
+    const previa = await inscripcionCarreraRepository.findByUsuarioAndCarreraIncludingBaja(
+      data.usuarioId,
+      data.carreraId
+    );
+    if (!previa && (
+      !Number.isInteger(data.anioCohorte) ||
+      data.anioCohorte! < 1900 ||
+      data.anioCohorte! > 2100
+    )) {
+      throw new AppError(400, 'El año de cohorte es requerido para una inscripción nueva');
+    }
 
     return await inscripcionCarreraRepository.inscribirAtomic(data);
   }
@@ -87,6 +96,15 @@ class InscripcionCarreraService {
       throw new AppError(404, 'Inscripción no encontrada');
     }
     return inscripcion;
+  }
+
+  async actualizarCohorte(id: number, anioCohorte: number | null, currentUser: any) {
+    if (currentUser.rol !== ROLES.ADMINISTRATIVO) {
+      throw new AppError(403, 'Solo administrativos pueden editar el año de cohorte');
+    }
+    const inscripcion = await inscripcionCarreraRepository.findById(id);
+    if (!inscripcion) throw new AppError(404, 'Inscripción no encontrada');
+    return inscripcionCarreraRepository.update(id, { anioCohorte });
   }
 }
 

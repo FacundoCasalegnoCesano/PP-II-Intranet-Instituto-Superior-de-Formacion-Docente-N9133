@@ -14,7 +14,7 @@ const FUTURE_PERIOD_END = new Date('2026-11-06T02:59:59.000Z');
 const careers = [
   { name: 'Profesorado Local de Matemática', subjects: [{ name: 'Análisis Matemático', year: 1 }, { name: 'Geometría Analítica', year: 1 }, { name: 'Probabilidad y Estadística', year: 2 }, { name: 'Física para la Enseñanza', year: 3 }, { name: 'Práctica Docente I', year: 3 }, { name: 'Didáctica de la Matemática', year: 4 }] },
   { name: 'Profesorado de Lengua', subjects: [{ name: 'Gramática y Sintaxis', year: 1 }, { name: 'Literatura Argentina', year: 1 }, { name: 'Lingüística General', year: 2 }, { name: 'Didáctica de la Lengua', year: 3 }, { name: 'Práctica Docente I', year: 3 }, { name: 'Taller de Escritura Académica', year: 4 }] },
-  { name: 'Profesorado de Artes Visualesa', subjects: [{ name: 'Dibujo y Observación', year: 1 }, { name: 'Historia del Arte', year: 1 }, { name: 'Color y Composición', year: 2 }, { name: 'Lenguajes Visuales', year: 3 }, { name: 'Didáctica de las Artes Visuales', year: 3 }, { name: 'Taller de Práctica Artística', year: 4 }] }
+  { name: 'Profesorado de Artes Visuales', subjects: [{ name: 'Dibujo y Observación', year: 1 }, { name: 'Historia del Arte', year: 1 }, { name: 'Color y Composición', year: 2 }, { name: 'Lenguajes Visuales', year: 3 }, { name: 'Didáctica de las Artes Visuales', year: 3 }, { name: 'Taller de Práctica Artística', year: 4 }] }
 ] as const;
 
 const students = [

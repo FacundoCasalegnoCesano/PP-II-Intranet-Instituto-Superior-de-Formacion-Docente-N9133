@@ -2,7 +2,7 @@ import { Router } from 'express';
 import inscripcionCarreraController from '../controllers/inscripcionCarreraController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
-import { inscripcionCarreraSchema, inscripcionesCarreraQuerySchema } from '../validations/inscripcionCarreraValidation.js';
+import { inscripcionCarreraSchema, inscripcionesCarreraQuerySchema, updateInscripcionCarreraSchema } from '../validations/inscripcionCarreraValidation.js';
 import { ROLES } from '../constants/roles.js';
 import { paginationQuerySchema } from '../validations/paginationValidation.js';
 
@@ -18,6 +18,12 @@ router.post('/',
 );
 
 // Dar de baja (solo Admin)
+router.patch('/:id',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(updateInscripcionCarreraSchema),
+  inscripcionCarreraController.actualizarCohorte
+);
+
 router.delete('/:id',
   roleCheck(ROLES.ADMINISTRATIVO),
   inscripcionCarreraController.darBaja

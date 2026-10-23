@@ -12,6 +12,8 @@ import {
 } from '../utils/docenteHelper.js';
 import { fechaPerteneceAlAnioLectivo } from '../utils/cicloLectivo.js';
 import type { PaginationInput } from '../utils/pagination.js';
+import { lockCareerForAcademicMutation } from './espacioComposicionLatch.js';
+import { recomputeSpaceCompletionForPromotions } from './recomputeSpaceCompletion.js';
 
 interface FilaCarga {
   alumnoId: number; // id de cuenta (Usuario.idUsuario)
@@ -75,11 +77,24 @@ class AsistenciaService {
         observacion: fila.observacion ?? null
       };
     });
-    const resultado = await asistenciaRepository.upsertClase(
-      data.cursadaId,
-      fechaNormalizada,
-      filasConIdAlumno
-    );
+    const carreraId = cursada.materia?.carreraId ?? cursada.materia?.carrera?.id;
+    if (!carreraId) throw new AppError(409, 'La materia no tiene una carrera asociada');
+    const resultado = await asistenciaRepository.withTransaction(async (tx) => {
+      await lockCareerForAcademicMutation(tx, carreraId);
+      const saved = await asistenciaRepository.upsertClase(
+        data.cursadaId,
+        fechaNormalizada,
+        filasConIdAlumno,
+        tx
+      );
+      await recomputeSpaceCompletionForPromotions({
+        tx,
+        cursadaId: data.cursadaId,
+        carreraId,
+        alumnoIds: filasConIdAlumno.map(fila => fila.idAlumno)
+      });
+      return saved;
+    });
 
     return { registros: resultado.length, fecha: fechaNormalizada };
   }

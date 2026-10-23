@@ -14,6 +14,7 @@ const drawerOpen = ref(false)
 const userMenuOpen = ref(false)
 const confirmLogoutOpen = ref(false)
 const loggingOut = ref(false)
+const openAdminGroup = ref<string | null>(null)
 const drawer = ref<HTMLElement>()
 const drawerTrigger = ref<HTMLButtonElement>()
 const drawerCloseButton = ref<HTMLButtonElement>()
@@ -36,21 +37,43 @@ const adminNavItems = [
   { name: 'admin-career-enrollments', label: 'Inscripciones a carreras', icon: ClipboardList },
   { name: 'admin-subjects', label: 'Materias', icon: BookOpen },
   { name: 'admin-courses', label: 'Cursadas', icon: BookOpen },
+  { name: 'admin-course-grades', label: 'Calificaciones de cursadas', icon: BookOpen },
   { name: 'admin-periods', label: 'Períodos', icon: BookOpen },
   { name: 'admin-exams', label: 'Mesas de examen', icon: ClipboardList },
+  { name: 'admin-historical-exams', label: 'Calificaciones históricas', icon: ClipboardList },
   { name: 'admin-homologations', label: 'Homologaciones', icon: BadgeCheck },
+] as const
+const adminNavGroups = [
+  {
+    id: 'personas',
+    label: 'Usuarios',
+    items: [adminNavItems[0], adminNavItems[3], adminNavItems[1]],
+  },
+  {
+    id: 'gestion-academica',
+    label: 'Gestión académica',
+    items: [adminNavItems[2], adminNavItems[4], baseNavItems[1], adminNavItems[5], adminNavItems[7]],
+  },
+  {
+    id: 'notas-examenes',
+    label: 'Notas y exámenes',
+    items: [adminNavItems[6], adminNavItems[8], adminNavItems[9], adminNavItems[10]],
+  },
 ] as const
 const teacherNavItems = [
   { name: 'teacher-courses', label: 'Cursado', icon: BookOpen },
   { name: 'teacher-exams', label: 'Mis mesas', icon: ClipboardList },
 ] as const
 const navItems = computed(() => {
-  if (auth.activeRole === 'ADMINISTRATIVO') return [...baseNavItems, ...adminNavItems]
+  if (auth.activeRole === 'ADMINISTRATIVO') return [baseNavItems[0]]
   if (auth.activeRole === 'ALUMNO') return [...baseNavItems, ...studentNavItems]
   if (auth.activeRole === 'PROFESOR') return [...baseNavItems, ...teacherNavItems]
   return baseNavItems
 })
-const roleLabel = computed(() => ({ ALUMNO: 'Alumno/a', PROFESOR: 'Profesor/a', ADMINISTRATIVO: 'Administrativo/a' }[auth.activeRole ?? ''] ?? 'Sin rol'))
+const roleLabel = computed(() => {
+  if (!auth.activeRole) return 'Sin rol'
+  return { ALUMNO: 'Alumno/a', PROFESOR: 'Profesor/a', ADMINISTRATIVO: 'Administrativo/a' }[auth.activeRole]
+})
 const canChangeRole = computed(() => auth.roles.length > 1)
 function isNavItemActive(name: string): boolean {
   if (name === 'teacher-courses') return typeof route.name === 'string' && route.name.startsWith('teacher-course')
@@ -58,8 +81,25 @@ function isNavItemActive(name: string): boolean {
   if (name === 'admin-exams') return typeof route.name === 'string' && route.name.startsWith('admin-exam')
   if (name === 'admin-homologations') return typeof route.name === 'string' && route.name.startsWith('admin-homologation')
   if (name === 'admin-academic-records') return typeof route.name === 'string' && route.name.startsWith('admin-academic-record')
+  if (name === 'admin-users') return typeof route.name === 'string' && route.name.startsWith('admin-user')
+  if (name === 'admin-careers') return ['admin-careers', 'admin-career-create', 'admin-career-detail', 'admin-career-edit'].includes(String(route.name))
+  if (name === 'admin-subjects') return typeof route.name === 'string' && route.name.startsWith('admin-subject')
+  if (name === 'admin-courses') return ['admin-courses', 'admin-course-create', 'admin-course-detail', 'admin-course-edit'].includes(String(route.name))
+  if (name === 'admin-periods') return typeof route.name === 'string' && route.name.startsWith('admin-period')
   return route.name === name
 }
+function toggleAdminGroup(id: string): void {
+  openAdminGroup.value = openAdminGroup.value === id ? null : id
+}
+function groupIsActive(groupId: string): boolean {
+  const group = adminNavGroups.find((item) => item.id === groupId)
+  return group?.items.some((item) => isNavItemActive(item.name)) ?? false
+}
+watch(() => [auth.activeRole, route.fullPath], () => {
+  if (auth.activeRole !== 'ADMINISTRATIVO') return
+  const activeGroup = adminNavGroups.find((group) => group.items.some((item) => isNavItemActive(item.name)))
+  if (activeGroup) openAdminGroup.value = activeGroup.id
+}, { immediate: true })
 
 function closeDrawer(): void { drawerOpen.value = false }
 async function goToRoleSelection(): Promise<void> {
@@ -73,7 +113,16 @@ function onEscape(event: KeyboardEvent): void {
     return
   }
   if (drawerOpen.value && event.key === 'Tab') {
-    const focusable = Array.from(drawer.value?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])
+    const focusable = Array.from(drawer.value?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? []).filter((element) => {
+      let current: HTMLElement | null = element
+      while (current) {
+        const style = window.getComputedStyle(current)
+        if (current.hasAttribute('inert') || current.getAttribute('aria-hidden') === 'true' || style.display === 'none' || style.visibility === 'hidden') return false
+        if (current === drawer.value) break
+        current = current.parentElement
+      }
+      return true
+    })
     if (!focusable.length) return
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
@@ -120,7 +169,22 @@ async function logout(): Promise<void> {
     <aside class="app-sidebar hidden min-h-screen bg-[var(--color-sidebar)] px-4 py-6 text-white lg:block">
       <div class="flex items-center gap-3 px-3"><img :src="logoUrl" alt="" class="size-10 shrink-0 rounded-md bg-white object-contain p-1" aria-hidden="true" /><span class="text-lg font-semibold">ISPI N.º 9133</span></div>
       <nav class="mt-10" aria-label="Navegación lateral">
-        <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined">
+        <template v-if="auth.activeRole === 'ADMINISTRATIVO'">
+          <RouterLink :to="{ name: 'home' }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="isNavItemActive('home') ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive('home') ? 'page' : undefined"><Home class="size-5" aria-hidden="true" />Inicio</RouterLink>
+          <section v-for="group in adminNavGroups" :key="group.id" class="mt-1">
+            <button type="button" class="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-white/90 hover:bg-white/15" :class="groupIsActive(group.id) ? 'font-semibold' : ''" :aria-expanded="openAdminGroup === group.id" :aria-controls="`desktop-admin-group-${group.id}`" @click="toggleAdminGroup(group.id)">
+              <span>{{ group.label }}</span><ChevronDown class="size-4 transition-transform motion-reduce:transition-none" :class="openAdminGroup === group.id ? 'rotate-180' : ''" aria-hidden="true" />
+            </button>
+            <Transition name="admin-group-panel">
+              <div :id="`desktop-admin-group-${group.id}`" v-show="openAdminGroup === group.id" :inert="openAdminGroup !== group.id" :aria-hidden="openAdminGroup !== group.id" class="admin-group-panel">
+                <div class="ml-2 border-l border-white/20 pl-2">
+                  <RouterLink v-for="item in group.items" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined"><component :is="item.icon" class="size-5" aria-hidden="true" />{{ item.label }}</RouterLink>
+                </div>
+              </div>
+            </Transition>
+          </section>
+        </template>
+        <RouterLink v-else v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-1 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined">
           <component :is="item.icon" class="size-5" aria-hidden="true" />{{ item.label }}
         </RouterLink>
       </nav>
@@ -150,10 +214,53 @@ async function logout(): Promise<void> {
       <aside class="app-sidebar relative h-full w-[min(18rem,calc(100vw-2rem))] overflow-y-auto bg-[var(--color-sidebar)] p-5 text-white shadow-xl">
         <div class="flex items-center justify-between gap-3"><span class="font-semibold">ISPI N.º 9133</span><button ref="drawerCloseButton" type="button" aria-label="Cerrar navegación" class="min-h-11 min-w-11 rounded p-2" @click="closeDrawer"><X class="size-5" aria-hidden="true" /></button></div>
         <nav class="mt-8" aria-label="Navegación principal">
-          <RouterLink v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-2 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined" @click="closeDrawer"><component :is="item.icon" class="size-5" />{{ item.label }}</RouterLink>
+          <template v-if="auth.activeRole === 'ADMINISTRATIVO'">
+            <RouterLink :to="{ name: 'home' }" class="mb-2 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 hover:bg-white/15" :class="isNavItemActive('home') ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive('home') ? 'page' : undefined" @click="closeDrawer"><Home class="size-5" aria-hidden="true" />Inicio</RouterLink>
+            <section v-for="group in adminNavGroups" :key="group.id" class="mt-1">
+              <button type="button" class="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left hover:bg-white/15" :class="groupIsActive(group.id) ? 'font-semibold' : ''" :aria-expanded="openAdminGroup === group.id" :aria-controls="`mobile-admin-group-${group.id}`" @click="toggleAdminGroup(group.id)">
+                <span>{{ group.label }}</span><ChevronDown class="size-4 transition-transform motion-reduce:transition-none" :class="openAdminGroup === group.id ? 'rotate-180' : ''" aria-hidden="true" />
+              </button>
+              <Transition name="admin-group-panel">
+                <div :id="`mobile-admin-group-${group.id}`" v-show="openAdminGroup === group.id" :inert="openAdminGroup !== group.id" :aria-hidden="openAdminGroup !== group.id" class="admin-group-panel">
+                  <div class="ml-2 border-l border-white/20 pl-2">
+                    <RouterLink v-for="item in group.items" :key="item.name" :to="{ name: item.name }" class="mb-2 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined" @click="closeDrawer"><component :is="item.icon" class="size-5" aria-hidden="true" />{{ item.label }}</RouterLink>
+                  </div>
+                </div>
+              </Transition>
+            </section>
+          </template>
+          <RouterLink v-else v-for="item in navItems" :key="item.name" :to="{ name: item.name }" class="mb-2 flex min-h-11 items-center gap-3 rounded-md px-3 py-2 hover:bg-white/15" :class="isNavItemActive(item.name) ? 'bg-white/20 font-semibold' : ''" :aria-current="isNavItemActive(item.name) ? 'page' : undefined" @click="closeDrawer"><component :is="item.icon" class="size-5" />{{ item.label }}</RouterLink>
         </nav>
       </aside>
     </div>
     <ConfirmDialog :open="confirmLogoutOpen" title="Cerrar sesión" description="Tendrás que ingresar nuevamente para continuar." confirm-label="Cerrar sesión" :loading="loggingOut" @cancel="confirmLogoutOpen = false" @confirm="logout" />
   </div>
 </template>
+
+<style scoped>
+.admin-group-panel-enter-active,
+.admin-group-panel-leave-active {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 180ms ease, opacity 180ms ease;
+}
+
+.admin-group-panel-enter-from,
+.admin-group-panel-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.admin-group-panel > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-group-panel-enter-active,
+  .admin-group-panel-leave-active {
+    transition: none;
+  }
+}
+</style>

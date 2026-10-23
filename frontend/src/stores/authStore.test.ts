@@ -75,7 +75,7 @@ describe('auth store', () => {
       sessionId: 18,
       rol: 'ALUMNO',
       rolesDisponibles: ['ALUMNO', 'DESCONOCIDO'],
-    } satisfies SelectRoleResult)
+    })
 
     const store = useAuthStore()
     await store.login({ identifier: 'ada@example.test', password: 'secret-password' })

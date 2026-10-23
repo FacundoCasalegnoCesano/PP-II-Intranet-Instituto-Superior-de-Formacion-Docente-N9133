@@ -8,6 +8,7 @@ import { prisma } from '../src/config/prisma.js';
 import { hashPassword } from '../src/utils/bcrypt.js';
 import { ROLES } from '../src/constants/roles.js';
 import { toPublicUser } from '../src/utils/publicUser.js';
+import { AppError } from '../src/utils/AppError.js';
 
 const restorations: Array<() => void> = [];
 
@@ -106,7 +107,7 @@ test('login rechaza con mensaje genérico una cuenta bloqueada', async () => {
 
   await assert.rejects(
     () => authService.login('bloqueado@example.com', 'Clave123!', undefined, undefined),
-    { message: 'Credenciales inválidas' }
+    (error: unknown) => error instanceof AppError && error.statusCode === 401 && error.message === 'Credenciales inválidas'
   );
 });
 
@@ -127,7 +128,7 @@ test('login registra el intento cuando la contraseña es inválida', async () =>
 
   await assert.rejects(
     () => authService.login('invalido@example.com', 'Clave123!', undefined, undefined),
-    { message: 'Credenciales inválidas' }
+    (error: unknown) => error instanceof AppError && error.statusCode === 401 && error.message === 'Credenciales inválidas'
   );
   assert.equal(failures, 1);
 });
@@ -166,7 +167,7 @@ test('login ejecuta una comparación bcrypt para un identificador inexistente', 
   try {
     await assert.rejects(
       () => authService.login('no-existe@example.com', 'Clave123!', undefined, undefined),
-      { message: 'Credenciales inválidas' }
+      (error: unknown) => error instanceof AppError && error.statusCode === 401 && error.message === 'Credenciales inválidas'
     );
     assert.equal(comparisons, 1);
   } finally {

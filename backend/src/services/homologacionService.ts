@@ -8,6 +8,7 @@ import userRepository from '../repositories/userRepository.js';
 import { AppError } from '../utils/AppError.js';
 import inscripcionCarreraRepository from '../repositories/inscripcionCarreraRepository.js';
 import { toHomologacionDto } from '../dtos/homologacionDto.js';
+import estadoAcademicoService from './estadoAcademicoService.js';
 
 class HomologacionService {
   // ===== CREAR SOLICITUD (Admin) =====
@@ -147,34 +148,59 @@ class HomologacionService {
       return toHomologacionDto(await homologacionRepository.update(id, { estado: 'RECHAZADA' }));
     }
 
-    // APROBAR
-    if (homologacion.tipoHomologacion === 'PARCIAL') {
-      // Para parcial, exigir nota del complementario cargada y >= notaMinima
-      if (homologacion.notaExamenHomologacion === null || homologacion.notaExamenHomologacion === undefined) {
-        throw new AppError(400, 'Para aprobar una homologación parcial, primero debe cargar la nota del examen complementario');
-      }
-      const materia = await materiaRepository.findById(homologacion.materiaId);
-      if (!materia) {
-        throw new AppError(404, 'Materia no encontrada');
-      }
-      if (homologacion.notaExamenHomologacion < (materia.notaMinima ?? 6)) {
-        throw new AppError(400, `La nota del examen complementario (${homologacion.notaExamenHomologacion}) debe ser >= ${materia.notaMinima ?? 6}`);
+    // APROBAR: serialize the published academic result with changes to spaces.
+    const carreraId = homologacion.materia?.carrera?.id ?? homologacion.materia?.carreraId;
+    if (!carreraId) throw new AppError(409, 'La materia no tiene una carrera asociada');
+
+    const approved = await materiaRepository.withTransaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM carreras WHERE id = ${carreraId} FOR UPDATE`;
+      const current = await tx.homologacion.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          alumnoId: true,
+          materiaId: true,
+          tipoHomologacion: true,
+          estado: true,
+          calificacion: true,
+          notaExamenHomologacion: true,
+          materia: { select: { carreraId: true, notaMinima: true } }
+        }
+      });
+      if (!current) throw new AppError(404, 'Solicitud de homologación no encontrada');
+      if (current.materia.carreraId !== carreraId) throw new AppError(409, 'La carrera de la materia cambió durante la operación');
+      if (current.estado !== 'PENDIENTE') throw new AppError(409, 'Solo se pueden resolver solicitudes en estado PENDIENTE');
+
+      const data: HomologacionUpdateData = { estado: 'APROBADA' };
+      if (current.tipoHomologacion === 'PARCIAL') {
+        if (current.notaExamenHomologacion === null || current.notaExamenHomologacion === undefined) {
+          throw new AppError(400, 'Para aprobar una homologación parcial, primero debe cargar la nota del examen complementario');
+        }
+        const minimo = current.materia.notaMinima ?? 6;
+        if (current.notaExamenHomologacion < minimo) {
+          throw new AppError(400, `La nota del examen complementario (${current.notaExamenHomologacion}) debe ser >= ${minimo}`);
+        }
+        data.calificacion = current.notaExamenHomologacion;
+      } else if (!Number.isFinite(current.calificacion)) {
+        throw new AppError(400, 'Una homologación total necesita la nota de la institución anterior para ser aprobada');
       }
 
-      return toHomologacionDto(await homologacionRepository.update(id, {
-        estado: 'APROBADA',
-        calificacion: homologacion.notaExamenHomologacion
-      }));
-    }
-
-    if (!Number.isFinite(homologacion.calificacion)) {
-      throw new AppError(400, 'Una homologación total necesita la nota de la institución anterior para ser aprobada');
-    }
-
-    // TOTAL: no requiere nota complementaria, se aprueba directo con la calificación original.
-    return toHomologacionDto(await homologacionRepository.update(id, {
-      estado: 'APROBADA'
-    }));
+      // Existing completion logic includes published exams, homologations and PROMOCIONADO.
+      const materiasAprobadas = await estadoAcademicoService.getMateriasAprobadasSet(current.alumnoId);
+      materiasAprobadas.add(current.materiaId);
+      const result = await homologacionRepository.update(id, data, tx);
+      const spaces = await tx.espacioCurricular.findMany({
+        where: { carreraId, materias: { some: { id: current.materiaId } } },
+        select: { id: true, composicionBloqueadaAt: true, materias: { select: { id: true } } }
+      });
+      for (const space of spaces) {
+        if (!space.composicionBloqueadaAt && space.materias.length >= 2 && space.materias.every((materia) => materiasAprobadas.has(materia.id))) {
+          await tx.espacioCurricular.update({ where: { id: space.id }, data: { composicionBloqueadaAt: new Date() } });
+        }
+      }
+      return result;
+    });
+    return toHomologacionDto(approved);
   }
 
   private assertAdministrative(currentUser: any): void {

@@ -83,7 +83,7 @@ class AuthService {
     // Crear usuario
     const alumnoData = userRolesPreview.includes(ROLES.ALUMNO) ? {
       domicilio: domicilio ?? '',
-      anioEgreso: anioEgreso ?? new Date().getFullYear(),
+      anioEgreso: anioEgreso ?? null,
       institucionProcedencia: institucionProcedencia ?? null
     } : undefined;
 
@@ -125,7 +125,7 @@ class AuthService {
       if (user && user.activo && !isLocked && !isValidPassword) {
         await userRepository.recordLoginFailure(user.idUsuario, now);
       }
-      throw new Error('Credenciales inválidas');
+      throw new AppError(401, 'Credenciales inválidas');
     }
     await userRepository.clearLoginFailures(user.idUsuario);
 

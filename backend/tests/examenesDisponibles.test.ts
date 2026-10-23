@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 
 import alumnoRepository from '../src/repositories/alumnoRepository.js';
 import examenRepository from '../src/repositories/examenRepository.js';
@@ -22,6 +22,12 @@ function replaceMethod(target: Record<string, unknown>, key: string, replacement
 
 afterEach(() => {
   while (restorations.length > 0) restorations.pop()?.();
+});
+
+beforeEach(() => {
+  replaceMethod(prisma.materia as any, 'findUnique', async () => ({ espacioCurricular: null }));
+  replaceMethod(prisma.correlatividad as any, 'findMany', async () => []);
+  replaceMethod(prisma.espacioCorrelatividad as any, 'findMany', async () => []);
 });
 
 function mesaCandidata(input: {
@@ -71,6 +77,7 @@ test('modo opt-in conserva mesas propias y explica período, correlativa y condi
   ]);
   replaceMethod(estadoAcademicoService, 'getRegularidadesVigentesSet', async () => new Set([7]));
   replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set<number>());
+  replaceMethod(prisma.correlatividad as any, 'findMany', async (args: any) => args.where.materiaOrigenId === 8 ? [{ id: 1, materiaRequerida: { id: 99, nombre: 'Correlativa 99' } }] : []);
   const resultado = await examenService.getMesasDisponibles(
     { id: 10, rol: ROLES.ALUMNO },
     new Date('2026-08-26T15:00:00.000Z'),
@@ -82,6 +89,12 @@ test('modo opt-in conserva mesas propias y explica período, correlativa y condi
     { id: 13, estado: 'NO_HABILITADA', motivos: ['PERIODO'] },
     { id: 14, estado: 'YA_INSCRIPTO', motivos: [] }
   ]);
+  const periodo = resultado[1]!.motivos.find(motivo => motivo.codigo === 'PERIODO')!;
+  const condicion = resultado[1]!.motivos.find(motivo => motivo.codigo === 'CONDICION')!;
+  assert.equal('tipo' in periodo, false);
+  assert.equal('id' in periodo, false);
+  assert.equal('tipo' in condicion, false);
+  assert.equal('id' in condicion, false);
   assert.equal(resultado[3].condicion, 'LIBRE');
 });
 
@@ -194,6 +207,57 @@ test('no calcula hechos académicos cuando no hay mesas candidatas', async () =>
   assert.deepEqual(resultado, []);
 });
 
+test('disponibilidad y confirmación exigen todos los componentes de un espacio correlativo', async () => {
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 42 }));
+  replaceMethod(examenRepository, 'findMesasDisponiblesParaAlumno', async () => [mesaCandidata({ id: 18, materiaId: 7 })] as any);
+  replaceMethod(prisma.materia as any, 'findUnique', async () => ({ espacioCurricular: { id: 30, nombre: 'Práctica I', activo: true, materias: [{ id: 31 }, { id: 32 }] } }));
+  replaceMethod(prisma.espacioCorrelatividad as any, 'findMany', async () => [{
+    id: 5,
+    materiaRequerida: null,
+    espacioRequerido: { id: 40, nombre: 'Trayecto Inicial', materias: [{ id: 41 }, { id: 42 }] }
+  }]);
+  replaceMethod(estadoAcademicoService, 'getRegularidadesVigentesSet', async () => new Set([7]));
+  replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set([41]));
+  const disponibilidad = await examenService.getMesasDisponibles(
+    { id: 10, rol: ROLES.ALUMNO }, new Date('2026-08-26T15:00:00.000Z'), true
+  );
+  assert.equal(disponibilidad[0].estadoDisponibilidad, 'NO_HABILITADA');
+  assert.match(disponibilidad[0].motivos?.find(motivo => motivo.codigo === 'CORRELATIVA')?.mensaje ?? '', /Trayecto Inicial/);
+  const motivoEspacio = disponibilidad[0].motivos?.find(motivo => motivo.codigo === 'CORRELATIVA');
+  assert.deepEqual(motivoEspacio && { tipo: motivoEspacio.tipo, id: motivoEspacio.id }, { tipo: 'ESPACIO', id: 40 });
+  await assert.rejects(
+    examenService.verificarCorrelatividadesParaExamen(42, 7),
+    /Trayecto Inicial/
+  );
+});
+
+test('motivo de correlativa conserva el tipo cuando materia y espacio comparten ID', async () => {
+  replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 42 }));
+  replaceMethod(examenRepository, 'findMesasDisponiblesParaAlumno', async () => [mesaCandidata({ id: 18, materiaId: 7 })] as any);
+  replaceMethod(prisma.materia as any, 'findUnique', async () => ({ espacioCurricular: { id: 30, nombre: 'Práctica I', activo: true, materias: [{ id: 31 }, { id: 32 }] } }));
+  let espacioPrimero = false;
+  replaceMethod(prisma.espacioCorrelatividad as any, 'findMany', async () => {
+    const materia = { id: 5, materiaRequerida: { id: 40, nombre: 'Materia 40' }, espacioRequerido: null };
+    const espacio = { id: 6, materiaRequerida: null, espacioRequerido: { id: 40, nombre: 'Espacio 40', materias: [{ id: 41 }, { id: 42 }] } };
+    return espacioPrimero ? [espacio, materia] : [materia, espacio];
+  });
+  replaceMethod(estadoAcademicoService, 'getRegularidadesVigentesSet', async () => new Set([7]));
+  replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set<number>());
+
+  const porMateria = await examenService.getMesasDisponibles({ id: 10, rol: ROLES.ALUMNO }, new Date('2026-08-26T15:00:00.000Z'), true);
+  const motivoMateria = porMateria[0].motivos.find(motivo => motivo.codigo === 'CORRELATIVA');
+  assert.deepEqual(motivoMateria && { tipo: motivoMateria.tipo, id: motivoMateria.id, materiaRequeridaId: motivoMateria.materiaRequeridaId }, {
+    tipo: 'MATERIA', id: 40, materiaRequeridaId: 40
+  });
+
+  espacioPrimero = true;
+  const porEspacio = await examenService.getMesasDisponibles({ id: 10, rol: ROLES.ALUMNO }, new Date('2026-08-26T15:00:00.000Z'), true);
+  const motivoEspacioCorrelativo = porEspacio[0].motivos.find(motivo => motivo.codigo === 'CORRELATIVA');
+  assert.deepEqual(motivoEspacioCorrelativo && { tipo: motivoEspacioCorrelativo.tipo, id: motivoEspacioCorrelativo.id }, {
+    tipo: 'ESPACIO', id: 40
+  });
+});
+
 test('prioriza REGULAR, permite LIBRE y excluye condiciones o correlatividades incumplidas', async () => {
   const consultas: Array<{ alumnoId: number; materiaIds: number[] }> = [];
   replaceMethod(alumnoRepository, 'findByUsuarioId', async () => ({ idAlumno: 42 }));
@@ -216,6 +280,7 @@ test('prioriza REGULAR, permite LIBRE y excluye condiciones o correlatividades i
     'getMateriasAprobadasSet',
     async () => new Set<number>()
   );
+  replaceMethod(prisma.correlatividad as any, 'findMany', async (args: any) => args.where.materiaOrigenId === 10 ? [{ id: 2, materiaRequerida: { id: 99, nombre: 'Correlativa 99' } }] : []);
 
   const resultado = await examenService.getMesasDisponibles(
     { id: 10, rol: ROLES.ALUMNO },
@@ -251,6 +316,7 @@ test('la consulta candidata exige período vigente, carrera activa y mesa futura
 
   assert.deepEqual(consulta.where, {
     activo: true,
+    origen: 'ORDINARIA',
     estadoMesa: 'ABIERTA',
     fecha: { gte: fechaDesde },
     periodosHabilitadores: {

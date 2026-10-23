@@ -143,7 +143,6 @@ describe('ExamResultPanel', () => {
   })
 
   it('does not offer confirmation while active inscriptions remain pending', async () => {
-    const user = userEvent.setup()
     renderPanel({ results: [pending], closeTable: vi.fn(), canClose: true })
 
     const closeButton = screen.getByRole('button', { name: 'Cerrar y publicar mesa' })

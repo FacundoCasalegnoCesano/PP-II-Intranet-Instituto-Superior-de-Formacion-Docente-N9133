@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma.js';
+import type { Prisma } from '@prisma/client';
 import { normalizePagination, paginated, type PaginationInput, type PaginatedResult } from '../utils/pagination.js';
 
 interface FilaUpsert {
@@ -9,6 +10,10 @@ interface FilaUpsert {
 }
 
 class AsistenciaRepository {
+  async withTransaction<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return prisma.$transaction(operation);
+  }
+
   async findInscripcionesByCursadaAndAlumnoIds(cursadaId: number, alumnoIds: number[]) {
     if (alumnoIds.length === 0) return [];
     return prisma.inscripcionMateria.findMany({
@@ -24,33 +29,36 @@ class AsistenciaRepository {
   /**
    * Carga/actualiza asistencias de una clase (upsert por alumno+fecha).
    */
-  async upsertClase(cursadaId: number, fecha: Date, filas: FilaUpsert[]) {
+  async upsertClase(cursadaId: number, fecha: Date, filas: FilaUpsert[], db?: Prisma.TransactionClient) {
     const filasOrdenadas = [...filas].sort((a, b) => a.idAlumno - b.idAlumno);
-    for (let intento = 0; ; intento += 1) {
-      const operaciones = filasOrdenadas.map(fila =>
-        prisma.asistencia.upsert({
-          where: {
-            cursadaId_alumnoId_fecha: {
-              cursadaId,
-              alumnoId: fila.idAlumno,
-              fecha
-            }
-          },
-          create: {
+    const execute = (client: Prisma.TransactionClient | typeof prisma) => filasOrdenadas.map(fila =>
+      client.asistencia.upsert({
+        where: {
+          cursadaId_alumnoId_fecha: {
             cursadaId,
             alumnoId: fila.idAlumno,
-            fecha,
-            presente: fila.presente,
-            justificado: fila.justificado ?? false,
-            observacion: fila.observacion ?? null
-          },
-          update: {
-            presente: fila.presente,
-            justificado: fila.justificado ?? false,
-            observacion: fila.observacion ?? null
+            fecha
           }
-        })
-      );
+        },
+        create: {
+          cursadaId,
+          alumnoId: fila.idAlumno,
+          fecha,
+          presente: fila.presente,
+          justificado: fila.justificado ?? false,
+          observacion: fila.observacion ?? null
+        },
+        update: {
+          presente: fila.presente,
+          justificado: fila.justificado ?? false,
+          observacion: fila.observacion ?? null
+        }
+      })
+    );
+
+    if (db) return Promise.all(execute(db));
+    for (let intento = 0; ; intento += 1) {
+      const operaciones = execute(prisma);
 
       try {
         return await prisma.$transaction(operaciones);

@@ -9,6 +9,7 @@ import carreraRepository from '../src/repositories/carreraRepository.js';
 import { ROLES } from '../src/constants/roles.js';
 import { prisma } from '../src/config/prisma.js';
 import { AppError } from '../src/utils/AppError.js';
+import { inscripcionCarreraSchema } from '../src/validations/inscripcionCarreraValidation.js';
 
 const restorations: Array<() => void> = [];
 
@@ -37,7 +38,29 @@ function configureValidEnrollment() {
   }));
 }
 
-test('reactiva la inscripción inactiva reutilizando su ID y actualizando sus fechas', async () => {
+test('el esquema deja la decisión de cohorte al service según exista una inscripción previa', () => {
+  const result = inscripcionCarreraSchema.validate({ alumnoId: 8, carreraId: 3, cicloLectivo: 2027 });
+  assert.equal(result.error, undefined);
+  assert.equal(inscripcionCarreraSchema.validate({ alumnoId: 8, carreraId: 3, anioCohorte: 2027 }).error, undefined);
+});
+
+test('exige cohorte si se trata de una inscripción nueva', async () => {
+  configureValidEnrollment();
+  replaceMethod(inscripcionCarreraRepository, 'findByUsuarioAndCarreraIncludingBaja', async () => null);
+  let called = false;
+  replaceMethod(inscripcionCarreraRepository, 'inscribirAtomic', async () => { called = true; return {}; });
+
+  await assert.rejects(
+    inscripcionCarreraService.inscribirAlumno(
+      { usuarioId: 8, carreraId: 3, cicloLectivo: 2027 },
+      { id: 1, rol: ROLES.ADMINISTRATIVO }
+    ),
+    (error: any) => error.statusCode === 400 && /requerido para una inscripción nueva/i.test(error.message)
+  );
+  assert.equal(called, false);
+});
+
+test('reactiva sin cohorte en la solicitud y conserva la cohorte existente', async () => {
   configureValidEnrollment();
   const previa = {
     id: 41,
@@ -45,14 +68,16 @@ test('reactiva la inscripción inactiva reutilizando su ID y actualizando sus fe
     carreraId: 3,
     activo: false,
     fechaBaja: new Date('2026-05-01'),
-    fechaInscripcion: new Date('2026-03-01')
+    fechaInscripcion: new Date('2026-03-01'),
+    anioCohorte: 2022
   };
   let receivedData: unknown;
   let created = false;
   replaceMethod(inscripcionCarreraRepository, 'inscribirAtomic', async (data: unknown) => {
     receivedData = data;
-    return { ...previa, activo: true, fechaBaja: null, fechaInscripcion: new Date(), ...(data as object) };
+    return { ...previa, activo: true, fechaBaja: null, fechaInscripcion: new Date(), cicloLectivo: (data as any).cicloLectivo };
   });
+  replaceMethod(inscripcionCarreraRepository, 'findByUsuarioAndCarreraIncludingBaja', async () => previa);
   replaceMethod(inscripcionCarreraRepository, 'create', async () => {
     created = true;
     return {};
@@ -70,20 +95,36 @@ test('reactiva la inscripción inactiva reutilizando su ID y actualizando sus fe
   assert.equal((receivedData as any).usuarioId, 8);
   assert.equal((receivedData as any).carreraId, 3);
   assert.equal((receivedData as any).cicloLectivo, 2027);
+  assert.equal('anioCohorte' in (receivedData as any), false);
   assert.equal(result.cicloLectivo, 2027);
+  assert.equal(result.anioCohorte, 2022);
   assert.ok(result.fechaInscripcion >= before);
   assert.ok(result.fechaInscripcion <= after);
 });
 
+test('reactivar una inscripción legacy sin cohorte conserva null', async () => {
+  configureValidEnrollment();
+  const previa = { id: 42, usuarioId: 8, carreraId: 3, activo: false, anioCohorte: null };
+  replaceMethod(inscripcionCarreraRepository, 'findByUsuarioAndCarreraIncludingBaja', async () => previa);
+  replaceMethod(inscripcionCarreraRepository, 'inscribirAtomic', async () => ({ ...previa, activo: true, reactivada: true }));
+
+  const result = await inscripcionCarreraService.inscribirAlumno(
+    { usuarioId: 8, carreraId: 3, cicloLectivo: 2027 },
+    { id: 1, rol: ROLES.ADMINISTRATIVO }
+  );
+  assert.equal(result.anioCohorte, null);
+});
+
 test('mantiene el rechazo específico cuando la inscripción activa ya existe', async () => {
   configureValidEnrollment();
+  replaceMethod(inscripcionCarreraRepository, 'findByUsuarioAndCarreraIncludingBaja', async () => ({ activo: true, anioCohorte: null }));
   replaceMethod(inscripcionCarreraRepository, 'inscribirAtomic', async () => {
     throw new AppError(400, 'El alumno ya está inscripto en esta carrera');
   });
 
   await assert.rejects(
     inscripcionCarreraService.inscribirAlumno(
-      { usuarioId: 8, carreraId: 3, cicloLectivo: 2026 },
+      { usuarioId: 8, carreraId: 3, cicloLectivo: 2026, anioCohorte: 2026 },
       { id: 1, rol: ROLES.ADMINISTRATIVO }
     ),
     (error: any) => error.statusCode === 400 && error.message === 'El alumno ya está inscripto en esta carrera'
@@ -102,7 +143,7 @@ test('informa al frontend que la inscripción fue reactivada', async () => {
     json(body: unknown) { this.body = body; return this; }
   };
   await inscripcionCarreraController.inscribirAlumno(
-    { body: { alumnoId: 8, carreraId: 3, cicloLectivo: 2026 }, user: { id: 1, rol: ROLES.ADMINISTRATIVO } } as any,
+    { body: { alumnoId: 8, carreraId: 3, cicloLectivo: 2026, anioCohorte: 2026 }, user: { id: 1, rol: ROLES.ADMINISTRATIVO } } as any,
     response as any,
     (error: unknown) => { throw error; }
   );
@@ -122,7 +163,7 @@ test('rechaza una cuenta de alumno inactiva aunque invoque el service directamen
 
   await assert.rejects(
     inscripcionCarreraService.inscribirAlumno(
-      { usuarioId: 8, carreraId: 3, cicloLectivo: 2026 },
+      { usuarioId: 8, carreraId: 3, cicloLectivo: 2026, anioCohorte: 2026 },
       { id: 1, rol: ROLES.ADMINISTRATIVO }
     ),
     (error: any) => error.statusCode === 400 && error.message === 'El alumno está inactivo'
@@ -181,8 +222,8 @@ test('serializa por alumno el límite máximo ante dos altas concurrentes', asyn
   installFakeAtomicTransaction(rows);
 
   const results = await Promise.allSettled([
-    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 2, cicloLectivo: 2026 }),
-    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 3, cicloLectivo: 2026 })
+    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 2, cicloLectivo: 2026, anioCohorte: 2026 }),
+    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 3, cicloLectivo: 2026, anioCohorte: 2026 })
   ]);
 
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
@@ -192,16 +233,52 @@ test('serializa por alumno el límite máximo ante dos altas concurrentes', asyn
 });
 
 test('serializa por alumno la reactivación para que una misma fila no gane dos veces', async () => {
-  const rows = [{ id: 41, usuarioId: 8, carreraId: 3, activo: false, fechaBaja: new Date('2026-05-01') }];
+  const rows = [{ id: 41, usuarioId: 8, carreraId: 3, activo: false, fechaBaja: new Date('2026-05-01'), cicloLectivo: 2023, anioCohorte: 2021 }];
   installFakeAtomicTransaction(rows);
 
   const results = await Promise.allSettled([
-    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 3, cicloLectivo: 2026 }),
-    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 3, cicloLectivo: 2026 })
+    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 3, cicloLectivo: 2026, anioCohorte: 2026 }),
+    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 3, cicloLectivo: 2026, anioCohorte: 2026 })
   ]);
 
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
   assert.equal((results.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason.message, 'El alumno ya está inscripto en esta carrera');
   assert.equal(rows.filter((row) => row.activo).length, 1);
+  assert.equal(rows[0].cicloLectivo, 2023);
+  assert.equal(rows[0].anioCohorte, 2026);
+});
+
+test('una inscripción nueva válida persiste el año de cohorte', async () => {
+  const rows: any[] = [];
+  installFakeAtomicTransaction(rows);
+
+  const result = await inscripcionCarreraRepository.inscribirAtomic({
+    usuarioId: 8,
+    carreraId: 3,
+    cicloLectivo: 2027,
+    anioCohorte: 2024
+  });
+
+  assert.equal(result.anioCohorte, 2024);
+  assert.equal(rows[0].anioCohorte, 2024);
+});
+
+test('una inscripción nueva omite ciclo lectivo y persiste null sin copiar la cohorte', async () => {
+  const rows: any[] = [];
+  installFakeAtomicTransaction(rows);
+  const result = await inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 3, anioCohorte: 2026 });
+  assert.equal(result.cicloLectivo, null);
+  assert.equal(result.anioCohorte, 2026);
+});
+
+test('la transacción también rechaza una alta nueva sin cohorte', async () => {
+  const rows: any[] = [];
+  installFakeAtomicTransaction(rows);
+
+  await assert.rejects(
+    inscripcionCarreraRepository.inscribirAtomic({ usuarioId: 8, carreraId: 3, cicloLectivo: 2027 }),
+    (error: any) => error.statusCode === 400 && /requerido para una inscripción nueva/i.test(error.message)
+  );
+  assert.equal(rows.length, 0);
 });

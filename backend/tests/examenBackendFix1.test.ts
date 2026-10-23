@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 import { parse } from 'yaml';
 
 import examenRepository from '../src/repositories/examenRepository.js';
@@ -13,6 +13,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const restorations: Array<() => void> = [];
+
+beforeEach(() => {
+  replaceMethod((prisma as any).promocionHistorica, 'findMany', async () => []);
+});
 
 function replaceMethod(target: any, key: string, replacement: any) {
   const original = target[key];
@@ -284,6 +288,11 @@ test('el promedio general excluye inscripciones de examen dadas de baja', async 
   });
   replaceMethod((prisma as any).homologacion, 'findMany', async () => []);
   replaceMethod((prisma as any).inscripcionMateria, 'findMany', async () => []);
+  replaceMethod((prisma as any).materia, 'findMany', async () => [
+    { id: 7, nombre: 'Activa' },
+    { id: 8, nombre: 'Dada de baja' }
+  ]);
+  replaceMethod((prisma as any).espacioCurricular, 'findMany', async () => []);
 
   const resultado = await estadoAcademicoService.getPromedioGeneral(
     13,

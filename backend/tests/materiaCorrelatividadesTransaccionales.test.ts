@@ -30,17 +30,33 @@ function materiaInput(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
-function transactionStub(tx: object = {}) {
+function transactionStub(tx: object = {}, afterCommit: () => void = () => undefined) {
   let callbacks = 0;
   let committed = false;
+  const defaults = {
+    $queryRaw: async (strings: TemplateStringsArray) => strings.join('').includes('FROM materias') ? [{ carreraId: 1 }] : [],
+    materia: { findUnique: async ({ where }: any) => ({ id: where.id, carreraId: 1, activo: true }) },
+    carrera: { findUnique: async ({ where }: any) => ({ id: where.id, nombre: 'Profesorado', duracionAnios: 4 }) },
+    espacioCurricular: { findUnique: async ({ where }: any) => ({ id: where.id, carreraId: 1, activo: true, materias: [] }), findMany: async () => [] },
+    correlatividad: { findMany: async () => [], findFirst: async () => null, create: async ({ data }: any) => data },
+    espacioCorrelatividad: { findMany: async () => [] }
+  };
+  const transaction: any = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [
+    key,
+    typeof value === 'object' && value !== null
+      ? { ...value, ...((tx as any)[key] ?? {}) }
+      : (tx as any)[key] ?? value
+  ]));
   replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => {
     callbacks += 1;
-    const result = await operation(tx);
+    const result = await operation(transaction);
+    // Writes become observable only after the transaction callback resolves.
+    afterCommit();
     committed = true;
     return result;
   });
   return {
-    tx,
+    tx: transaction,
     callbacks: () => callbacks,
     committed: () => committed
   };
@@ -227,7 +243,10 @@ test('createMateria rechaza correlativas repetidas antes de reemplazar', async (
 });
 
 test('updateMateria permite cambiar de carrera si reemplaza salientes y no quedan entrantes incompatibles', async () => {
-  const transaction = transactionStub();
+  const transaction = transactionStub({
+    $queryRaw: async () => [{ carreraId: 1 }],
+    carrera: { findUnique: async () => ({ id: 2, nombre: 'Profesorado B', duracionAnios: 4 }) }
+  });
   let replaced = false;
   let updated: any;
   const calls: Array<{ method: string; db: unknown }> = [];
@@ -277,11 +296,21 @@ test('updateMateria permite cambiar de carrera si reemplaza salientes y no queda
 });
 
 test('updateMateria bloquea carrera nueva si una arista entrante queda cruzada', async () => {
-  const transaction = transactionStub();
-  let replaced = false;
-
+  let replacementAttempted = false;
+  let replacementCommitted = false;
+  const transaction = transactionStub({
+    $queryRaw: async () => [{ carreraId: 1 }],
+    carrera: { findUnique: async () => ({ id: 2, nombre: 'Profesorado B', duracionAnios: 4 }) },
+    correlatividad: { findMany: async () => [{
+      materiaOrigenId: 41,
+      materiaRequeridaId: 40,
+      materiaOrigen: { id: 41, carreraId: 1 },
+      materiaRequerida: { id: 40, carreraId: 2 },
+      espacioRequerido: null
+    }] }
+  }, () => { replacementCommitted = replacementAttempted; });
   replaceMethod(materiaRepository, 'findById', async (id: number, db?: unknown) => {
-    if (db) return { id, carreraId: id === 40 ? 2 : 1, nombre: 'Materia', activo: true };
+    if (db) return { id, carreraId: 1, nombre: 'Materia', activo: true };
     return { id, carreraId: 1, nombre: 'Materia', activo: true, curso: { anio: 1 } };
   });
   replaceMethod(carreraRepository, 'findById', async () => ({ id: 2, nombre: 'Profesorado B', duracionAnios: 4 }) as any);
@@ -293,14 +322,15 @@ test('updateMateria bloquea carrera nueva si una arista entrante queda cruzada',
   replaceMethod(materiaRepository, 'getCorrelativityEdges', async () => []);
   replaceMethod(materiaRepository, 'update', async (id: number, data: any) => ({ id, ...data }));
   replaceMethod(materiaRepository, 'replaceCorrelatividades', async () => {
-    replaced = true;
+    replacementAttempted = true;
   });
 
   await assert.rejects(
     materiaService.updateMateria(40, { carreraId: 2, correlativasIds: [] }),
     (error: any) => error.statusCode === 409 && /carreras distintas/i.test(error.message)
   );
-  assert.equal(replaced, false);
+  assert.equal(replacementAttempted, true);
+  assert.equal(replacementCommitted, false);
   assert.equal(transaction.callbacks(), 1);
   assert.equal(transaction.committed(), false);
 });
@@ -337,7 +367,11 @@ for (const caso of [
   }
 ]) {
   test(`createMateria rechaza correlativa ${caso.nombre} sin persistencia parcial`, async () => {
-    const transaction = transactionStub();
+    const transaction = transactionStub({
+      materia: { findUnique: async ({ where }: any) => where.id === 30
+        ? { id: 30, carreraId: 1, activo: true }
+        : caso.required }
+    });
     let replaced = false;
 
     replaceMethod(carreraRepository, 'findById', async () => ({ id: 1, nombre: 'Profesorado', duracionAnios: 4 }) as any);
@@ -350,6 +384,9 @@ for (const caso of [
       return caso.required;
     });
     replaceMethod(materiaRepository, 'getCorrelativityEdges', async () => caso.edges ?? []);
+    replaceMethod(materiaRepository, 'getMixedCorrelationEdges', async () => (caso.edges ?? []).map(edge => ({
+      from: `M:${edge.materiaOrigenId}`, to: `M:${edge.materiaRequeridaId}`, kind: 'LEGACY', aplicaCursado: false, aplicaRendir: true
+    })) as any);
     replaceMethod(materiaRepository, 'getIncidentCorrelativityEdges', async () => []);
     replaceMethod(materiaRepository, 'replaceCorrelatividades', async () => {
       replaced = true;
@@ -396,7 +433,11 @@ for (const caso of [
   }
 ]) {
   test(`updateMateria rechaza correlativa ${caso.nombre} sin persistencia parcial`, async () => {
-    const transaction = transactionStub();
+    const transaction = transactionStub({
+      materia: { findUnique: async ({ where }: any) => where.id === 30
+        ? { id: 30, carreraId: 1, activo: true }
+        : caso.required }
+    });
     let replaced = false;
 
     replaceMethod(materiaRepository, 'findById', async (id: number, db?: unknown) => {
@@ -407,6 +448,9 @@ for (const caso of [
     replaceMethod(carreraRepository, 'findById', async () => ({ id: 1, nombre: 'Profesorado', duracionAnios: 4 }) as any);
     replaceMethod(materiaRepository, 'update', async (id: number, data: any) => ({ id, ...data }));
     replaceMethod(materiaRepository, 'getCorrelativityEdges', async () => caso.edges ?? []);
+    replaceMethod(materiaRepository, 'getMixedCorrelationEdges', async () => (caso.edges ?? []).map(edge => ({
+      from: `M:${edge.materiaOrigenId}`, to: `M:${edge.materiaRequeridaId}`, kind: 'LEGACY', aplicaCursado: false, aplicaRendir: true
+    })) as any);
     replaceMethod(materiaRepository, 'getIncidentCorrelativityEdges', async () => []);
     replaceMethod(materiaRepository, 'replaceCorrelatividades', async () => {
       replaced = true;
@@ -438,6 +482,9 @@ test('updateMateria bloquea el ciclo que aparece al reemplazar aristas viejas', 
   replaceMethod(materiaRepository, 'getCorrelativityEdges', async () => [
     { materiaOrigenId: 8, materiaRequeridaId: 30 }
   ]);
+  replaceMethod(materiaRepository, 'getMixedCorrelationEdges', async () => [
+    { from: 'M:8', to: 'M:30', kind: 'LEGACY', aplicaCursado: false, aplicaRendir: true }
+  ] as any);
   replaceMethod(materiaRepository, 'update', async (id: number, data: any) => ({ id, ...data }));
   replaceMethod(materiaRepository, 'replaceCorrelatividades', async () => {
     replaced = true;

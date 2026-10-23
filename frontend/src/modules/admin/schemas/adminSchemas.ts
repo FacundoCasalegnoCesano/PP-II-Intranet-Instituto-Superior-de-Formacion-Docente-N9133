@@ -30,7 +30,6 @@ export const adminUserCreateSchema = adminUserFields.extend({
   validatePasswordConfirmation(value, ctx)
   if (value.role === 'ALUMNO') {
     if (!value.domicilio?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['domicilio'], message: 'El domicilio es requerido para alumnos.' })
-    if (value.anioEgreso === null || value.anioEgreso === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['anioEgreso'], message: 'El año de egreso es requerido para alumnos.' })
   }
 })
 
@@ -39,7 +38,7 @@ export const careerSchema = z.object({ nombre: z.string().trim().min(1, 'El nomb
 export const careerEnrollmentSchema = z.object({
   alumnoId: z.coerce.number().int().min(1, 'Seleccioná un alumno.'),
   carreraId: z.coerce.number().int().min(1, 'Seleccioná una carrera.'),
-  cicloLectivo: z.coerce.number().int().min(2000, 'Ingresá un ciclo lectivo válido.').max(2100),
+  anioCohorte: z.union([z.literal(''), z.coerce.number().int().min(1900).max(2100)]).optional(),
 })
 
 export const adminPasswordResetSchema = z.object({
@@ -82,8 +81,13 @@ export const courseSchema = z.object({
   docenteId: z.union([z.coerce.number({ invalid_type_error: 'Seleccioná un docente válido.' }).int('Seleccioná un docente válido.').min(1, 'Seleccioná un docente válido.'), z.null()]).optional(),
 })
 
-export const periodSchema = z.object({ tipo: z.enum(['MATERIA', 'EXAMEN']), cicloLectivo: z.coerce.number().int().min(2000).max(2100), fechaInicio: z.string().min(1), fechaFin: z.string().min(1), materiasIds: z.array(z.coerce.number().int().min(1)), mesasIds: z.array(z.coerce.number().int().min(1)), descripcion: z.string().max(255).optional() }).superRefine((value, ctx) => {
+export const spaceCourseSchema = z.object({
+  anioLectivo: z.coerce.number().int().min(2000, 'El año lectivo debe ser 2000 o posterior.').max(2100, 'El año lectivo no puede superar 2100.'),
+  periodo: z.enum(['ANUAL', 'PRIMER_CUATRIMESTRE', 'SEGUNDO_CUATRIMESTRE'], { errorMap: () => ({ message: 'Seleccioná un período válido.' }) }),
+})
+
+export const periodSchema = z.object({ tipo: z.enum(['MATERIA', 'EXAMEN']), cicloLectivo: z.coerce.number().int().min(2000).max(2100), fechaInicio: z.string().min(1), fechaFin: z.string().min(1), materiasIds: z.array(z.coerce.number().int().min(1)), cursadasEspaciosIds: z.array(z.coerce.number().int().min(1)).optional().default([]), mesasIds: z.array(z.coerce.number().int().min(1)), descripcion: z.string().max(255).optional() }).superRefine((value, ctx) => {
   if (new Date(value.fechaFin) <= new Date(value.fechaInicio)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['fechaFin'], message: 'La fecha final debe ser posterior.' })
-  if (value.tipo === 'MATERIA' && value.materiasIds.length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['materiasIds'], message: 'Seleccioná al menos una materia.' })
+  if (value.tipo === 'MATERIA' && value.materiasIds.length === 0 && value.cursadasEspaciosIds.length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['materiasIds'], message: 'Seleccioná al menos una materia o espacio curricular.' })
   if (value.tipo === 'EXAMEN' && value.mesasIds.length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mesasIds'], message: 'Seleccioná al menos una mesa de examen.' })
 })

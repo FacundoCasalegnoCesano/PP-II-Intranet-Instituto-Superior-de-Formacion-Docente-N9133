@@ -7,10 +7,11 @@ describe('profile API', () => {
     const put = vi.fn().mockResolvedValue({ idUsuario: 13, apellidoNombre: 'Lucía Actualizada' })
     const profile = await fetchOwnProfile({ get })
 
-    await updateOwnProfile(profile.idUsuario, {
+    const untrustedInput = {
       apellidoNombre: 'Lucía Actualizada', dni: '42666888', email: 'lucia@example.test', fechaNacimiento: '2000-01-01', telefono: '3624000000', cuil: '27426668880', contactoEmergencia: '', foto: '/img/lucia.jpg',
       rol: 'ADMINISTRATIVO', roles: ['ADMINISTRATIVO'], activo: false, password: 'secret', accessToken: 'token',
-    }, { put })
+    }
+    await updateOwnProfile(profile.idUsuario, untrustedInput, { put })
 
     expect(get).toHaveBeenCalledWith('/auth/me')
     expect(put).toHaveBeenCalledWith('/users/13', {

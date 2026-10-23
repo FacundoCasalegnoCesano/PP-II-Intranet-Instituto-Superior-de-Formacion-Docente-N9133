@@ -9,6 +9,8 @@ import {
   listCursadasSchema
 } from '../validations/cursadaValidation.js';
 import { ROLES } from '../constants/roles.js';
+import inscripcionHistoricaController from '../controllers/inscripcionHistoricaController.js';
+import { inscripcionHistoricaBodySchema, inscripcionHistoricaParamsSchema } from '../validations/inscripcionHistoricaValidation.js';
 import {
   claseCursadaParamsSchema,
   claseParamsSchema,
@@ -31,6 +33,13 @@ router.post('/',
   roleCheck(ROLES.ADMINISTRATIVO),
   validationMiddleware(createCursadaSchema),
   cursadaController.createCursada
+);
+
+router.post('/:id/inscripciones-historicas',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(inscripcionHistoricaParamsSchema, 'params'),
+  validationMiddleware(inscripcionHistoricaBodySchema),
+  inscripcionHistoricaController.crearMateria
 );
 
 // Recurso atómico de clase: tema + asistencia completa.

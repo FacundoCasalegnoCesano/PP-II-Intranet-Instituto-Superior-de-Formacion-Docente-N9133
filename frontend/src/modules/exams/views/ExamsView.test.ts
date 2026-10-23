@@ -52,7 +52,7 @@ describe('ExamsView', () => {
       { ...availableExam(61, 'Mesa habilitada'), estadoDisponibilidad: 'HABILITADA', motivos: [] },
       { ...availableExam(62, 'Mesa bloqueada'), condicion: null, estadoDisponibilidad: 'NO_HABILITADA', motivos: [
         { codigo: 'PERIODO', mensaje: 'No hay un período de inscripción vigente para esta mesa' },
-        { codigo: 'CORRELATIVA', materiaRequeridaId: 4, materiaRequeridaNombre: 'Pedagogía', mensaje: 'Debés aprobar Pedagogía antes de rendir esta materia' },
+        { codigo: 'CORRELATIVA', tipo: 'MATERIA', id: 4, materiaRequeridaId: 4, materiaRequeridaNombre: 'Pedagogía', mensaje: 'Debés aprobar Pedagogía antes de rendir esta materia' },
       ] },
       { ...availableExam(63, 'Mesa inscripta'), estadoDisponibilidad: 'YA_INSCRIPTO', inscripto: true, motivos: [] },
     ])

@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   createExamTable: vi.fn(), updateExamTable: vi.fn(), assignTribunalMember: vi.fn(), removeTribunalMember: vi.fn(), reloadExamResults: vi.fn(), saveExamResult: vi.fn(), closeExamTable: vi.fn(), reopenExamTable: vi.fn(), enrollStudent: vi.fn(), withdrawStudent: vi.fn(),
 }))
 const adminApi = vi.hoisted(() => ({ listActiveStudents: vi.fn() }))
+const historicalRoute = { path: '/app/administracion/mesas-historicas', name: 'admin-historical-exams', component: defineComponent({ render: () => h('div') }) }
 
 vi.mock('../api/examsApi', () => api)
 vi.mock('@/modules/admin/api/adminApi', () => ({ adminApi }))
@@ -53,6 +54,7 @@ async function renderList(exam = mesa) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      historicalRoute,
       { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
       { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
       { path: '/app/administracion/mesas/nueva', name: 'admin-exam-new', component: AdminExamsView },
@@ -98,6 +100,7 @@ describe('AdminExamsView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        historicalRoute,
         { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
         { path: '/app/administracion/mesas/nueva', name: 'admin-exam-new', component: AdminExamsView },
@@ -122,6 +125,7 @@ describe('AdminExamsView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        historicalRoute,
         { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsView },
@@ -156,6 +160,7 @@ describe('AdminExamsView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        historicalRoute,
         { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsView },
@@ -194,6 +199,7 @@ describe('AdminExamsView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        historicalRoute,
         { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsView },
@@ -242,6 +248,7 @@ describe('AdminExamsView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        historicalRoute,
         { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsView },
@@ -287,6 +294,7 @@ describe('AdminExamsView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        historicalRoute,
         { path: '/app/administracion/mesas', name: 'admin-exams', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id', name: 'admin-exam-detail', component: AdminExamsView },
         { path: '/app/administracion/mesas/:id/editar', name: 'admin-exam-edit', component: AdminExamsView },

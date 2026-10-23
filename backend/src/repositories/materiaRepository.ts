@@ -1,16 +1,20 @@
 import { prisma } from '../config/prisma.js';
 import type { Prisma } from '@prisma/client';
-import type { CorrelatividadSnapshot } from '../domain/academico/correlatividades.js';
+import { AppError } from '../utils/AppError.js';
+import { createsMixedCorrelationCycle, espacioNode, materiaNode, type AcademicRuleEdge } from '../utils/correlatividadGraph.js';
 
 type PrismaDb = typeof prisma | Prisma.TransactionClient;
 
-export type CorrelatividadConMateria = CorrelatividadSnapshot<{
-  id: number;
-  nombre: string;
-  carrera: { id: number; nombre: string };
-}> & {
+export type CorrelatividadConMateria = {
   id: number;
   materiaOrigenId: number;
+  materiaRequeridaId: number | null;
+  materiaRequerida: { id: number; nombre: string; carrera: { id: number; nombre: string } } | null;
+  espacioRequeridoId: number | null;
+  espacioRequerido: { id: number; nombre: string; carreraId: number | null } | null;
+  tipoDestino: 'MATERIA' | 'ESPACIO';
+  aplicaCursado: boolean;
+  aplicaRendir: boolean;
   tipoRequisito: 'OBLIGATORIA';
 };
 
@@ -44,6 +48,7 @@ export interface MateriaCreateData {
   cursoAnio?: number;
   espacioCurricularId?: number | null;
   correlativasIds?: number[];
+  correlatividades?: CorrelatividadInput[];
 }
 
 export interface MateriaUpdateData {
@@ -67,9 +72,60 @@ export interface MateriaUpdateData {
   espacioCurricularId?: number | null;
   activo?: boolean;
   correlativasIds?: number[];
+  correlatividades?: CorrelatividadInput[];
+}
+
+export interface CorrelatividadInput {
+  materiaRequeridaId?: number;
+  espacioRequeridoId?: number;
+  aplicaCursado: boolean;
+  aplicaRendir: boolean;
 }
 
 class MateriaRepository {
+  async getMixedCorrelationEdges(carreraId: number, db: Prisma.TransactionClient): Promise<AcademicRuleEdge[]> {
+    const [legacy, spaces] = await Promise.all([
+      db.correlatividad.findMany({
+        where: {
+          tipoRequisito: 'OBLIGATORIA',
+          suspendidaPorEspacio: false,
+          materiaOrigen: { carreraId },
+          OR: [{ materiaRequerida: { carreraId } }, { espacioRequerido: { carreraId } }]
+        },
+        select: { materiaOrigenId: true, materiaRequeridaId: true, espacioRequeridoId: true, aplicaCursado: true, aplicaRendir: true }
+      }),
+      db.espacioCurricular.findMany({
+        where: { carreraId },
+        select: {
+          id: true,
+          materias: { select: { id: true } },
+          correlatividadesOrigen: { select: { materiaRequeridaId: true, espacioRequeridoId: true, aplicaCursado: true, aplicaRendir: true } }
+        }
+      })
+    ]);
+    const edges: AcademicRuleEdge[] = legacy.flatMap(edge => edge.materiaRequeridaId !== null
+      ? [{ from: materiaNode(edge.materiaOrigenId), to: materiaNode(edge.materiaRequeridaId), kind: 'LEGACY' as const, aplicaCursado: edge.aplicaCursado, aplicaRendir: edge.aplicaRendir }]
+      : edge.espacioRequeridoId !== null
+        ? [{ from: materiaNode(edge.materiaOrigenId), to: espacioNode(edge.espacioRequeridoId), kind: 'LEGACY' as const, aplicaCursado: edge.aplicaCursado, aplicaRendir: edge.aplicaRendir }]
+        : []);
+    for (const space of spaces) {
+      for (const materia of space.materias) edges.push({
+        from: materiaNode(materia.id), to: espacioNode(space.id), kind: 'MEMBERSHIP', aplicaCursado: true, aplicaRendir: true
+      });
+      for (const rule of space.correlatividadesOrigen) {
+        if (rule.materiaRequeridaId !== null) edges.push({
+          from: espacioNode(space.id), to: materiaNode(rule.materiaRequeridaId), kind: 'SPACE',
+          aplicaCursado: rule.aplicaCursado, aplicaRendir: rule.aplicaRendir
+        });
+        if (rule.espacioRequeridoId !== null) edges.push({
+          from: espacioNode(space.id), to: espacioNode(rule.espacioRequeridoId), kind: 'SPACE',
+          aplicaCursado: rule.aplicaCursado, aplicaRendir: rule.aplicaRendir
+        });
+      }
+    }
+    return edges;
+  }
+
   async withTransaction<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     return await prisma.$transaction(operation);
   }
@@ -116,7 +172,8 @@ class MateriaRepository {
         correlatividadesOrigen: {
           where: { tipoRequisito: 'OBLIGATORIA' },
           include: {
-            materiaRequerida: true
+            materiaRequerida: { include: { carrera: { select: { id: true, nombre: true } } } },
+            espacioRequerido: { include: { materias: { select: { id: true } } } }
           }
         },
         correlatividadesRequeridas: {
@@ -298,7 +355,8 @@ class MateriaRepository {
           include: {
             carrera: true
           }
-        }
+        },
+        espacioRequerido: { select: { id: true, nombre: true, carreraId: true } }
       }
     });
 
@@ -307,6 +365,9 @@ class MateriaRepository {
       materiaOrigenId: correlatividad.materiaOrigenId,
       materiaRequeridaId: correlatividad.materiaRequeridaId,
       materiaRequerida: correlatividad.materiaRequerida,
+      espacioRequeridoId: correlatividad.espacioRequeridoId,
+      espacioRequerido: correlatividad.espacioRequerido,
+      tipoDestino: correlatividad.espacioRequeridoId === null ? 'MATERIA' as const : 'ESPACIO' as const,
       tipoRequisito: 'OBLIGATORIA',
       aplicaCursado: correlatividad.aplicaCursado,
       aplicaRendir: correlatividad.aplicaRendir
@@ -360,6 +421,18 @@ class MateriaRepository {
     materiaOrigenId: number;
     materiaRequeridaId: number;
   }, db: PrismaDb = prisma): Promise<any> {
+    if (db === prisma) return prisma.$transaction(tx => this.addCorrelatividad(data, tx));
+    const origin = await db.materia.findUnique({ where: { id: data.materiaOrigenId }, select: { carreraId: true } });
+    const required = await db.materia.findUnique({ where: { id: data.materiaRequeridaId }, select: { carreraId: true } });
+    if (!origin || !required || origin.carreraId !== required.carreraId) throw new AppError(400, 'Las correlatividades deben pertenecer a la misma carrera');
+    const carreraId = origin.carreraId;
+    await db.$queryRaw`SELECT id FROM carreras WHERE id = ${carreraId} FOR UPDATE`;
+    const edges = await this.getMixedCorrelationEdges(carreraId, db);
+    const addition = {
+      from: materiaNode(data.materiaOrigenId), to: materiaNode(data.materiaRequeridaId), kind: 'LEGACY' as const,
+      aplicaCursado: false, aplicaRendir: true
+    };
+    if (createsMixedCorrelationCycle(edges, [addition])) throw new AppError(400, 'La correlatividad generaría un ciclo');
     return await db.correlatividad.create({
       data: {
         materiaOrigenId: data.materiaOrigenId,
@@ -376,7 +449,24 @@ class MateriaRepository {
     ids: number[],
     db: Prisma.TransactionClient
   ): Promise<void> {
-    await db.correlatividad.deleteMany({ where: { materiaOrigenId } });
+    const origin = await db.materia.findUnique({ where: { id: materiaOrigenId }, select: { carreraId: true } });
+    if (!origin) throw new AppError(404, 'Materia origen no encontrada');
+    await db.$queryRaw`SELECT id FROM carreras WHERE id = ${origin.carreraId} FOR UPDATE`;
+    const required = ids.length === 0 ? [] : await db.materia.findMany({
+      where: { id: { in: ids }, carreraId: origin.carreraId }, select: { id: true }
+    });
+    if (required.length !== ids.length) throw new AppError(400, 'Las correlatividades deben pertenecer a la misma carrera');
+    const currentEdges = (await this.getMixedCorrelationEdges(origin.carreraId, db))
+      .filter(edge => !(edge.kind === 'LEGACY' && edge.from === materiaNode(materiaOrigenId) && edge.to.startsWith('M:')));
+    const additions = ids.map(id => ({
+      from: materiaNode(materiaOrigenId), to: materiaNode(id), kind: 'LEGACY' as const,
+      aplicaCursado: false, aplicaRendir: true
+    }));
+    if (createsMixedCorrelationCycle(currentEdges, additions)) throw new AppError(400, 'La correlatividad generaría un ciclo');
+
+    const existing = await db.correlatividad.findMany({ where: { materiaOrigenId, materiaRequeridaId: { in: ids } }, select: { materiaRequeridaId: true, aplicaCursado: true, aplicaRendir: true } });
+    const flags = new Map(existing.filter(rule => rule.materiaRequeridaId !== null).map(rule => [rule.materiaRequeridaId!, rule]));
+    await db.correlatividad.deleteMany({ where: { materiaOrigenId, materiaRequeridaId: { not: null } } });
     if (ids.length === 0) return;
 
     await db.correlatividad.createMany({
@@ -384,15 +474,38 @@ class MateriaRepository {
         materiaOrigenId,
         materiaRequeridaId,
         tipoRequisito: 'OBLIGATORIA' as const,
-        aplicaCursado: false,
-        aplicaRendir: true
+        aplicaCursado: flags.get(materiaRequeridaId)?.aplicaCursado ?? false,
+        aplicaRendir: flags.get(materiaRequeridaId)?.aplicaRendir ?? true
       }))
     });
   }
 
+  async replaceTypedCorrelatividades(materiaOrigenId: number, rules: CorrelatividadInput[], db: Prisma.TransactionClient): Promise<void> {
+    const existing = await db.correlatividad.findMany({ where: { materiaOrigenId }, select: { materiaRequeridaId: true, espacioRequeridoId: true, aplicaCursado: true, aplicaRendir: true } });
+    const previous = new Map(existing.map(rule => [`${rule.materiaRequeridaId === null ? 'E' : 'M'}:${rule.materiaRequeridaId ?? rule.espacioRequeridoId}`, rule]));
+    await db.correlatividad.deleteMany({ where: { materiaOrigenId } });
+    if (rules.length === 0) return;
+    await db.correlatividad.createMany({ data: rules.map(rule => {
+      const matterTarget = rule.materiaRequeridaId ?? null;
+      const spaceTarget = rule.espacioRequeridoId ?? null;
+      const prior = previous.get(`${matterTarget === null ? 'E' : 'M'}:${matterTarget ?? spaceTarget}`);
+      return {
+        materiaOrigenId, materiaRequeridaId: matterTarget, espacioRequeridoId: spaceTarget,
+        tipoRequisito: 'OBLIGATORIA' as const,
+        aplicaCursado: prior?.aplicaCursado ?? rule.aplicaCursado,
+        aplicaRendir: prior?.aplicaRendir ?? rule.aplicaRendir,
+        suspendidaPorEspacio: false
+      };
+    }) });
+  }
+
   async removeCorrelatividad(id: number): Promise<any> {
-    return await prisma.correlatividad.delete({
-      where: { id }
+    return await prisma.$transaction(async tx => {
+      const rule = await tx.correlatividad.findUnique({ where: { id }, select: { suspendidaPorEspacio: true, materiaOrigen: { select: { carreraId: true, espacioCurricular: { select: { activo: true } } } } } });
+      if (!rule) throw new AppError(404, 'Correlatividad no encontrada');
+      await tx.$queryRaw`SELECT id FROM carreras WHERE id = ${rule.materiaOrigen.carreraId} FOR UPDATE`;
+      if (rule.suspendidaPorEspacio || rule.materiaOrigen.espacioCurricular?.activo) throw new AppError(409, 'Las correlatividades de una materia agrupada se revisan desde Espacios curriculares');
+      return tx.correlatividad.delete({ where: { id } });
     });
   }
 
@@ -415,7 +528,8 @@ class MateriaRepository {
         correlatividadesOrigen: {
           where: { tipoRequisito: 'OBLIGATORIA' },
           include: {
-            materiaRequerida: true
+            materiaRequerida: { include: { carrera: { select: { id: true, nombre: true } } } },
+            espacioRequerido: { include: { materias: { select: { id: true } } } }
           }
         }
       },
@@ -475,14 +589,16 @@ class MateriaRepository {
     materiaOrigenId: number;
     materiaRequeridaId: number;
   }>> {
-    return await db.correlatividad.findMany({
+    const rows = await db.correlatividad.findMany({
       where: {
         tipoRequisito: 'OBLIGATORIA',
+        materiaRequeridaId: { not: null },
         materiaOrigen: { carreraId },
         materiaRequerida: { carreraId }
       },
       select: { materiaOrigenId: true, materiaRequeridaId: true }
     });
+    return rows.flatMap(edge => edge.materiaRequeridaId === null ? [] : [{ materiaOrigenId: edge.materiaOrigenId, materiaRequeridaId: edge.materiaRequeridaId }]);
   }
 
   async getIncidentCorrelativityEdges(
@@ -492,8 +608,9 @@ class MateriaRepository {
     materiaOrigenId: number;
     materiaRequeridaId: number;
   }>> {
-    return await db.correlatividad.findMany({
+    const rows = await db.correlatividad.findMany({
       where: {
+        materiaRequeridaId: { not: null },
         OR: [
           { materiaOrigenId: materiaId },
           { materiaRequeridaId: materiaId }
@@ -501,6 +618,7 @@ class MateriaRepository {
       },
       select: { materiaOrigenId: true, materiaRequeridaId: true }
     });
+    return rows.flatMap(edge => edge.materiaRequeridaId === null ? [] : [{ materiaOrigenId: edge.materiaOrigenId, materiaRequeridaId: edge.materiaRequeridaId }]);
   }
 
   async getHorariosByMateriaAndCiclo(materiaId: number, cicloLectivo: number): Promise<any> {

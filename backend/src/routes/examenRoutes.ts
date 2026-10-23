@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import examenController from '../controllers/examenController.js';
+import examenHistoricoController from '../controllers/examenHistoricoController.js';
 import { authMiddleware, roleCheck } from '../middleware/auth.js';
 import { validationMiddleware } from '../middleware/validation.js';
 import {
@@ -14,11 +15,36 @@ import {
   disponiblesExamenSchema,
   expectedVersionQuerySchema
 } from '../validations/examenValidation.js';
+import {
+  createHistoricalExamSchema,
+  historicalExamIdSchema,
+  listHistoricalExamsSchema,
+  updateHistoricalExamSchema
+} from '../validations/examenHistoricoValidation.js';
 import { ROLES } from '../constants/roles.js';
 
 const router = Router();
 
 router.use(authMiddleware);
+
+router.get('/historicos',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(listHistoricalExamsSchema, 'query'),
+  examenHistoricoController.list
+);
+
+router.post('/historicos',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(createHistoricalExamSchema),
+  examenHistoricoController.create
+);
+
+router.patch('/historicos/:id',
+  roleCheck(ROLES.ADMINISTRATIVO),
+  validationMiddleware(historicalExamIdSchema, 'params'),
+  validationMiddleware(updateHistoricalExamSchema),
+  examenHistoricoController.update
+);
 
 // ===== EXÁMENES =====
 router.post('/',

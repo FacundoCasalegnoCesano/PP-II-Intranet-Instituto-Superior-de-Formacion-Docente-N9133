@@ -41,13 +41,20 @@ export const crearPeriodoSchema = Joi.object({
   }),
   materiasIds: Joi.when('tipo', {
     is: 'MATERIA',
-    then: Joi.array().items(Joi.number().integer().min(1)).unique().required().min(1).messages({
-      'any.required': 'Debe seleccionar al menos una materia para el período',
-      'array.min': 'Debe seleccionar al menos una materia para el período',
+    then: Joi.array().items(Joi.number().integer().min(1)).unique().optional().messages({
       'array.unique': 'Hay materias duplicadas en la selección'
     }),
     otherwise: Joi.forbidden().messages({
       'any.forbidden': 'materiasIds solo aplica a períodos tipo MATERIA'
+    })
+  }),
+  cursadasEspaciosIds: Joi.when('tipo', {
+    is: 'MATERIA',
+    then: Joi.array().items(Joi.number().integer().min(1)).unique().optional().messages({
+      'array.unique': 'Hay cursadas de espacios duplicadas en la selección'
+    }),
+    otherwise: Joi.forbidden().messages({
+      'any.forbidden': 'cursadasEspaciosIds solo aplica a períodos tipo MATERIA'
     })
   }),
   mesasIds: Joi.when('tipo', {
@@ -62,7 +69,12 @@ export const crearPeriodoSchema = Joi.object({
     })
   }),
   descripcion: Joi.string().max(255).allow('', null)
-});
+}).custom((value, helpers) => {
+  if (value.tipo === 'MATERIA' && !value.materiasIds?.length && !value.cursadasEspaciosIds?.length) {
+    return helpers.error('periodo.materiaSelectionRequired');
+  }
+  return value;
+}).messages({ 'periodo.materiaSelectionRequired': 'Debe seleccionar al menos una materia o cursada de espacio para el período' });
 
 export const actualizarPeriodoSchema = Joi.object({
   tipo: Joi.string().valid('MATERIA', 'EXAMEN'),
@@ -71,8 +83,17 @@ export const actualizarPeriodoSchema = Joi.object({
   // fin > inicio se valida en el service (permite updates parciales)
   fechaFin: Joi.date(),
   // Si se envían, reemplazan la selección anterior del período
-  materiasIds: Joi.array().items(Joi.number().integer().min(1)).unique().min(1),
+  materiasIds: Joi.array().items(Joi.number().integer().min(1)).unique(),
+  cursadasEspaciosIds: Joi.array().items(Joi.number().integer().min(1)).unique(),
   mesasIds: Joi.array().items(Joi.number().integer().min(1)).unique().min(1),
   descripcion: Joi.string().max(255).allow('', null),
   activo: Joi.boolean()
-});
+}).custom((value, helpers) => {
+  if (value.tipo === 'EXAMEN' && (value.materiasIds?.length || value.cursadasEspaciosIds?.length)) {
+    return helpers.error('periodo.incompatibleSelection');
+  }
+  if (value.tipo === 'MATERIA' && value.mesasIds?.length) {
+    return helpers.error('periodo.incompatibleSelection');
+  }
+  return value;
+}).messages({ 'periodo.incompatibleSelection': 'La selección enviada no corresponde al tipo de período' });

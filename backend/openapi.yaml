@@ -25,6 +25,7 @@ tags:
   - name: Administrativos
   - name: Carreras
   - name: Materias
+  - name: Espacios Curriculares
   - name: Cursadas
   - name: Inscripciones a Carreras
   - name: Inscripciones a Materias
@@ -37,6 +38,7 @@ tags:
   - name: Calificaciones
   - name: Estado Academico
   - name: Homologaciones
+  - name: Promociones Históricas
   - name: Health
 
 paths:
@@ -744,6 +746,19 @@ paths:
         '201': { $ref: '#/components/responses/Created' }
 
   /inscripciones-carreras/{id}:
+    patch:
+      tags: [Inscripciones a Carreras]
+      summary: Corregir año de cohorte de una inscripción (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InscripcionCarreraCohorteUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
     delete:
       tags: [Inscripciones a Carreras]
       summary: Dar de baja inscripción a carrera (solo admin)
@@ -921,6 +936,310 @@ paths:
             schema: { $ref: '#/components/schemas/ExamenCreateRequest' }
       responses:
         '201': { $ref: '#/components/responses/Created' }
+
+  /examenes/historicos:
+    get:
+      tags: [Exámenes]
+      summary: Consultar resultados históricos (solo admin)
+      description: alumnoId es Usuario.idUsuario. La fecha es civil y se devuelve como YYYY-MM-DD; no contiene hora.
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: alumnoId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: carreraId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: materiaId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 1, maximum: 9999 } }
+        - { name: cursadaId, in: query, description: Filtra por la cursada exacta vinculada; legados sin vínculo no coinciden, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Resultados históricos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExamenHistoricoListResponse' }
+    post:
+      tags: [Exámenes]
+      summary: Registrar resultado histórico (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExamenHistoricoCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /examenes/historicos/{id}:
+    patch:
+      tags: [Exámenes]
+      summary: Corregir resultado histórico con auditoría y control de versión
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExamenHistoricoUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '409': { description: Conflicto de duplicado o versión desactualizada }
+
+  /promociones-historicas:
+    get:
+      tags: [Promociones Históricas]
+      summary: Listar promociones directas históricas por alumno, carrera, materia, ciclo u oferta
+      description: alumnoId es Usuario.idUsuario. Una corrección permanece vigente y conserva su auditoría.
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: alumnoId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: carreraId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: materiaId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 1, maximum: 9999 } }
+        - { name: cursadaId, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Promociones Históricas]
+      summary: Registrar una promoción directa en una cursada histórica existente
+      description: Crea o reutiliza la matrícula de materia o espacio en la misma transacción. No crea cursadas ni inventa asistencia o notas parciales.
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromocionHistoricaCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '409': { description: Cursada incompatible, ciclo actual/futuro o promoción ya existente }
+
+  /promociones-historicas/{id}:
+    patch:
+      tags: [Promociones Históricas]
+      summary: Corregir la nota o fecha de una promoción con versión y auditoría
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromocionHistoricaUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '409': { description: Versión desactualizada }
+
+  /espacios-curriculares:
+    get:
+      tags: [Espacios Curriculares]
+      summary: Listar espacios curriculares (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Espacios Curriculares]
+      summary: Crear espacio curricular inactivo con sus materias
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EspacioCurricularCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /espacios-curriculares/{id}:
+    get:
+      tags: [Espacios Curriculares]
+      summary: Consultar espacio curricular
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    patch:
+      tags: [Espacios Curriculares]
+      summary: Editar composición de espacio curricular
+      description: La composición queda bloqueada después de completar todas sus materias.
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EspacioCurricularUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '409': { description: Composición ya bloqueada }
+
+  /espacios-curriculares/{id}/activate:
+    post:
+      tags: [Espacios Curriculares]
+      summary: Activar un espacio con al menos dos materias activas
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /espacios-curriculares/{id}/correlatividades:
+    get:
+      tags: [Espacios Curriculares]
+      summary: Listar correlatividades del espacio
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Espacios Curriculares]
+      summary: Agregar correlatividad a materia o espacio
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EspacioCorrelatividadRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+
+  /espacios-curriculares/{id}/correlatividades/{correlatividadId}:
+    delete:
+      tags: [Espacios Curriculares]
+      summary: Eliminar correlatividad del espacio
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: correlatividadId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /cursadas-espacios:
+    get:
+      tags: [Cursadas de Espacios]
+      summary: Listar ofertas de cursada por espacio (solo admin)
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: carreraId, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: anioLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+        - { name: activo, in: query, schema: { type: boolean } }
+        - { name: search, in: query, schema: { type: string, maxLength: 255 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Cursadas de Espacios]
+      summary: Crear la oferta completa de un espacio y sus cursadas componente
+      x-roles: [ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CursadaEspacioCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '409': { description: La composición cambió o una cursada existente es incompatible }
+
+  /cursadas-espacios/{id}:
+    get:
+      tags: [Cursadas de Espacios]
+      summary: Consultar oferta y cursadas componente
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    put:
+      tags: [Cursadas de Espacios]
+      summary: Editar docentes o activar la oferta sin cambiar su identidad
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CursadaEspacioUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '409': { description: No se puede cambiar la identidad de una oferta usada o desactualizada }
+    delete:
+      tags: [Cursadas de Espacios]
+      summary: Desactivar una oferta sin matrículas ni actividad académica
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '409': { description: La oferta tiene matrículas o datos académicos }
+
+  /cursadas-espacios/{id}/inscripciones-historicas:
+    post:
+      tags: [Cursadas de Espacios]
+      summary: Crear o vincular la matrícula histórica completa de un espacio
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InscripcionHistoricaCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '409': { description: Existe una inscripción de componente incompatible; no se modificó la matrícula }
+
+  /inscripciones-espacios/disponibles:
+    get:
+      tags: [Inscripciones a Espacios]
+      summary: Consultar ofertas habilitadas y sus correlatividades
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: cicloLectivo, in: query, schema: { type: integer, minimum: 2000, maximum: 2100 } }
+        - { name: alumnoId, in: query, description: Usuario.idUsuario; requerido para administrativos, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+  /inscripciones-espacios/verificar/{cursadaEspacioId}:
+    get:
+      tags: [Inscripciones a Espacios]
+      summary: Verificar requisitos de una oferta completa
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: cursadaEspacioId, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: alumnoId, in: query, description: Usuario.idUsuario; requerido para administrativos, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+  /inscripciones-espacios:
+    get:
+      tags: [Inscripciones a Espacios]
+      summary: Listar matrículas del alumno autenticado
+      x-roles: [ALUMNO]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+    post:
+      tags: [Inscripciones a Espacios]
+      summary: Inscribir al alumno al espacio completo
+      description: Crea o enlaza todas las inscripciones componente en una transacción; el alumno se toma del token y solo administración puede enviar alumnoId.
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InscripcionEspacioCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '409': { description: Correlatividad, carrera, período o historial componente incompatible }
+  /inscripciones-espacios/{id}:
+    delete:
+      tags: [Inscripciones a Espacios]
+      summary: Dar de baja la matrícula completa
+      x-roles: [ALUMNO, ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
 
   /examenes/disponibles:
     get:
@@ -1270,6 +1589,23 @@ paths:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
         '200': { $ref: '#/components/responses/OK' }
+
+  /cursadas/{id}/inscripciones-historicas:
+    post:
+      tags: [Cursadas]
+      summary: Crear o vincular la inscripción histórica de un alumno a esta cursada
+      description: alumnoId es Usuario.idUsuario. Para una materia componente, enlaza todo el padre e hijos del espacio en una transacción.
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InscripcionHistoricaCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '409': { description: Alumno, carrera o inscripción de componente incompatible }
 
   /cursadas/{cursadaId}/clases:
     get:
@@ -2134,11 +2470,11 @@ components:
     AlumnoProfileInput:
       type: object
       additionalProperties: false
-      required: [domicilio, anioEgreso]
+      required: [domicilio]
       properties:
         domicilio: { type: string, maxLength: 255 }
-        anioEgreso: { type: integer, minimum: 1900, maximum: 2100 }
-        institucionProcedencia: { type: string, nullable: true, maxLength: 255 }
+        anioEgreso: { type: integer, minimum: 1900, maximum: 2100, nullable: true, description: Dato histórico opcional; no representa cohorte }
+        institucionProcedencia: { type: string, nullable: true, maxLength: 255, description: Dato histórico opcional }
     AlumnoProfileUpdate:
       type: object
       additionalProperties: false
@@ -2191,7 +2527,7 @@ components:
         contactoEmergencia: { type: string, nullable: true }
         foto: { type: string, nullable: true }
         domicilio: { type: string, maxLength: 255, description: 'Obligatorio solo si rol = ALUMNO' }
-        anioEgreso: { type: integer, minimum: 1990, maximum: 2100, description: 'Año de egreso del secundario. Obligatorio solo si rol = ALUMNO; si se omite usa el año en curso' }
+        anioEgreso: { type: integer, minimum: 1990, maximum: 2100, nullable: true, description: 'Dato legado opcional; no se completa con un año supuesto' }
         institucionProcedencia: { type: string, nullable: true, maxLength: 255, description: 'Solo aplica a alumnos' }
       example:
         apellidoNombre: Ana García
@@ -2352,7 +2688,7 @@ components:
         activo: { type: boolean }
     EnrollmentPeriod:
       type: object
-      required: [id, tipo, cicloLectivo, fechaInicio, fechaFin, materias, mesas, activo]
+      required: [id, tipo, cicloLectivo, fechaInicio, fechaFin, materias, cursadasEspacios, cantidadEspacios, mesas, activo]
       properties:
         id: { type: integer }
         tipo: { $ref: '#/components/schemas/TipoPeriodo' }
@@ -2367,6 +2703,25 @@ components:
             properties:
               materiaId: { type: integer }
               materia: { $ref: '#/components/schemas/Subject' }
+        cursadasEspacios:
+          type: array
+          items:
+            type: object
+            required: [id, cursadaEspacioId, cursadaEspacio]
+            properties:
+              id: { type: integer }
+              cursadaEspacioId: { type: integer }
+              cursadaEspacio:
+                type: object
+                required: [id, espacioCurricularId, anioLectivo, periodo, activo, espacioCurricular]
+                properties:
+                  id: { type: integer }
+                  espacioCurricularId: { type: integer }
+                  anioLectivo: { type: integer }
+                  periodo: { $ref: '#/components/schemas/PeriodoMateria' }
+                  activo: { type: boolean }
+                  espacioCurricular: { $ref: '#/components/schemas/EspacioCurricularResumen' }
+        cantidadEspacios: { type: integer, minimum: 0 }
         mesas:
           type: array
           description: Mesas de períodos EXAMEN heredados, informativas en la consola de esta etapa.
@@ -2428,7 +2783,11 @@ components:
           type: array
           uniqueItems: true
           items: { type: integer, minimum: 1 }
-          description: IDs de materias correlativas obligatorias; se reemplaza de forma atómica.
+          description: Compatibilidad legacy; destinos materia. Al editar preserva destinos espacio.
+        correlatividades:
+          type: array
+          items: { $ref: '#/components/schemas/CorrelatividadMateriaInput' }
+          description: Reemplaza el conjunto completo de destinos materia y espacio de forma atómica. No combinar con correlativasIds.
     MateriaUpdateRequest:
       type: object
       properties:
@@ -2455,26 +2814,391 @@ components:
           type: array
           uniqueItems: true
           items: { type: integer, minimum: 1 }
-          description: Omitido conserva; [] elimina; con IDs reemplaza el conjunto completo.
+          description: Compatibilidad legacy; omitido conserva, [] elimina solo destinos materia y mantiene destinos espacio.
+        correlatividades:
+          type: array
+          items: { $ref: '#/components/schemas/CorrelatividadMateriaInput' }
+          description: Reemplaza el conjunto completo de forma atómica. No combinar con correlativasIds.
     CorrelatividadRequest:
       type: object
-      required: [materiaRequeridaId]
       additionalProperties: false
       properties:
         materiaRequeridaId: { type: integer, minimum: 1 }
+        espacioRequeridoId: { type: integer, minimum: 1 }
+        aplicaCursado: { type: boolean, default: false }
+        aplicaRendir: { type: boolean, default: true }
+      description: Exactamente un destino. Las flags omitidas conservan el default legacy F/T; no se admite false en ambas.
+      oneOf:
+        - required: [materiaRequeridaId]
+        - required: [espacioRequeridoId]
+    CorrelatividadMateriaInput:
+      type: object
+      additionalProperties: false
+      properties:
+        materiaRequeridaId: { type: integer, minimum: 1 }
+        espacioRequeridoId: { type: integer, minimum: 1 }
+        aplicaCursado: { type: boolean, default: false }
+        aplicaRendir: { type: boolean, default: true }
+      oneOf:
+        - required: [materiaRequeridaId]
+        - required: [espacioRequeridoId]
+      description: Exactamente un destino y al menos una flag true; las flags nuevas se inician con la semántica legacy F/T.
+    CorrelatividadMateria:
+      type: object
+      required: [id, materiaOrigenId, tipoDestino, materiaRequeridaId, materiaRequerida, espacioRequeridoId, espacioRequerido, aplicaCursado, aplicaRendir]
+      properties:
+        id: { type: integer }
+        materiaOrigenId: { type: integer }
+        tipoDestino: { type: string, enum: [MATERIA, ESPACIO] }
+        materiaRequeridaId: { type: integer, nullable: true }
+        materiaRequerida: { allOf: [{ $ref: '#/components/schemas/MateriaResumen' }], nullable: true }
+        espacioRequeridoId: { type: integer, nullable: true }
+        espacioRequerido: { type: object, nullable: true, properties: { id: { type: integer }, nombre: { type: string }, carreraId: { type: integer, nullable: true } } }
+        aplicaCursado: { type: boolean }
+        aplicaRendir: { type: boolean }
+    MateriaResumen:
+      type: object
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        carrera: { type: object, properties: { id: { type: integer }, nombre: { type: string } } }
 
     # -------- Inscripciones --------
+    ExamenHistorico:
+      type: object
+      required: [id, alumnoId, nombreAlumno, carreraId, nombreCarrera, materiaId, nombreMateria, cicloLectivo, fechaExamen, notaFinal, libro, folio, version]
+      properties:
+        id: { type: integer }
+        alumnoId: { type: integer, description: Usuario.idUsuario }
+        nombreAlumno: { type: string }
+        carreraId: { type: integer }
+        nombreCarrera: { type: string }
+        materiaId: { type: integer }
+        nombreMateria: { type: string }
+        cicloLectivo: { type: integer }
+        cursadaId: { type: integer, nullable: true, description: Cursada exacta; null en resultados legados sin vínculo }
+        inscripcionMateriaId: { type: integer, nullable: true }
+        fechaExamen: { type: string, format: date, description: Fecha civil sin hora }
+        notaFinal: { type: integer, minimum: 0, maximum: 10 }
+        libro: { type: string, nullable: true }
+        folio: { type: string, nullable: true }
+        version: { type: integer, minimum: 0 }
+    ExamenHistoricoListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { type: array, items: { $ref: '#/components/schemas/ExamenHistorico' } }
+    ExamenHistoricoCreateRequest:
+      type: object
+      required: [alumnoId, cursadaId, fechaExamen, notaFinal]
+      additionalProperties: false
+      properties:
+        alumnoId: { type: integer, minimum: 1, description: Usuario.idUsuario }
+        cursadaId: { type: integer, minimum: 1, description: Cursada existente de un ciclo anterior }
+        materiaId: { type: integer, minimum: 1, description: Compatibilidad; si se envía debe coincidir con la cursada }
+        cicloLectivo: { type: integer, minimum: 1, maximum: 9999, description: Compatibilidad; si se envía debe coincidir con el año de la cursada }
+        fechaExamen: { type: string, format: date }
+        notaFinal: { type: integer, minimum: 0, maximum: 10 }
+        libro: { type: string, maxLength: 255, nullable: true }
+        folio: { type: string, maxLength: 255, nullable: true }
+    ExamenHistoricoUpdateRequest:
+      type: object
+      required: [notaFinal, libro, folio, motivo, expectedVersion]
+      additionalProperties: false
+      properties:
+        notaFinal: { type: integer, minimum: 0, maximum: 10 }
+        libro: { type: string, maxLength: 255, nullable: true }
+        folio: { type: string, maxLength: 255, nullable: true }
+        motivo: { type: string, minLength: 1, maxLength: 1000 }
+        expectedVersion: { type: integer, minimum: 0 }
+    InscripcionHistoricaCreateRequest:
+      type: object
+      required: [alumnoId]
+      additionalProperties: false
+      properties:
+        alumnoId: { type: integer, minimum: 1, description: Usuario.idUsuario }
+    PromocionHistorica:
+      type: object
+      required: [id, alumnoId, alumno, inscripcionMateriaId, cursadaId, materia, carrera, cicloLectivo, notaFinal, fechaAcreditacion, via, version, estado, auditoria]
+      properties:
+        id: { type: integer }
+        alumnoId: { type: integer, description: Usuario.idUsuario }
+        alumno:
+          type: object
+          required: [idUsuario, apellidoNombre]
+          properties:
+            idUsuario: { type: integer }
+            apellidoNombre: { type: string }
+        inscripcionMateriaId: { type: integer }
+        cursadaId: { type: integer }
+        materia:
+          type: object
+          properties:
+            id: { type: integer }
+            nombre: { type: string }
+        carrera:
+          type: object
+          properties:
+            id: { type: integer }
+            nombre: { type: string }
+        cicloLectivo: { type: integer }
+        notaFinal: { type: integer, minimum: 0, maximum: 10 }
+        fechaAcreditacion: { type: string, format: date }
+        via: { type: string, enum: [PROMOCION_DIRECTA] }
+        version: { type: integer, minimum: 1 }
+        estado: { type: string, enum: [VIGENTE, CORREGIDA] }
+        auditoria:
+          type: array
+          items:
+            type: object
+            required: [version, notaAnterior, notaNueva, fechaAnterior, fechaNueva, motivo, actor, createdAt]
+            properties:
+              version: { type: integer, minimum: 1 }
+              notaAnterior: { type: integer, nullable: true }
+              notaNueva: { type: integer }
+              fechaAnterior: { type: string, format: date, nullable: true }
+              fechaNueva: { type: string, format: date }
+              motivo: { type: string }
+              actor: { type: object, properties: { idUsuario: { type: integer }, apellidoNombre: { type: string } } }
+              createdAt: { type: string, format: date-time }
+    PromocionHistoricaCreateRequest:
+      type: object
+      required: [alumnoId, cursadaId, notaFinal, fechaAcreditacion]
+      additionalProperties: false
+      properties:
+        alumnoId: { type: integer, minimum: 1, description: Usuario.idUsuario }
+        cursadaId: { type: integer, minimum: 1, description: Debe existir y pertenecer a un ciclo anterior }
+        notaFinal: { type: integer, minimum: 0, maximum: 10, description: Debe ser aprobatoria según nota mínima de la materia }
+        fechaAcreditacion: { type: string, format: date }
+        motivo: { type: string, maxLength: 1000, description: Opcional en el alta; se registra un motivo estándar si se omite }
+    PromocionHistoricaUpdateRequest:
+      type: object
+      required: [notaFinal, motivo, expectedVersion]
+      additionalProperties: false
+      properties:
+        notaFinal: { type: integer, minimum: 0, maximum: 10 }
+        fechaAcreditacion: { type: string, format: date, description: Si se omite se conserva la fecha vigente }
+        motivo: { type: string, minLength: 1, maxLength: 1000 }
+        expectedVersion: { type: integer, minimum: 1 }
+    EspacioCurricular:
+      type: object
+      required: [id, nombre, descripcion, carreraId, activo, composicionBloqueadaAt, carrera, materias]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        descripcion: { type: string, nullable: true }
+        carreraId: { type: integer, nullable: true }
+        activo: { type: boolean }
+        composicionBloqueadaAt: { type: string, format: date-time, nullable: true }
+        carrera: { type: object, nullable: true, required: [id, nombre], properties: { id: { type: integer }, nombre: { type: string } } }
+        materias:
+          type: array
+          items: { type: object, required: [id, nombre], properties: { id: { type: integer }, nombre: { type: string } } }
+    EspacioCurricularCreateRequest:
+      type: object
+      required: [nombre, carreraId, componentesIds]
+      additionalProperties: false
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 255 }
+        carreraId: { type: integer, minimum: 1 }
+        descripcion: { type: string, maxLength: 5000, nullable: true }
+        componentesIds: { type: array, minItems: 0, uniqueItems: true, items: { type: integer, minimum: 1 }, description: La composición puede quedar en borrador con menos de dos materias; activar requiere dos o más. }
+        correlatividades:
+          type: array
+          items: { $ref: '#/components/schemas/EspacioCorrelatividadRequest' }
+          description: Reglas iniciales; cada una referencia una materia o un espacio.
+        revisarCorrelatividadesComponentes: { type: boolean, description: Confirmación explícita requerida si se suspenden correlatividades propias activas de los componentes. }
+    EspacioCurricularUpdateRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 255 }
+        descripcion: { type: string, maxLength: 5000, nullable: true }
+        componentesIds: { type: array, minItems: 0, uniqueItems: true, items: { type: integer, minimum: 1 }, description: La composición puede quedar en borrador; activar requiere dos o más materias. }
+        revisarCorrelatividadesComponentes: { type: boolean, description: Confirmación explícita requerida al suspender reglas propias activas por agrupación. }
+    EspacioCorrelatividadRequest:
+      type: object
+      required: [aplicaCursado, aplicaRendir]
+      additionalProperties: false
+      properties:
+        materiaRequeridaId: { type: integer, minimum: 1 }
+        espacioRequeridoId: { type: integer, minimum: 1 }
+        aplicaCursado: { type: boolean }
+        aplicaRendir: { type: boolean }
+      oneOf:
+        - required: [materiaRequeridaId]
+        - required: [espacioRequeridoId]
+      anyOf:
+        - properties: { aplicaCursado: { enum: [true] } }
+        - properties: { aplicaRendir: { enum: [true] } }
+    CursadaEspacioComponenteRequest:
+      type: object
+      required: [materiaId]
+      additionalProperties: false
+      properties:
+        materiaId: { type: integer, minimum: 1 }
+        docenteId: { type: integer, minimum: 1, nullable: true }
+        periodo: { $ref: '#/components/schemas/PeriodoMateria', description: Si se omite, usa el período configurado para la materia. }
+    CursadaEspacioCreateRequest:
+      type: object
+      required: [espacioCurricularId, anioLectivo, componentes]
+      additionalProperties: false
+      properties:
+        espacioCurricularId: { type: integer, minimum: 1 }
+        anioLectivo: { type: integer, minimum: 2000, maximum: 2100 }
+        periodo: { $ref: '#/components/schemas/PeriodoMateria', default: ANUAL }
+        componentes:
+          type: array
+          minItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/CursadaEspacioComponenteRequest' }
+          description: Debe incluir exactamente todas las materias activas que componen el espacio. Cada componente puede conservar un período propio.
+    CursadaEspacioUpdateRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        activo: { type: boolean }
+        componentes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/CursadaEspacioComponenteRequest' }
+          description: Debe conservar exactamente las materias y períodos de la oferta; permite actualizar docentes.
+    InscripcionEspacioCreateRequest:
+      type: object
+      required: [cursadaEspacioId]
+      additionalProperties: false
+      properties:
+        cursadaEspacioId: { type: integer, minimum: 1 }
+        alumnoId: { type: integer, minimum: 1, description: Usuario.idUsuario; requerido sólo para administrativos. }
+        modalidadElegida: { $ref: '#/components/schemas/Modalidad', description: Si se informa, debe ser válida para todos los componentes; si se omite, se conservan existentes o se usa el valor configurado de cada materia. }
+    InscripcionEspacioMotivo:
+      type: object
+      required: [tipo, codigo, mensaje]
+      properties:
+        tipo: { type: string, enum: [CORRELATIVIDAD, PERIODO, YA_INSCRIPTO, CICLO, COMPOSICION, CARRERA, HISTORIAL] }
+        codigo: { type: string, enum: [CORRELATIVIDAD_PENDIENTE, PERIODO_CERRADO, YA_INSCRIPTO, ESPACIO_APROBADO, OFERTA_DESACTUALIZADA, CARRERA_NO_INSCRIPTA, REGISTRO_COMPONENTE_INCOMPATIBLE] }
+        mensaje: { type: string }
+        referenciaId: { type: integer }
+    CursadaEspacio:
+      type: object
+      required: [id, cursadaEspacioId, espacioCurricularId, espacioCurricular, anioLectivo, periodo, activo, estadoCursada, componentes]
+      properties:
+        id: { type: integer }
+        cursadaEspacioId: { type: integer }
+        espacioCurricularId: { type: integer }
+        espacioCurricular: { $ref: '#/components/schemas/EspacioCurricularResumen' }
+        anioLectivo: { type: integer }
+        periodo: { $ref: '#/components/schemas/PeriodoMateria' }
+        activo: { type: boolean }
+        estadoCursada: { type: string, enum: [ACTIVA, INACTIVA, FINALIZADA] }
+        componentes:
+          type: array
+          items:
+            type: object
+            required: [cursadaId, materiaId, materia, docenteId, anioLectivo, periodo]
+            properties:
+              cursadaId: { type: integer }
+              materiaId: { type: integer }
+              materia: { $ref: '#/components/schemas/Subject' }
+              docenteId: { type: integer, nullable: true }
+              docente: { allOf: [{ $ref: '#/components/schemas/PublicUser' }], nullable: true }
+              anioLectivo: { type: integer }
+              periodo: { $ref: '#/components/schemas/PeriodoMateria' }
+    OfertaInscripcionEspacio:
+      type: object
+      required: [cursadaEspacioId, espacioCurricular, anioLectivo, periodo, componentes, habilitada, yaInscripto, aprobado, motivos, pendientes]
+      properties:
+        cursadaEspacioId: { type: integer }
+        espacioCurricular: { $ref: '#/components/schemas/EspacioCurricularResumen' }
+        anioLectivo: { type: integer }
+        periodo: { $ref: '#/components/schemas/PeriodoMateria' }
+        componentes:
+          type: array
+          items:
+            type: object
+            required: [cursadaId, materia, docente, estadoAcademico, yaCursada]
+            properties:
+              cursadaId: { type: integer }
+              materia: { $ref: '#/components/schemas/Subject' }
+              docente: { allOf: [{ $ref: '#/components/schemas/PublicUser' }], nullable: true }
+              estadoAcademico: { type: string }
+              yaCursada: { type: boolean }
+        habilitada: { type: boolean }
+        yaInscripto: { type: boolean }
+        aprobado: { type: boolean }
+        motivos:
+          type: array
+          items: { $ref: '#/components/schemas/InscripcionEspacioMotivo' }
+        pendientes:
+          type: array
+          items: { $ref: '#/components/schemas/RequisitoAcademicoPendiente' }
+    RequisitoAcademicoPendiente:
+      type: object
+      required: [tipo, requisitoId, nombre]
+      properties:
+        tipo: { type: string, enum: [MATERIA, ESPACIO] }
+        requisitoId: { type: integer }
+        nombre: { type: string }
+    InscripcionEspacio:
+      type: object
+      required: [id, cursadaEspacioId, fechaInscripcion, fechaBaja, estado, espacioCurricular, anioLectivo, periodo, componentes]
+      properties:
+        id: { type: integer }
+        cursadaEspacioId: { type: integer }
+        fechaInscripcion: { type: string, format: date-time }
+        fechaBaja: { type: string, format: date-time, nullable: true }
+        estado: { type: string, enum: [ACTIVA, BAJA, FINALIZADA, RECURSANDO] }
+        espacioCurricular: { $ref: '#/components/schemas/EspacioCurricularResumen' }
+        anioLectivo: { type: integer }
+        periodo: { $ref: '#/components/schemas/PeriodoMateria' }
+        componentes:
+          type: array
+          items:
+            type: object
+            required: [idInscripcionMateria, cursadaId, materia, docente, modalidadElegida, estadoAcademico]
+            properties:
+              idInscripcionMateria: { type: integer }
+              cursadaId: { type: integer }
+              materia: { $ref: '#/components/schemas/Subject' }
+              docente: { allOf: [{ $ref: '#/components/schemas/PublicUser' }], nullable: true }
+              modalidadElegida: { $ref: '#/components/schemas/Modalidad' }
+              estadoAcademico: { type: string }
+    EspacioCurricularResumen:
+      type: object
+      required: [id, nombre, carreraId, carrera]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        carreraId: { type: integer }
+        carrera:
+          type: object
+          required: [id, nombre]
+          properties:
+            id: { type: integer }
+            nombre: { type: string }
     InscripcionCarreraRequest:
       type: object
       required: [alumnoId, carreraId]
+      additionalProperties: false
       properties:
         alumnoId: { type: integer, description: Alumno que el administrativo inscribe }
         carreraId: { type: integer }
-        cicloLectivo: { type: integer, default: 2026 }
+        cicloLectivo: { type: integer, nullable: true, description: Compatibilidad para clientes legacy; nuevo alta no deriva este dato de la cohorte. Reactivación conserva el valor existente. }
+        anioCohorte: { type: integer, minimum: 1900, maximum: 2100, nullable: true, description: Requerido para una inscripción nueva. Si se omite al reactivar, conserva el dato existente, incluso si es null. }
       example:
         alumnoId: 3
         carreraId: 1
-        cicloLectivo: 2026
+        anioCohorte: 2026
+    InscripcionCarreraCohorteUpdate:
+      type: object
+      required: [anioCohorte]
+      additionalProperties: false
+      properties:
+        anioCohorte: { type: integer, minimum: 1900, maximum: 2100, nullable: true, description: Null conserva explícitamente cohorte desconocida en registros legacy }
     InscripcionMateriaRequest:
       type: object
       required: [materiaId]
@@ -2505,7 +3229,15 @@ components:
         yaInscripto: { type: boolean }
         yaAprobada: { type: boolean }
         cumpleCorrelativas: { type: boolean }
-        correlativasPendientes: { type: array, items: { type: object, properties: { id: { type: integer }, nombre: { type: string } } } }
+        correlativasPendientes:
+          type: array
+          items:
+            type: object
+            required: [tipo, id, nombre]
+            properties:
+              tipo: { type: string, enum: [MATERIA, ESPACIO], description: Tipo del referente; evita ambigüedad cuando IDs de materia y espacio coinciden. }
+              id: { type: integer, description: ID de la materia o espacio requerido según tipo. }
+              nombre: { type: string }
         carreras: { type: array, items: { $ref: '#/components/schemas/Career' } }
         habilitada: { type: boolean, description: Resultado informativo; el alta revalida en backend. }
     MateriasDisponiblesResponse:
@@ -2571,6 +3303,7 @@ components:
         usuarioId: { type: integer, description: Usuario.idUsuario }
         carreraId: { type: integer }
         cicloLectivo: { type: integer }
+        anioCohorte: { type: integer, minimum: 1900, maximum: 2100, nullable: true }
         activo: { type: boolean }
         fechaBaja: { type: string, format: date-time, nullable: true }
         carrera: { $ref: '#/components/schemas/Career' }
@@ -2833,13 +3566,32 @@ components:
             inscripto: { type: boolean, enum: [true] }
             motivos: { type: array, maxItems: 0, items: { $ref: '#/components/schemas/MotivoDisponibilidad' } }
     MotivoDisponibilidad:
-      type: object
-      required: [codigo, mensaje]
-      properties:
-        codigo: { type: string, enum: [PERIODO, CORRELATIVA, CONDICION] }
-        materiaRequeridaId: { type: integer }
-        materiaRequeridaNombre: { type: string }
-        mensaje: { type: string }
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [codigo, tipo, id, materiaRequeridaId, materiaRequeridaNombre, mensaje]
+          properties:
+            codigo: { type: string, enum: [CORRELATIVA] }
+            tipo: { type: string, enum: [MATERIA] }
+            id: { type: integer, description: ID de la materia requerida. }
+            materiaRequeridaId: { type: integer, description: Campo compatible; coincide con id cuando tipo es MATERIA. }
+            materiaRequeridaNombre: { type: string }
+            mensaje: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [codigo, tipo, id, materiaRequeridaNombre, mensaje]
+          properties:
+            codigo: { type: string, enum: [CORRELATIVA] }
+            tipo: { type: string, enum: [ESPACIO] }
+            id: { type: integer, description: ID del espacio requerido. }
+            materiaRequeridaNombre: { type: string, description: Nombre del requisito, conservado para compatibilidad. }
+            mensaje: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [codigo, mensaje]
+          properties:
+            codigo: { type: string, enum: [PERIODO, CONDICION] }
+            mensaje: { type: string }
     Pagination:
       type: object
       required: [page, limit, total, totalPages]
@@ -2855,10 +3607,16 @@ components:
         cursadaId: { type: integer, minimum: 1 }
         materia:
           type: object
-          required: [id, nombre]
+          required: [id, nombre, carrera]
           properties:
             id: { type: integer, minimum: 1 }
             nombre: { type: string }
+            carrera:
+              type: object
+              required: [id, nombre]
+              properties:
+                id: { type: integer, minimum: 1 }
+                nombre: { type: string }
         anioLectivo: { type: integer }
         periodo: { type: string }
         fecha: { type: string, format: date }
@@ -3171,9 +3929,14 @@ components:
         fechaFin: { type: string, format: date-time }
         materiasIds:
           type: array
-          minItems: 1
           uniqueItems: true
           items: { type: integer, minimum: 1 }
+          description: Para períodos MATERIA, IDs de materias sueltas habilitadas.
+        cursadasEspaciosIds:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+          description: Para períodos MATERIA, IDs de ofertas completas de espacio. Puede combinarse con materiasIds.
         mesasIds:
           type: array
           minItems: 1
@@ -3189,9 +3952,14 @@ components:
         fechaFin: { type: string, format: date-time }
         materiasIds:
           type: array
-          minItems: 1
           uniqueItems: true
           items: { type: integer, minimum: 1 }
+          description: Si se omite, conserva las materias habilitadas existentes; [] las elimina.
+        cursadasEspaciosIds:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+          description: Si se omite, conserva las ofertas habilitadas existentes; [] las elimina.
         mesasIds:
           type: array
           minItems: 1

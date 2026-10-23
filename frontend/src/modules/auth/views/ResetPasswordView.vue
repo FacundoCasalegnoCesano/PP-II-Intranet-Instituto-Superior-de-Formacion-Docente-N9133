@@ -2,14 +2,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import AuthLayout from '@/layouts/AuthLayout.vue'
 import AppButton from '@/ui/AppButton.vue'
 import { authApi } from '../api/authApi'
 import { resetPasswordSchema } from '../schemas/authSchemas'
 
 const route = useRoute()
-const router = useRouter()
 const token = computed(() => typeof route.query.token === 'string' ? route.query.token : '')
 const tokenStatus = ref<'checking' | 'valid' | 'invalid'>('checking')
 const completed = ref(false)

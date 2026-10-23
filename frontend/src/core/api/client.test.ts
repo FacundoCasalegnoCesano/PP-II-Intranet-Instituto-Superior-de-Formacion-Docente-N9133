@@ -117,6 +117,21 @@ describe('ApiClient', () => {
     await expect(api.post<void>('/auth/forgot-password', { email: 'ada@example.test' })).resolves.toBeUndefined()
   })
 
+  it('sends PATCH requests through the shared authenticated JSON request path', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({ success: true, data: { id: 8, nombre: 'Trayecto actualizado' } }),
+    )
+    const { api } = client(fetcher)
+    const payload = { nombre: 'Trayecto actualizado' }
+
+    await expect(api.patch('/espacios-curriculares/8', payload)).resolves.toEqual({ id: 8, nombre: 'Trayecto actualizado' })
+
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher.mock.calls[0]?.[0]).toBe('/api/espacios-curriculares/8')
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: 'PATCH', body: JSON.stringify(payload) })
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer expired-access')
+  })
+
   it('preserves pagination only through the explicit paginated helper and supports delete', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({

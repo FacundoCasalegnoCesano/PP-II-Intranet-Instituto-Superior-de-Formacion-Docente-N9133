@@ -87,7 +87,8 @@ function setCatalogError(error: unknown): void {
 
 function queryValue(key: string): string | undefined {
   const value = route.query[key]
-  return Array.isArray(value) ? value[0] : value ?? undefined
+  const candidate = Array.isArray(value) ? value[0] : value
+  return typeof candidate === 'string' ? candidate : undefined
 }
 
 function safeReturnTo(value: unknown): string | undefined {

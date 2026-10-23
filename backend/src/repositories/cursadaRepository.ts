@@ -9,6 +9,7 @@ export interface CursadaCreateData {
 }
 
 export interface CursadaUpdateData {
+  materiaId?: number;
   anioLectivo?: number;
   periodo?: string;
   docenteId?: number | null;
@@ -18,9 +19,11 @@ export interface CursadaUpdateData {
 export interface CursadaDisponibleCalificaciones {
   cursadaId: number;
   anioLectivo: number;
+  espacioCurricular?: { id: number; nombre: string };
   materia: {
     id: number;
     nombre: string;
+    carrera: { id: number; nombre: string };
   };
 }
 
@@ -74,6 +77,7 @@ class CursadaRepository {
             email: true
           }
         },
+        cursadaEspacio: { select: { id: true, espacioCurricular: { select: { id: true, nombre: true } } } },
         horarios: {
           where: { activo: true },
           orderBy: [
@@ -114,6 +118,7 @@ class CursadaRepository {
             email: true
           }
         },
+        cursadaEspacio: { select: { id: true, espacioCurricular: { select: { id: true, nombre: true } } } },
         horarios: {
           where: { activo: true },
           orderBy: [
@@ -169,10 +174,10 @@ class CursadaRepository {
     const cursadas = await prisma.cursada.findMany({
       where: {
         anioLectivo: filtros.anioLectivo,
-        activo: true,
         ...(filtros.profesorId === undefined
           ? {}
           : {
+              activo: true,
               OR: [
                 { docenteId: filtros.profesorId },
                 {
@@ -192,10 +197,12 @@ class CursadaRepository {
       select: {
         id: true,
         anioLectivo: true,
+        cursadaEspacio: { select: { espacioCurricular: { select: { id: true, nombre: true } } } },
         materia: {
           select: {
             id: true,
-            nombre: true
+            nombre: true,
+            carrera: { select: { id: true, nombre: true } }
           }
         }
       },
@@ -205,6 +212,7 @@ class CursadaRepository {
     return cursadas.map(cursada => ({
       cursadaId: cursada.id,
       anioLectivo: cursada.anioLectivo,
+      ...(cursada.cursadaEspacio ? { espacioCurricular: cursada.cursadaEspacio.espacioCurricular } : {}),
       materia: cursada.materia
     }));
   }
@@ -262,6 +270,7 @@ class CursadaRepository {
             email: true
           }
         },
+        cursadaEspacio: { select: { id: true, espacioCurricular: { select: { id: true, nombre: true } } } },
         horarios: {
           where: { activo: true },
           orderBy: [
@@ -364,11 +373,11 @@ class CursadaRepository {
     });
   }
 
-  async findInscriptosByCursadaId(cursadaId: number): Promise<InscriptoPublico[]> {
+  async findInscriptosByCursadaId(cursadaId: number, incluirFinalizadas = false): Promise<InscriptoPublico[]> {
     const inscriptos = await prisma.inscripcionMateria.findMany({
       where: {
         cursadaId,
-        estado: 'ACTIVA',
+        estado: incluirFinalizadas ? { in: ['ACTIVA', 'FINALIZADA'] } : 'ACTIVA',
         fechaBaja: null
       },
       select: {

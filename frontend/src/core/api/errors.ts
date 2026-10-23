@@ -15,7 +15,7 @@ export class ApiError extends Error {
 }
 
 export function apiErrorFromPayload(status: number, payload: ApiErrorPayload): ApiError {
-  const source = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
+  const source = payload && typeof payload === 'object' ? payload as unknown as Record<string, unknown> : {}
   const message = typeof source.message === 'string' && source.message.trim()
     ? source.message.trim()
     : 'Ocurrió un error inesperado'

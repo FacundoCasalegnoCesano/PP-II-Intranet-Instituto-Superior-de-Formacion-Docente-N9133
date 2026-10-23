@@ -89,7 +89,7 @@ export const registerSchema = Joi.object({
     .max(255)
     .allow('', null),
   
-  // Datos específicos del alumno (obligatorios solo si rol = ALUMNO)
+  // Domicilio es obligatorio para alumnos; egreso e institución son legado opcional.
   domicilio: Joi.string()
     .max(255)
     .messages({
@@ -112,11 +112,7 @@ export const registerSchema = Joi.object({
       'number.min': 'El año de egreso debe ser mayor o igual a 1990',
       'number.max': 'El año de egreso no puede exceder 2100'
     })
-    .when('rol', {
-      is: 'ALUMNO',
-      then: Joi.required(),
-      otherwise: Joi.allow(null)
-    }),
+    .allow(null),
   
   institucionProcedencia: Joi.string()
     .max(255)

@@ -15,17 +15,20 @@ import type {
   ActiveStudent,
   CareerEnrollment,
   CareerEnrollmentWritePayload,
+  CorrelativityWrite,
+  SpaceCourseOffering,
 } from '../types/admin'
 
 export interface AdminUserListFilters { search?: string; rol?: string; activo?: boolean; page?: number; limit?: number }
 export interface CareerListFilters { search?: string; activo?: boolean; page?: number; limit?: number }
 export interface SubjectListFilters { search?: string; carreraId?: number; tipoEspacio?: string; activo?: boolean; page?: number; limit?: number }
 export interface CourseListFilters { anioLectivo?: number; materiaId?: number; docenteId?: number; activo?: boolean; page?: number; limit?: number }
+export interface SpaceCourseListFilters { page?: number; limit?: number; carreraId?: number; anioLectivo?: number; activo?: boolean; search?: string }
 export interface PeriodListFilters { tipo?: 'MATERIA' | 'EXAMEN'; activo?: boolean; cicloLectivo?: number; page?: number; limit?: number }
 export interface ExamListFilters { materiaId?: number; fechaDesde?: string; fechaHasta?: string; page?: number; limit?: number }
 export interface CareerEnrollmentListFilters { page?: number; limit?: number }
 
-function query(params: Record<string, unknown>): string {
+function query(params: object): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== '') search.set(key, String(value))
@@ -113,8 +116,8 @@ export const adminApi = {
   },
 
   listCareers,
-  listActiveStudents(search?: string, filters: { limit?: number } = {}): Promise<PaginatedResult<ActiveStudent>> {
-    return apiClient.getPaginated(`/alumnos${query({ search, activo: true, limit: filters.limit ?? 50 })}`)
+  listActiveStudents(search?: string, filters: { page?: number; limit?: number } = {}): Promise<PaginatedResult<ActiveStudent>> {
+    return apiClient.getPaginated(`/alumnos${query({ search, activo: true, page: filters.page ?? 1, limit: filters.limit ?? 50 })}`)
   },
   listActiveCareers,
   listCareerEnrollments(carreraId: number, filters: CareerEnrollmentListFilters = {}): Promise<PaginatedResult<CareerEnrollment>> {
@@ -137,10 +140,8 @@ export const adminApi = {
   deactivateSubject(id: number): Promise<void> { return apiClient.delete(`/materias/${id}`) },
   getSubjectsByYear(careerId: number): Promise<SubjectYearGroup[]> { return apiClient.get(`/materias/carrera/${careerId}/por-anio`) },
   getPrerequisites(id: number): Promise<Prerequisite[]> { return apiClient.get(`/materias/${id}/correlatividades`) },
-  addPrerequisite(id: number, payload: { materiaRequeridaId: number }): Promise<Prerequisite> {
-    return apiClient.post(`/materias/${id}/correlatividades`, {
-      materiaRequeridaId: payload.materiaRequeridaId,
-    })
+  addPrerequisite(id: number, payload: CorrelativityWrite): Promise<Prerequisite> {
+    return apiClient.post(`/materias/${id}/correlatividades`, payload)
   },
   removePrerequisite(id: number): Promise<void> { return apiClient.delete(`/materias/correlatividades/${id}`) },
   getTeachingAssignments(id: number): Promise<TeachingAssignment[]> { return apiClient.get(`/materias/${id}/profesores`) },
@@ -152,6 +153,17 @@ export const adminApi = {
   createCourse(payload: Record<string, unknown>): Promise<CourseOffering> { return apiClient.post('/cursadas', payload) },
   updateCourse(id: number, payload: Record<string, unknown>): Promise<CourseOffering> { return apiClient.put(`/cursadas/${id}`, payload) },
   deactivateCourse(id: number): Promise<void> { return apiClient.delete(`/cursadas/${id}`) },
+  enrollHistoricalCourse(id: number, alumnoId: number) {
+    return apiClient.postWithMessage(`/cursadas/${id}/inscripciones-historicas`, { alumnoId })
+  },
+  listSpaceCourses(filters: SpaceCourseListFilters = {}): Promise<PaginatedResult<SpaceCourseOffering>> { return apiClient.getPaginated(`/cursadas-espacios${query(filters)}`) },
+  getSpaceCourse(id: number): Promise<SpaceCourseOffering> { return apiClient.get(`/cursadas-espacios/${id}`) },
+  createSpaceCourse(payload: Record<string, unknown>): Promise<SpaceCourseOffering> { return apiClient.post('/cursadas-espacios', payload) },
+  updateSpaceCourse(id: number, payload: Record<string, unknown>): Promise<SpaceCourseOffering> { return apiClient.put(`/cursadas-espacios/${id}`, payload) },
+  deactivateSpaceCourse(id: number): Promise<void> { return apiClient.delete(`/cursadas-espacios/${id}`) },
+  enrollHistoricalSpaceCourse(id: number, alumnoId: number) {
+    return apiClient.postWithMessage(`/cursadas-espacios/${id}/inscripciones-historicas`, { alumnoId })
+  },
   listPeriods(filters: PeriodListFilters = {}): Promise<PaginatedResult<EnrollmentPeriod>> { return apiClient.getPaginated(`/periodos-inscripcion${query(filters)}`) },
   getPeriod(id: number): Promise<EnrollmentPeriod> { return apiClient.get(`/periodos-inscripcion/${id}`) },
   listExams(filters: ExamListFilters = {}): Promise<PaginatedResult<AdminExam>> { return apiClient.getPaginated(`/examenes${query(filters)}`) },

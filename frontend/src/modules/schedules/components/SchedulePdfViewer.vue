@@ -122,6 +122,7 @@ async function renderCurrentPage(renderGeneration: number) {
     if (!context) throw new Error('No se pudo preparar el lienzo de vista previa.')
 
     const renderTask = page.render({
+      canvas: targetCanvas,
       canvasContext: context,
       viewport,
       transform: pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0],

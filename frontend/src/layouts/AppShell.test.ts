@@ -1,14 +1,15 @@
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, nextTick, reactive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import AppShell from './AppShell.vue'
 
-const { push, authState, routeState } = vi.hoisted(() => ({
+const { push, authState, routeState: initialRouteState } = vi.hoisted(() => ({
   push: vi.fn(),
   authState: { activeRole: 'ALUMNO' as 'ALUMNO' | 'PROFESOR' | 'ADMINISTRATIVO' },
-  routeState: { name: 'home' as string },
+  routeState: { name: 'home' as string, fullPath: '/app' },
 }))
+const routeState = reactive(initialRouteState)
 
 vi.mock('vue-router', () => ({
   RouterLink: { template: '<a><slot /></a>' },
@@ -29,6 +30,7 @@ describe('AppShell', () => {
   beforeEach(() => {
     authState.activeRole = 'ALUMNO'
     routeState.name = 'home'
+    routeState.fullPath = '/app'
     vi.clearAllMocks()
   })
 
@@ -63,13 +65,93 @@ describe('AppShell', () => {
     expect(screen.queryByRole('dialog', { name: 'Navegación' })).not.toBeInTheDocument()
   })
 
-  it.each(['ALUMNO', 'PROFESOR', 'ADMINISTRATIVO'] as const)('shows Horarios in lateral and mobile navigation for %s', async (role) => {
+  it.each(['ALUMNO', 'PROFESOR'] as const)('shows Horarios in lateral and mobile navigation for %s', async (role) => {
     authState.activeRole = role
     const user = userEvent.setup()
     render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
     expect(screen.getByRole('link', { name: 'Horarios' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
     expect(screen.getAllByRole('link', { name: 'Horarios' })).toHaveLength(2)
+  })
+
+  it('keeps Horarios inside Gestión académica for administration on desktop and mobile', async () => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    const user = userEvent.setup()
+    render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+    await user.click(screen.getByRole('button', { name: 'Gestión académica' }))
+    expect(screen.getByRole('link', { name: 'Horarios' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
+    expect(screen.getAllByRole('link', { name: 'Horarios' })).toHaveLength(2)
+  })
+
+  it('opens only one administrative group and supports native keyboard activation', async () => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    const user = userEvent.setup()
+    render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+    const users = screen.getByRole('button', { name: 'Usuarios' })
+    users.focus()
+    await user.keyboard('{Enter}')
+    expect(users).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByRole('button', { name: 'Gestión académica' }))
+    expect(users).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Gestión académica' })).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById('desktop-admin-group-personas')).toHaveAttribute('inert')
+    await user.keyboard(' ')
+    expect(screen.getByRole('button', { name: 'Gestión académica' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('opens the group for a deep route and keeps the two grade destinations separate', async () => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    routeState.name = 'admin-historical-exams'
+    const user = userEvent.setup()
+    const RouterLink = defineComponent({
+      inheritAttrs: false,
+      props: { to: { type: Object, required: true } },
+      setup: (props, { attrs, slots }) => () => h('a', { ...attrs, href: '#', 'data-route-name': (props.to as { name: string }).name }, slots.default?.()),
+    })
+    render(AppShell, { global: { stubs: { RouterLink } } })
+    expect(screen.getByRole('button', { name: 'Notas y exámenes' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'Calificaciones históricas' })).toHaveAttribute('aria-current', 'page')
+    await user.click(screen.getByRole('link', { name: 'Calificaciones de cursadas' }))
+    expect(screen.getByRole('link', { name: 'Calificaciones de cursadas' })).toHaveAttribute('data-route-name', 'admin-course-grades')
+    expect(screen.getByRole('link', { name: 'Calificaciones históricas' })).toHaveAttribute('data-route-name', 'admin-historical-exams')
+    await user.click(screen.getByRole('button', { name: 'Notas y exámenes' }))
+    routeState.fullPath = '/app/administracion/mesas-historicas?panel=auditoria'
+    await nextTick()
+    expect(screen.getByRole('button', { name: 'Notas y exámenes' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('closes the mobile drawer and restores focus after choosing an administrative destination', async () => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    const user = userEvent.setup()
+    const RouterLink = defineComponent({
+      inheritAttrs: false,
+      props: { to: { type: Object, required: true } },
+      setup: (props, { attrs, slots }) => () => h('a', { ...attrs, href: '#', 'data-route-name': (props.to as { name: string }).name }, slots.default?.()),
+    })
+    render(AppShell, { global: { stubs: { RouterLink } } })
+    const trigger = screen.getByRole('button', { name: 'Abrir navegación' })
+    await user.click(trigger)
+    await user.click(screen.getAllByRole('button', { name: 'Usuarios' })[1])
+    await user.click(screen.getAllByRole('link', { name: 'Inscripciones a carreras' })[1])
+    expect(screen.queryByRole('dialog', { name: 'Navegación' })).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('keeps Tab inside the drawer using only controls from the open group', async () => {
+    authState.activeRole = 'ADMINISTRATIVO'
+    const user = userEvent.setup()
+    render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+    await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
+    await user.click(screen.getAllByRole('button', { name: 'Usuarios' })[1])
+    const notesGroup = screen.getAllByRole('button', { name: 'Notas y exámenes' })[1]
+    notesGroup.focus()
+    expect(document.getElementById('mobile-admin-group-notas-examenes')).toHaveAttribute('inert')
+    await user.keyboard('{Tab}')
+    const closeButtons = screen.getAllByRole('button', { name: 'Cerrar navegación' })
+    expect(document.activeElement).toBe(closeButtons[0])
+    await user.keyboard('{Shift>}{Tab}{/Shift}')
+    expect(document.activeElement).toBe(notesGroup)
   })
 
   it('shows student academic navigation instead of the obsolete upcoming placeholder', () => {
@@ -107,8 +189,14 @@ describe('AppShell', () => {
 
     expect(screen.queryByRole('link', { name: 'Carreras y planes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Trayectoria' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Horarios' })).toBeVisible()
-    expect(screen.queryByRole('link', { name: 'Mi perfil' })).toBeVisible()
+    if (role === 'ADMINISTRATIVO') {
+      expect(screen.queryByRole('link', { name: 'Horarios' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'Mi perfil' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Gestión académica' })).toBeVisible()
+    } else {
+      expect(screen.getByRole('link', { name: 'Horarios' })).toBeVisible()
+      expect(screen.getByRole('link', { name: 'Mi perfil' })).toBeVisible()
+    }
   })
 
   it('shows the standard back button for the administrative career enrollments page', () => {
@@ -119,10 +207,12 @@ describe('AppShell', () => {
     expect(screen.getByRole('button', { name: 'Volver' })).toBeVisible()
   })
 
-  it('shows the exam table entry for administrative and teacher roles', () => {
+  it('shows the exam table entry for administrative and teacher roles', async () => {
+    const user = userEvent.setup()
     for (const role of ['ADMINISTRATIVO', 'PROFESOR'] as const) {
       authState.activeRole = role
       render(AppShell, { global: { stubs: { RouterLink: defineComponent({ setup: (_, { slots }) => () => h('a', { href: '#' }, slots.default?.()) }) } } })
+      if (role === 'ADMINISTRATIVO') await user.click(screen.getByRole('button', { name: 'Notas y exámenes' }))
       expect(screen.getByRole('link', { name: role === 'ADMINISTRATIVO' ? 'Mesas de examen' : 'Mis mesas' })).toBeVisible()
     }
   })
@@ -137,6 +227,7 @@ describe('AppShell', () => {
     })
     render(AppShell, { global: { stubs: { RouterLink } } })
 
+    await user.click(screen.getByRole('button', { name: 'Notas y exámenes' }))
     expect(screen.getByRole('link', { name: 'Homologaciones' })).toHaveAttribute('data-route-name', 'admin-homologations')
     await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
     expect(screen.getAllByRole('link', { name: 'Homologaciones' })).toHaveLength(2)
@@ -152,6 +243,7 @@ describe('AppShell', () => {
     })
     render(AppShell, { global: { stubs: { RouterLink } } })
 
+    await user.click(screen.getByRole('button', { name: 'Usuarios' }))
     expect(screen.getByRole('link', { name: 'Trayectorias' })).toHaveAttribute('data-route-name', 'admin-academic-records')
     await user.click(screen.getByRole('button', { name: 'Abrir navegación' }))
     expect(screen.getAllByRole('link', { name: 'Trayectorias' })).toHaveLength(2)
@@ -176,7 +268,7 @@ describe('AppShell', () => {
     render(AppShell, { global: { stubs: { RouterLink } } })
 
     expect(screen.getByRole('link', { name: 'Homologaciones' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'Usuarios' })).not.toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Usuarios' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it.each(['admin-exams', 'admin-exam-detail', 'admin-exam-edit'] as const)('marks administrative exam navigation active for %s', (routeName) => {

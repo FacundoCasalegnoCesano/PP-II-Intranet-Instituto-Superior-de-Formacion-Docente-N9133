@@ -1,13 +1,18 @@
 import { prisma } from '../config/prisma.js';
+import type { Prisma } from '@prisma/client';
 import type { TipoCalificacion } from '@prisma/client';
 import type { FilaCalificacionPreparada } from '../domain/academico/calificaciones.js';
 
 type FilaCalificacion = FilaCalificacionPreparada;
 
 class CalificacionRepository {
-  async upsertLote(cursadaId: number, filas: FilaCalificacion[]) {
+  async withTransaction<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return prisma.$transaction(operation);
+  }
+
+  async upsertLote(cursadaId: number, filas: FilaCalificacion[], db?: Prisma.TransactionClient) {
     const operaciones = filas.map(fila =>
-      prisma.calificacion.upsert({
+      (db ?? prisma).calificacion.upsert({
         where: {
           cursadaId_alumnoId_tipoCalificacion_numero: {
             cursadaId,
@@ -35,7 +40,7 @@ class CalificacionRepository {
       })
     );
 
-    return await prisma.$transaction(operaciones);
+    return db ? await Promise.all(operaciones) : await prisma.$transaction(operaciones);
   }
 
   async findByCursada(

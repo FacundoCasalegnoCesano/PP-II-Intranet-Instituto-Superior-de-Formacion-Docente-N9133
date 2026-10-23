@@ -1,12 +1,30 @@
 export type ExamCondition = 'REGULAR' | 'LIBRE'
 export type ExamAvailabilityState = 'HABILITADA' | 'NO_HABILITADA' | 'YA_INSCRIPTO'
-export type ExamReasonCode = 'PERIODO' | 'CORRELATIVA' | 'CONDICION'
-export interface ExamAvailabilityReason {
-  codigo: ExamReasonCode
-  materiaRequeridaId?: number
-  materiaRequeridaNombre?: string
-  mensaje: string
-}
+export type ExamAvailabilityReason =
+  | {
+      codigo: 'CORRELATIVA'
+      tipo: 'MATERIA'
+      id: number
+      materiaRequeridaId: number
+      materiaRequeridaNombre: string
+      mensaje: string
+    }
+  | {
+      codigo: 'CORRELATIVA'
+      tipo: 'ESPACIO'
+      id: number
+      materiaRequeridaId?: never
+      materiaRequeridaNombre: string
+      mensaje: string
+    }
+  | {
+      codigo: 'PERIODO' | 'CONDICION'
+      tipo?: never
+      id?: never
+      materiaRequeridaId?: never
+      materiaRequeridaNombre?: never
+      mensaje: string
+    }
 export type ExamResultStatus = 'PENDIENTE' | 'EN_REVISION' | 'AUSENTE' | 'CALIFICADO'
 
 interface ExamAvailabilityBase {

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "type-check": "vue-tsc --noEmit"
+    "type-check": "vue-tsc --noEmit --project tsconfig.app.json && vue-tsc --noEmit --project tsconfig.node.json"
   },
   "dependencies": {
     "@fontsource-variable/source-sans-3": "^5.3.0",

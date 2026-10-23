@@ -197,7 +197,7 @@ test('el historial rechaza libros duplicados de una misma fecha con conflicto', 
 });
 
 test('la escritura atómica usa el mismo tx y propaga el fallo sin mutaciones posteriores', async () => {
-  const tx = { $queryRaw: async () => [], libroDeTema: {}, asistencia: {} };
+  const tx = { $queryRaw: async () => [], cursada: { findUnique: async () => ({ id: 12, materiaId: 14, materia: { carreraId: 2, esPromocionable: false } }) }, libroDeTema: {}, asistencia: {} };
   const operaciones: string[] = [];
   const clientes: any[] = [];
   let rootWrites = 0;
@@ -212,8 +212,9 @@ test('la escritura atómica usa el mismo tx y propaga el fallo sin mutaciones po
   });
   tx.$queryRaw = async (...args: any[]) => {
     clientes.push(tx);
-    operaciones.push('materia.lock');
-    assert.match(String(args[0]?.sql ?? args[0]), /SELECT id FROM materias/i);
+    const query = String(args[0]?.sql ?? args[0]);
+    operaciones.push(/carreras/i.test(query) ? 'carrera.lock' : 'materia.lock');
+    assert.match(query, /SELECT id FROM (carreras|materias)/i);
     assert.match(String(args[0]?.sql ?? args[0]), /FOR UPDATE/i);
     return [];
   };
@@ -263,6 +264,7 @@ test('la escritura atómica usa el mismo tx y propaga el fallo sin mutaciones po
 
   assert.equal(callbackRechazada, true);
   assert.deepEqual(operaciones, [
+    'carrera.lock',
     'materia.lock',
     'libro.findMany',
     'libro.create',
@@ -282,6 +284,7 @@ test('dos escrituras reales del repository conservan la misma clave compuesta de
   replaceMethod((prisma as any), '$transaction', async (callback: any) => {
     const tx = {
       $queryRaw: async () => [],
+      cursada: { findUnique: async () => ({ id: 12, materiaId: 14, materia: { carreraId: 2, esPromocionable: false } }) },
       libroDeTema: {
         findMany: async () => findManyResults.shift(),
         create: async ({ data }: any) => {
@@ -330,6 +333,28 @@ test('dos escrituras reales del repository conservan la misma clave compuesta de
     justificado: true,
     observacion: null
   });
+});
+
+test('DELETE bloquea la carrera y elimina libro y asistencias dentro de la misma transacción', async () => {
+  const events: string[] = [];
+  const tx = {
+    $queryRaw: async (strings: TemplateStringsArray) => { events.push(`lock:${strings.join('')}`); return []; },
+    cursada: { findUnique: async () => ({ id: 12, materiaId: 14, materia: { carreraId: 2, esPromocionable: false } }) },
+    libroDeTema: {
+      findMany: async () => { events.push('read-book'); return [{ idLibroDeTema: 5 }]; },
+      delete: async () => { events.push('delete-book'); return {}; }
+    },
+    asistencia: {
+      findMany: async () => [{ alumnoId: 6 }],
+      deleteMany: async () => { events.push('delete-attendance'); return { count: 1 }; }
+    }
+  };
+  replaceMethod((prisma as any), '$transaction', async (operation: any) => operation(tx));
+
+  const result = await claseRepository.deleteAtomic(12, 14, new Date('2026-08-24T00:00:00.000Z'));
+  assert.deepEqual(result, { asistencias: 1, tema: 1 });
+  assert.match(events[0] ?? '', /carreras/);
+  assert.deepEqual(events.slice(1), ['read-book', 'delete-attendance', 'delete-book']);
 });
 
 test('el mapeo real del repository expone Usuario.idUsuario y no Alumno.idAlumno', async () => {
@@ -389,6 +414,7 @@ test('PUT y DELETE rechazan dos libros antes de cualquier mutación', async () =
   const putCalls = { create: 0, update: 0, upsert: 0 };
   replaceMethod((prisma as any), '$transaction', async (callback: any) => callback({
     $queryRaw: async () => [],
+    cursada: { findUnique: async () => ({ id: 12, materiaId: 14, materia: { carreraId: 2, esPromocionable: false } }) },
     libroDeTema: {
       findMany: async () => [{ idLibroDeTema: 1 }, { idLibroDeTema: 2 }],
       create: async () => { putCalls.create += 1; },
@@ -413,6 +439,8 @@ test('PUT y DELETE rechazan dos libros antes de cualquier mutación', async () =
 
   const deleteCalls = { deleteMany: 0, delete: 0 };
   replaceMethod((prisma as any), '$transaction', async (callback: any) => callback({
+    $queryRaw: async () => [],
+    cursada: { findUnique: async () => ({ id: 12, materiaId: 14, materia: { carreraId: 2, esPromocionable: false } }) },
     libroDeTema: {
       findMany: async () => [{ idLibroDeTema: 1 }, { idLibroDeTema: 2 }],
       delete: async () => { deleteCalls.delete += 1; }

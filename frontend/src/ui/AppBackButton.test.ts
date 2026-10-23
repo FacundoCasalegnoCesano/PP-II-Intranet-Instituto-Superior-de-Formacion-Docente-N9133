@@ -4,7 +4,7 @@ import type { LocationQuery } from 'vue-router'
 import AppBackButton from './AppBackButton.vue'
 
 const route = vi.hoisted(() => ({ name: 'admin-exam-detail' as string, params: { id: '9' } as Record<string, string>, query: { estadoMesa: 'EN_PROCESO' } as LocationQuery, fullPath: '/app/administracion/mesas/9?estadoMesa=EN_PROCESO' }))
-const router = vi.hoisted(() => ({ options: { history: { state: { back: null } } }, replace: vi.fn(), resolve: vi.fn(), back: vi.fn() }))
+const router = vi.hoisted(() => ({ options: { history: { state: { back: null as string | null } } }, replace: vi.fn(), resolve: vi.fn(), back: vi.fn() }))
 const auth = vi.hoisted(() => ({ activeRole: 'ADMINISTRATIVO' }))
 
 vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => router }))
@@ -13,6 +13,7 @@ vi.mock('@/stores/authStore', () => ({ useAuthStore: () => auth }))
 describe('AppBackButton', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    router.options.history.state.back = null
     route.name = 'admin-exam-detail'
     route.query = { estadoMesa: 'EN_PROCESO' }
     route.fullPath = '/app/administracion/mesas/9?estadoMesa=EN_PROCESO'
@@ -24,6 +25,23 @@ describe('AppBackButton', () => {
     await screen.getByRole('button', { name: /Volver/ }).click()
 
     expect(router.replace).toHaveBeenCalledWith({ name: 'admin-exams', query: { estadoMesa: 'EN_PROCESO' } })
+  })
+
+  it('returns from the spaces tab to Materias before considering browser history', async () => {
+    route.name = 'admin-subjects'
+    route.query = { tab: 'spaces', search: 'Pedagogía', carreraId: '3', page: '2', unrelated: 'drop' }
+    route.fullPath = '/app/administracion/materias?tab=spaces&search=Pedagog%C3%ADa&carreraId=3&page=2'
+    router.options.history.state.back = '/app/administracion/materias?tab=spaces'
+
+    render(AppBackButton)
+
+    await screen.getByRole('button', { name: /Volver/ }).click()
+
+    expect(router.replace).toHaveBeenCalledWith({
+      name: 'admin-subjects',
+      query: { search: 'Pedagogía', carreraId: '3', page: '2' },
+    })
+    expect(router.back).not.toHaveBeenCalled()
   })
 
   it('falls back from an academic trajectory detail while retaining only list filters', async () => {

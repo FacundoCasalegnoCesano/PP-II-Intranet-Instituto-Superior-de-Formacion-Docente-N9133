@@ -5,6 +5,11 @@ import {
   fetchAvailableSubjects,
   fetchMySubjectEnrollments,
   verifySubjectEnrollment,
+  fetchAvailableSpaceEnrollments,
+  fetchMySpaceEnrollments,
+  verifySpaceEnrollment,
+  enrollInSpace,
+  dropSpaceEnrollment,
 } from './subjectEnrollmentsApi'
 
 describe('subject enrollment API', () => {
@@ -39,5 +44,23 @@ describe('subject enrollment API', () => {
     await fetchMySubjectEnrollments(13, 2, { getPaginated })
 
     expect(getPaginated).toHaveBeenCalledWith('/inscripciones-materias/alumno/13?page=2&limit=20')
+  })
+
+  it('uses the space as one enrollment unit and never sends a student ID', async () => {
+    const get = vi.fn().mockResolvedValue([])
+    const post = vi.fn().mockResolvedValue({ id: 8 })
+    const remove = vi.fn().mockResolvedValue({ id: 8 })
+    const client = { get, post, delete: remove }
+    await fetchAvailableSpaceEnrollments(2026, client)
+    await fetchMySpaceEnrollments(client)
+    await verifySpaceEnrollment(44, client)
+    await enrollInSpace(44, client)
+    await dropSpaceEnrollment(8, client)
+    expect(get).toHaveBeenNthCalledWith(1, '/inscripciones-espacios/disponibles?cicloLectivo=2026')
+    expect(get).toHaveBeenNthCalledWith(2, '/inscripciones-espacios')
+    expect(get).toHaveBeenNthCalledWith(3, '/inscripciones-espacios/verificar/44')
+    expect(post).toHaveBeenCalledWith('/inscripciones-espacios', { cursadaEspacioId: 44 })
+    expect(JSON.stringify(post.mock.calls[0]?.[1])).not.toContain('alumnoId')
+    expect(remove).toHaveBeenCalledWith('/inscripciones-espacios/8')
   })
 })

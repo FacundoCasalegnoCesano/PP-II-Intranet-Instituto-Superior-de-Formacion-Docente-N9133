@@ -30,7 +30,22 @@ function materiaInput(overrides: Record<string, unknown> = {}) {
 }
 
 function stubTransaction() {
-  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({}));
+  const tx = {
+    $queryRaw: async () => [],
+    materia: {
+      findUnique: async ({ where }: any) => ({ id: where.id, carreraId: 2, activo: true })
+    },
+    espacioCurricular: {
+      findUnique: async ({ where }: any) => ({ id: where.id, carreraId: 2, activo: true, materias: [] }),
+      findMany: async () => []
+    },
+    correlatividad: {
+      findMany: async () => [],
+      findFirst: async () => null,
+      create: async ({ data }: any) => data
+    }
+  };
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation(tx));
 }
 
 afterEach(() => {
@@ -103,7 +118,14 @@ test('correlativasIds admite cero o varias correlativas y rechaza duplicados', (
 });
 
 test('rechaza correlativas de otra carrera y correlativas duplicadas', async () => {
-  let required = { id: 2, carreraId: 9, nombre: 'Historia' };
+  let required = { id: 2, carreraId: 9, nombre: 'Historia', activo: true };
+  let duplicate: any = null;
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({
+    $queryRaw: async () => [],
+    materia: { findUnique: async ({ where }: any) => where.id === 2 ? required : null },
+    espacioCurricular: { findMany: async () => [] },
+    correlatividad: { findMany: async () => [], findFirst: async () => duplicate, create: async ({ data }: any) => data }
+  }));
   replaceMethod(materiaRepository, 'findById', async (id: number) => id === 1
     ? { id: 1, carreraId: 2, nombre: 'Lengua' }
     : required);
@@ -121,8 +143,8 @@ test('rechaza correlativas de otra carrera y correlativas duplicadas', async () 
   );
   assert.equal(persisted, false);
 
-  required = { id: 2, carreraId: 2, nombre: 'Historia' };
-  replaceMethod(materiaRepository, 'findCorrelativity', async () => ({ id: 6 }));
+  required = { id: 2, carreraId: 2, nombre: 'Historia', activo: true };
+  duplicate = { id: 6 };
   await assert.rejects(
     materiaService.addCorrelatividad({ materiaOrigenId: 1, materiaRequeridaId: 2, tipoRequisito: 'OBLIGATORIA' }),
     (error: any) => error.statusCode === 409
@@ -130,6 +152,19 @@ test('rechaza correlativas de otra carrera y correlativas duplicadas', async () 
 });
 
 test('rechaza ciclos directos o transitivos entre correlatividades', async () => {
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({
+    $queryRaw: async () => [],
+    materia: { findUnique: async ({ where }: any) => ({ id: where.id, carreraId: 2, activo: true }) },
+    espacioCurricular: { findMany: async () => [] },
+    correlatividad: {
+      findMany: async () => [
+        { materiaOrigenId: 2, materiaRequeridaId: 3, espacioRequeridoId: null, aplicaCursado: false, aplicaRendir: true },
+        { materiaOrigenId: 3, materiaRequeridaId: 1, espacioRequeridoId: null, aplicaCursado: false, aplicaRendir: true }
+      ],
+      findFirst: async () => null,
+      create: async ({ data }: any) => data
+    }
+  }));
   replaceMethod(materiaRepository, 'findById', async (id: number) => ({ id, carreraId: 2, nombre: `Materia ${id}` }));
   replaceMethod(materiaRepository, 'findCorrelativity', async () => null);
   replaceMethod(materiaRepository, 'getCorrelativityEdges', async () => [
@@ -149,7 +184,18 @@ test('rechaza ciclos directos o transitivos entre correlatividades', async () =>
   assert.equal(persisted, false);
 });
 
-test('la ruta individual ignora flags del cliente y delega solo la materia requerida', async () => {
+test('la ruta individual guarda el destino materia y las flags académicas', async () => {
+  let persisted: any;
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({
+    $queryRaw: async () => [],
+    materia: { findUnique: async ({ where }: any) => ({ id: where.id, carreraId: 2, activo: true }) },
+    espacioCurricular: { findMany: async () => [] },
+    correlatividad: {
+      findMany: async () => [],
+      findFirst: async () => null,
+      create: async ({ data }: any) => { persisted = data; return data; }
+    }
+  }));
   replaceMethod(materiaRepository, 'findById', async (id: number) => ({
     id,
     carreraId: 2,
@@ -158,12 +204,6 @@ test('la ruta individual ignora flags del cliente y delega solo la materia reque
   }));
   replaceMethod(materiaRepository, 'findCorrelativity', async () => null);
   replaceMethod(materiaRepository, 'getCorrelativityEdges', async () => []);
-  let persisted: any;
-  replaceMethod(materiaRepository, 'addCorrelatividad', async (data: any) => {
-    persisted = data;
-    return data;
-  });
-
   await materiaService.addCorrelatividad({
     materiaOrigenId: 1,
     materiaRequeridaId: 2,
@@ -174,6 +214,10 @@ test('la ruta individual ignora flags del cliente y delega solo la materia reque
 
   assert.deepEqual(persisted, {
     materiaOrigenId: 1,
-    materiaRequeridaId: 2
+    materiaRequeridaId: 2,
+    espacioRequeridoId: null,
+    tipoRequisito: 'OBLIGATORIA',
+    aplicaCursado: true,
+    aplicaRendir: false
   });
 });

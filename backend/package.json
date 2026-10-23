@@ -12,6 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
+    "spaces:backfill-latches": "npm run build && node dist/scripts/backfillSpaceCompositionLatches.js",
     "prisma:studio": "prisma studio",
     "prisma:reset": "prisma migrate reset",
     "create:admin": "node dist/scripts/createAdmin.js",

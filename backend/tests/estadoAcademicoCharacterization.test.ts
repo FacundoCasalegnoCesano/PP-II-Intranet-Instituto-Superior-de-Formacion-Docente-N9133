@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 
 import estadoAcademicoService from '../src/services/estadoAcademicoService.js';
 import cursadaRepository from '../src/repositories/cursadaRepository.js';
@@ -15,6 +15,10 @@ import { evaluarCorrelatividades } from '../src/domain/academico/correlatividade
 type Overrides = Record<string, unknown>;
 
 const restorations: Array<() => void> = [];
+
+beforeEach(() => {
+  replaceMethod((prisma as any).promocionHistorica, 'findMany', async () => []);
+});
 
 function replaceMethod<T extends object, K extends keyof T>(target: T, key: K, replacement: T[K]) {
   const original = target[key];
@@ -504,6 +508,12 @@ test('prioriza examen final, luego homologación y luego promoción, filtrando p
     ] as any;
     return rows;
   });
+  replaceMethod(prisma.materia, 'findMany', async () => [
+    { id: 3, nombre: 'Examen' },
+    { id: 4, nombre: 'Homologada' },
+    { id: 5, nombre: 'Promocionada' }
+  ] as any);
+  replaceMethod(prisma.espacioCurricular, 'findMany', async () => [] as any);
 
   const resultado = await estadoAcademicoService.getPromedioGeneral(
     104,
