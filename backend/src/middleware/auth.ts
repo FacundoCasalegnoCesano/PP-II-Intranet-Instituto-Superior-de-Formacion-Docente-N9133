@@ -38,7 +38,25 @@ async function authenticateRequest(
       return false;
     }
 
-    const decoded = verifyAccessToken(token);
+    let decoded: ReturnType<typeof verifyAccessToken>;
+    try {
+      decoded = verifyAccessToken(token);
+    } catch (error) {
+      const message = (error as Error).message;
+      if (message === 'Token expirado') {
+        res.status(401).json({
+          success: false,
+          message: 'Token expirado',
+          code: 'TOKEN_EXPIRED'
+        });
+      } else {
+        res.status(401).json({
+          success: false,
+          message: message || 'Token inválido'
+        });
+      }
+      return false;
+    }
 
     // Verificar que el usuario existe y está activo
     const user = await userRepository.findAuthById(decoded.id);
@@ -87,18 +105,7 @@ async function authenticateRequest(
 
     return true;
   } catch (error) {
-    if ((error as Error).message === 'Token expirado') {
-      res.status(401).json({
-        success: false,
-        message: 'Token expirado',
-        code: 'TOKEN_EXPIRED'
-      });
-    } else {
-      res.status(401).json({
-        success: false,
-        message: (error as Error).message || 'Token inválido'
-      });
-    }
+    next(error);
     return false;
   }
 }
@@ -129,7 +136,13 @@ export const authMiddleware = async (
 
   // Si el token no tiene rol, el usuario debe seleccionar uno
   if (!req.user!.rol) {
-    const user = await userRepository.findAuthById(req.user!.id);
+    let user;
+    try {
+      user = await userRepository.findAuthById(req.user!.id);
+    } catch (error) {
+      next(error);
+      return;
+    }
     const userRoles = user?.rol ? user.rol.split(',').map((r: string) => r.trim()) : [];
     res.status(403).json({
       success: false,

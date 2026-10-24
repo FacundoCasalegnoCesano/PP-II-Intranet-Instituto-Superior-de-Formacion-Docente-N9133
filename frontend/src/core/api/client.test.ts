@@ -250,6 +250,22 @@ describe('ApiClient', () => {
     expect(storage.read()).toEqual(session)
   })
 
+  it('propagates a protected request 5xx without refreshing or invalidating the active session', async () => {
+    const onSessionInvalidated = vi.fn()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({ success: false, message: 'Error interno del servidor' }, 500),
+    )
+    const { api, storage } = client(fetcher)
+    api.setSessionInvalidationHandler(onSessionInvalidated)
+
+    await expect(api.get('/protected')).rejects.toMatchObject({ status: 500 })
+
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/protected'])
+    expect(storage.read()).toEqual(session)
+    expect(onSessionInvalidated).not.toHaveBeenCalled()
+  })
+
   it('notifies the registered session handler after a final 401, but not for a 403', async () => {
     const onSessionInvalidated = vi.fn()
     const fetcher = vi.fn<typeof fetch>()
