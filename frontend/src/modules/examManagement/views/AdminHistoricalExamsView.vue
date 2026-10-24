@@ -552,7 +552,7 @@ onBeforeUnmount(() => {
       <div v-if="loading" class="p-8 text-center text-[var(--color-graphite)]" role="status" aria-busy="true">Cargando calificaciones…</div>
       <p v-else-if="!records.length" class="p-8 text-center text-[var(--color-graphite)]" role="status">{{ filters.alumnoId ? 'No hay calificaciones históricas para este alumno.' : 'Buscá un alumno para consultar sus calificaciones históricas.' }}</p>
       <div v-else class="min-w-0 max-w-full">
-        <ul data-testid="historical-record-cards" class="min-w-0 space-y-3 p-3 sm:p-4 lg:hidden" aria-label="Calificaciones históricas">
+        <ul data-testid="historical-record-cards" class="min-w-0 space-y-3 p-3 sm:p-4 xl:hidden" aria-label="Calificaciones históricas">
           <li v-for="record in records" :key="`${record.via}-${record.id}`" class="min-w-0 max-w-full rounded-lg border border-[var(--color-border)] p-4">
             <div class="flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div class="min-w-0 break-words [overflow-wrap:anywhere]">
@@ -571,7 +571,7 @@ onBeforeUnmount(() => {
             <button type="button" class="mt-4 min-h-11 w-full rounded-md border border-[var(--color-border)] px-3 font-semibold text-[var(--color-brand)] sm:w-auto" :aria-label="`Corregir calificación de ${record.nombreAlumno} · ${record.nombreMateria}`" @click="beginEdit(record)">Corregir</button>
           </li>
         </ul>
-        <div class="hidden min-w-0 max-w-full overflow-x-auto lg:block">
+        <div class="historic-table-scroll hidden min-w-0 max-w-full overflow-x-auto xl:block" tabindex="0" role="region" aria-label="Tabla de calificaciones históricas">
         <table class="w-full min-w-[760px] text-left text-sm">
           <thead class="bg-[#f6f7f4]"><tr><th class="px-4 py-3">Alumno</th><th class="px-4 py-3">Carrera / materia</th><th class="px-4 py-3">Vía</th><th class="px-4 py-3">Ciclo y fecha</th><th class="px-4 py-3">Nota</th><th class="px-4 py-3">Acta</th><th class="px-4 py-3"><span class="sr-only">Acciones</span></th></tr></thead>
           <tbody><tr v-for="record in records" :key="`${record.via}-${record.id}`" class="border-t border-[var(--color-border)]"><td class="px-4 py-3"><strong>{{ record.nombreAlumno }}</strong></td><td class="px-4 py-3">{{ record.nombreCarrera }}<small class="block text-[var(--color-graphite)]">{{ record.nombreMateria }}</small></td><td class="px-4 py-3">{{ record.via === 'PROMOCIONADA' ? 'Promocionada' : 'Examen final' }}<small v-if="record.via === 'PROMOCIONADA' && record.estado === 'CORREGIDA'" class="block text-[var(--color-graphite)]">Corregida</small></td><td class="px-4 py-3">{{ record.cicloLectivo }}<small class="block text-[var(--color-graphite)]">{{ record.fechaExamen }}</small></td><td class="px-4 py-3 font-semibold">{{ record.notaFinal }}</td><td class="px-4 py-3">{{ record.libro || '—' }}<small class="block text-[var(--color-graphite)]">Folio {{ record.folio || '—' }}</small></td><td class="px-4 py-3 text-right"><button type="button" class="min-h-10 rounded-md border border-[var(--color-border)] px-3 font-semibold text-[var(--color-brand)]" @click="beginEdit(record)">Corregir</button></td></tr></tbody>
@@ -598,4 +598,5 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .historic-input { margin-top: .25rem; min-height: 2.75rem; width: 100%; min-width: 0; border: 1px solid var(--color-border); border-radius: .375rem; padding: 0 .75rem; font-weight: 400; }
+.historic-table-scroll:focus-visible { outline-offset: -3px; }
 </style>
