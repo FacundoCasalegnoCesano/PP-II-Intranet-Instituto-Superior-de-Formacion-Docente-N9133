@@ -56,17 +56,19 @@ async function loadDetail(): Promise<void> {
   const request = ++detailRequest
   student.value = null; enrolledCareers.value = []; trajectory.value = null; selectedCareerId.value = null; loading.value = true; error.value = ''
   if (!Number.isInteger(studentId.value) || studentId.value <= 0) { loading.value = false; error.value = 'El alumno solicitado no es válido.'; return }
+  const requestedStudentId = studentId.value
   try {
-    const identity = await fetchAdminStudent(studentId.value)
+    const [identity, careers] = await Promise.all([
+      fetchAdminStudent(requestedStudentId),
+      fetchAdminStudentCareers(requestedStudentId),
+    ])
     if (disposed || request !== detailRequest || !isDetail.value) return
     student.value = identity
-    const careers = await fetchAdminStudentCareers(studentId.value)
-    if (disposed || request !== detailRequest || !isDetail.value) return
     enrolledCareers.value = careers
     const requestedCareer = parsedPositive(route.query.selectedCareerId)
     selectedCareerId.value = careers.some((career) => career.carreraId === requestedCareer) ? requestedCareer! : (careers[0]?.carreraId ?? null)
     if (!selectedCareerId.value) return
-    const result = await fetchAdminStudentTrajectory(studentId.value, selectedCareerId.value)
+    const result = await fetchAdminStudentTrajectory(requestedStudentId, selectedCareerId.value)
     if (disposed || request !== detailRequest || !isDetail.value) return
     trajectory.value = result
   } catch {

@@ -19,6 +19,12 @@ const historicalCareer = { id: 2, nombre: 'Profesorado de Historia', duracionAni
 const student = { idUsuario: 13, apellidoNombre: 'Lucía Test Fernández', dni: '42666888', activo: false, email: 'lucia@instituto.edu.ar' }
 const trajectory = { alumnoUsuarioId: 13, carrera: { id: 3, nombre: activeCareer.nombre, duracionAnios: 4 }, promedioGeneral: 8.5, cantidadMateriasAprobadas: 1, materias: [{ materia: { id: 14, nombre: 'Álgebra y Geometría' }, plan: { anio: 1 }, estado: 'APROBADA', asistencia: { porcentaje: 91 }, parcialesEfectivos: [{ numero: 1, notaOriginal: 4, notaEfectiva: 8, recuperado: true }], regularidad: { vencida: false, hasta: '2027-12-31' }, homologacion: null, definitiva: { nota: 8, via: 'EXAMEN_FINAL' } }] }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
 function createRouterAt() {
   return createRouter({ history: createMemoryHistory(), routes: [
     { path: '/app/administracion/trayectorias', name: 'admin-academic-records', component: AdminAcademicRecordsView },
@@ -70,6 +76,46 @@ describe('AdminAcademicRecordsView', () => {
     await userEvent.setup().selectOptions(screen.getByRole('combobox'), '2')
     await waitFor(() => expect(mocks.fetchAdminStudentTrajectory).toHaveBeenLastCalledWith(13, 2))
     expect(router.currentRoute.value.query.selectedCareerId).toBe('2')
+  })
+
+  it('inicia identidad y carreras a la vez y espera ambas antes de cargar la trayectoria', async () => {
+    const identity = deferred<typeof student>()
+    const careers = deferred<Array<{ id: number; carreraId: number; activo: boolean; carrera: typeof activeCareer }>>()
+    mocks.fetchAdminStudent.mockReturnValueOnce(identity.promise)
+    mocks.fetchAdminStudentCareers.mockReturnValueOnce(careers.promise)
+
+    await renderAt('/app/administracion/trayectorias/13')
+
+    await waitFor(() => {
+      expect(mocks.fetchAdminStudent).toHaveBeenCalledWith(13)
+      expect(mocks.fetchAdminStudentCareers).toHaveBeenCalledWith(13)
+    })
+    expect(mocks.fetchAdminStudentTrajectory).not.toHaveBeenCalled()
+
+    identity.resolve(student)
+    await flushPromises()
+    expect(mocks.fetchAdminStudentTrajectory).not.toHaveBeenCalled()
+
+    careers.resolve([{ id: 10, carreraId: 3, activo: true, carrera: activeCareer }])
+    expect(await screen.findByRole('heading', { name: activeCareer.nombre })).toBeVisible()
+    expect(mocks.fetchAdminStudentTrajectory).toHaveBeenCalledWith(13, 3)
+  })
+
+  it.each([
+    ['identidad', 'fetchAdminStudent'],
+    ['carreras', 'fetchAdminStudentCareers'],
+  ] as const)('permite reintentar cuando falla la carga de %s sin mostrar datos parciales', async (_, source) => {
+    mocks[source].mockRejectedValueOnce(new Error('network'))
+    await renderAt('/app/administracion/trayectorias/13')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos cargar la identidad o la trayectoria del alumno.')
+    expect(screen.queryByRole('heading', { name: student.apellidoNombre })).not.toBeInTheDocument()
+    expect(mocks.fetchAdminStudentTrajectory).not.toHaveBeenCalled()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Reintentar' }))
+
+    expect(await screen.findByRole('heading', { name: student.apellidoNombre })).toBeVisible()
+    expect(mocks.fetchAdminStudentTrajectory).toHaveBeenCalledWith(13, 3)
   })
 
   it('presenta los espacios como unidades y anida sus materias componentes', async () => {
