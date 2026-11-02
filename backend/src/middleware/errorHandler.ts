@@ -2,39 +2,23 @@ import type { Request, Response, NextFunction } from 'express';
 import { sanitizeRequestPath } from '../utils/requestPrivacy.js';
 import { AppError } from '../utils/AppError.js';
 
-const SENSITIVE_FIELDS = [
-  'password', 'passwordHash', 'currentPassword', 'newPassword',
-  'token', 'code', 'backupCode', 'resetToken',
-  'authorization', 'cookie', 'session'
-].map((field) => field.toLowerCase());
-
-function sanitizeBody(body: any): any {
-  if (!body || typeof body !== 'object') return body;
-  const sanitized = { ...body };
-  for (const key of Object.keys(sanitized)) {
-    const lowerKey = key.toLowerCase();
-    if (SENSITIVE_FIELDS.some(f => lowerKey.includes(f))) {
-      sanitized[key] = '[REDACTED]';
-    } else if (sanitized[key] && typeof sanitized[key] === 'object') {
-      sanitized[key] = sanitizeBody(sanitized[key]);
-    }
-  }
-  return sanitized;
-}
+const SAFE_ERROR_NAMES = new Set([
+  'Error', 'AppError', 'PrismaClientKnownRequestError', 'JsonWebTokenError', 'TokenExpiredError'
+]);
+const SAFE_ERROR_CODES = new Set(['P2002', 'P2025', 'P2003']);
 
 export const errorHandler = (err: any, req: Request, res: Response, next: NextFunction): void => {
   const requestPath = req.route?.path
     ? `${req.baseUrl}${String(req.route.path)}`
     : sanitizeRequestPath(req.path);
+  const errorName = SAFE_ERROR_NAMES.has(err?.name) ? err.name : 'Error';
+  const errorCode = SAFE_ERROR_CODES.has(err?.code) ? err.code : undefined;
 
   console.error('❌ Error:', {
-    name: typeof err?.name === 'string' ? err.name : 'Error',
-    code: typeof err?.code === 'string' ? err.code : undefined,
+    name: errorName,
+    code: errorCode,
     path: requestPath,
     method: req.method,
-    body: sanitizeBody(req.body),
-    query: sanitizeBody(req.query),
-    params: sanitizeBody(req.params),
     user: req.user?.id
   });
 
