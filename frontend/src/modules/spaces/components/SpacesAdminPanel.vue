@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { apiClient } from '@/core/api/client'
+import ConfirmDialog from '@/ui/ConfirmDialog.vue'
 import { spacesApi, type CareerOption, type CurriculumSpace, type SpacePrerequisite, type SpacePrerequisiteInput, type SubjectOption } from '../api/spacesApi'
 
 const spaces = ref<CurriculumSpace[]>([])
@@ -11,6 +12,9 @@ const selectedId = ref<number | null>(null)
 const editingId = ref<number | null>(null)
 const loading = ref(false)
 const saving = ref(false)
+const deleting = ref(false)
+const pendingDelete = ref<CurriculumSpace | null>(null)
+const deleteError = ref('')
 const error = ref('')
 const notice = ref('')
 const requirementChoice = ref('')
@@ -102,6 +106,10 @@ async function save(): Promise<void> {
     error.value = 'Ingresá un nombre y elegí una carrera.'
     return
   }
+  if (!editingId.value && form.componentesIds.length < 1) {
+    error.value = 'Elegí al menos una materia para crear el espacio curricular.'
+    return
+  }
   if (!editingId.value && componentRulesLoadError.value) {
     error.value = 'No se pudieron revisar las correlatividades propias de las materias seleccionadas.'; return
   }
@@ -168,10 +176,34 @@ async function openSpace(space: CurriculumSpace): Promise<void> {
 async function activate(space: CurriculumSpace): Promise<void> {
   try {
     const detail = await spacesApi.get(space.id)
-    if (detail.materias.length < 2) { error.value = 'Para activar el espacio se necesitan al menos dos materias.'; return }
+    if (detail.materias.length < 1) { error.value = 'Para activar el espacio se necesita al menos una materia.'; return }
     await spacesApi.activate(space.id); notice.value = 'Espacio curricular activado.'; await load()
   }
-  catch { error.value = 'No se pudo activar. Verificá que tenga al menos dos materias.' }
+  catch { error.value = 'No se pudo activar. Verificá que tenga al menos una materia.' }
+}
+
+async function deleteSpace(): Promise<void> {
+  const space = pendingDelete.value
+  if (!space || deleting.value) return
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await spacesApi.remove(space.id)
+    spaces.value = spaces.value.filter((item) => item.id !== space.id)
+    selectedId.value = null
+    editingId.value = null
+    pendingDelete.value = null
+    notice.value = 'Espacio curricular eliminado.'
+    await load()
+  } catch (cause) {
+    deleteError.value = cause instanceof Error && cause.message ? cause.message : 'No se pudo eliminar el espacio curricular.'
+  } finally { deleting.value = false }
+}
+
+function cancelDelete(): void {
+  if (deleting.value) return
+  pendingDelete.value = null
+  deleteError.value = ''
 }
 
 async function addRequirement(): Promise<void> {
@@ -309,7 +341,7 @@ onMounted(() => { void load() })
             <label class="font-semibold">Nombre<input v-model="form.nombre" required maxlength="160" class="space-input" /></label>
             <label class="font-semibold">Carrera<select v-model.number="form.carreraId" :disabled="editingId !== null" required class="space-input"><option :value="0">Seleccionar carrera</option><option v-for="career in careers" :key="career.id" :value="career.id">{{ career.nombre }}</option></select></label>
             <label class="font-semibold">Descripción<textarea v-model="form.descripcion" maxlength="1000" class="space-input min-h-24 py-2" /></label>
-            <fieldset class="rounded-lg border border-[var(--color-border)] p-3" :disabled="editingId !== null && latched"><legend class="px-1 font-semibold">Materias que componen el espacio</legend><p class="text-sm text-[var(--color-graphite)]">{{ latched ? 'La composición quedó bloqueada porque el espacio ya fue completado.' : 'Podés guardar el espacio con cero o una materia; se requieren dos para activarlo.' }}</p><label v-for="subject in eligibleSubjects" :key="subject.id" class="mt-1 flex min-h-10 items-center gap-2"><input v-model="form.componentesIds" type="checkbox" :value="subject.id" /><span>Materia: {{ subject.nombre }}</span></label><p v-if="form.carreraId && !eligibleSubjects.length" class="mt-2 text-sm">No hay materias disponibles para este espacio.</p></fieldset>
+            <fieldset class="rounded-lg border border-[var(--color-border)] p-3" :disabled="editingId !== null && latched"><legend class="px-1 font-semibold">Materias que componen el espacio</legend><p class="text-sm text-[var(--color-graphite)]">{{ latched ? 'La composición quedó bloqueada porque el espacio ya fue completado.' : 'Seleccioná al menos una materia para crear el espacio curricular.' }}</p><label v-for="subject in eligibleSubjects" :key="subject.id" class="mt-1 flex min-h-10 items-center gap-2"><input v-model="form.componentesIds" type="checkbox" :value="subject.id" /><span>Materia: {{ subject.nombre }}</span></label><p v-if="form.carreraId && !eligibleSubjects.length" class="mt-2 text-sm">No hay materias disponibles para este espacio.</p></fieldset>
             <section v-if="editingId === null" class="space-y-3 rounded-lg border border-[var(--color-border)] p-3" aria-label="Correlatividades del espacio">
               <label class="inline-flex min-h-10 items-center gap-2 font-semibold"><input v-model="createHasPrerequisites" type="checkbox" />Tiene correlativas</label>
               <template v-if="createHasPrerequisites">
@@ -349,7 +381,7 @@ onMounted(() => { void load() })
           </form>
         </template>
         <template v-else>
-          <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="text-xl font-semibold">{{ selected.nombre }}</h3><p class="text-sm text-[var(--color-graphite)]">{{ selected.carrera?.nombre ?? 'Carrera' }} · {{ selected.activo ? 'Activo' : 'Inactivo' }}</p></div><button type="button" class="min-h-10 rounded-lg border border-[var(--color-border)] px-3 font-semibold" @click="startEdit(selected)">Editar</button></div>
+          <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="text-xl font-semibold">{{ selected.nombre }}</h3><p class="text-sm text-[var(--color-graphite)]">{{ selected.carrera?.nombre ?? 'Carrera' }} · {{ selected.activo ? 'Activo' : 'Inactivo' }}</p></div><div class="flex gap-2"><button type="button" class="min-h-10 rounded-lg border border-[var(--color-border)] px-3 font-semibold" @click="startEdit(selected)">Editar</button><button type="button" class="min-h-10 rounded-lg border border-red-300 px-3 font-semibold text-red-800" :disabled="deleting" @click="pendingDelete = selected; deleteError = ''">Borrar espacio</button></div></div>
           <h4 class="mt-5 font-semibold">Materias del espacio</h4><ul class="mt-2 list-inside list-disc text-sm"><li v-for="item in selected.materias" :key="item.id">Materia: {{ item.nombre }}</li></ul>
           <h4 class="mt-5 font-semibold">Correlatividades obligatorias</h4>
           <ul class="mt-2 space-y-2"><li v-for="item in requirements" :key="item.id" class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#f6f7f4] p-3 text-sm"><span>{{ prerequisiteLabel(item) }}<span class="block text-[var(--color-graphite)]">{{ [item.aplicaCursado && 'Cursado', item.aplicaRendir && 'Rendir'].filter(Boolean).join(' · ') }}</span></span><button type="button" class="min-h-9 text-[var(--color-brand)] underline" @click="removeRequirement(item)">Quitar</button></li></ul>
@@ -363,6 +395,16 @@ onMounted(() => { void load() })
         </template>
       </section>
     </div>
+    <ConfirmDialog
+      :open="Boolean(pendingDelete)"
+      :error="deleteError"
+      title="Eliminar espacio curricular"
+      :description="`Vas a eliminar ${pendingDelete?.nombre ?? 'este espacio curricular'}. Si tiene inscripciones o está asociado a un período, la operación será rechazada.`"
+      confirm-label="Eliminar espacio"
+      :loading="deleting"
+      @cancel="cancelDelete"
+      @confirm="deleteSpace"
+    />
   </section>
 </template>
 

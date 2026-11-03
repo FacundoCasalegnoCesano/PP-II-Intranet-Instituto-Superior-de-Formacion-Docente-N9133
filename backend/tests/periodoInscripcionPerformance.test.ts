@@ -36,6 +36,29 @@ test('la validación agrupada conserva el primer ID inválido', async () => {
   );
 });
 
+test('una oferta de espacio con un componente puede habilitarse y se rechaza el componente como materia independiente', async () => {
+  const originalMateriaFindMany = prisma.materia.findMany;
+  const originalOfferFindMany = prisma.cursadaEspacio.findMany;
+  try {
+    prisma.materia.findMany = (async () => [{ id: 7, nombre: 'Práctica', espacioCurricular: { nombre: 'Residencia', activo: true } }]) as any;
+    await assert.rejects(
+      (periodoInscripcionService as any).validarSeleccion({ tipo: 'MATERIA', materiasIds: [7] }),
+      /pertenece al espacio Residencia/
+    );
+
+    prisma.materia.findMany = (async () => []) as any;
+    prisma.cursadaEspacio.findMany = (async () => [{
+      id: 12,
+      espacioCurricular: { materias: [{ id: 7 }] },
+      componentes: [{ materiaId: 7 }]
+    }]) as any;
+    await (periodoInscripcionService as any).validarSeleccion({ tipo: 'MATERIA', cicloLectivo: 2026, cursadasEspaciosIds: [12] });
+  } finally {
+    prisma.materia.findMany = originalMateriaFindMany;
+    prisma.cursadaEspacio.findMany = originalOfferFindMany;
+  }
+});
+
 test('actualiza la descripción sin exigir nuevamente la selección', async () => {
   const originalFindById = periodoInscripcionRepository.findById;
   const originalTransaction = prisma.$transaction;

@@ -18,6 +18,7 @@ router.get('/', espacioCurricularController.list);
 router.post('/', validationMiddleware(createEspacioCurricularSchema), espacioCurricularController.create);
 router.get('/:id', validationMiddleware(spaceIdParamsSchema, 'params'), espacioCurricularController.get);
 router.patch('/:id', validationMiddleware(spaceIdParamsSchema, 'params'), validationMiddleware(updateEspacioCurricularSchema), espacioCurricularController.update);
+router.delete('/:id', validationMiddleware(spaceIdParamsSchema, 'params'), espacioCurricularController.delete);
 router.post('/:id/activate', validationMiddleware(spaceIdParamsSchema, 'params'), espacioCurricularController.activate);
 router.get('/:id/correlatividades', validationMiddleware(spaceIdParamsSchema, 'params'), espacioCurricularController.listPrerequisites);
 router.post('/:id/correlatividades', validationMiddleware(spaceIdParamsSchema, 'params'), validationMiddleware(createEspacioCorrelatividadSchema), espacioCurricularController.addPrerequisite);

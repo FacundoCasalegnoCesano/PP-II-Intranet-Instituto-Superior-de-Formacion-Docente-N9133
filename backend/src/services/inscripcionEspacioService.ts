@@ -62,7 +62,7 @@ class InscripcionEspacioService {
       approved,
       correlatividades,
       pendientes: correlatividades.pendientes as RequisitoAcademicoPendiente[],
-      completado: componentIds.length >= 2 && componentIds.every((id) => approved.has(id))
+      completado: componentIds.length >= 1 && componentIds.every((id) => approved.has(id))
     };
   }
 
@@ -90,7 +90,7 @@ class InscripcionEspacioService {
     if (!offer || !offer.activo || !offer.espacioCurricular.activo) throw new AppError(404, 'Cursada de espacio no disponible');
     const catalogIds = offer.espacioCurricular.materias.map((item: any) => item.id).sort((a: number, b: number) => a - b);
     const componentIds = offer.componentes.map((item: any) => item.materiaId).sort((a: number, b: number) => a - b);
-    const staleComposition = componentIds.length < 2 || componentIds.length !== catalogIds.length || componentIds.some((id: number, index: number) => id !== catalogIds[index])
+    const staleComposition = componentIds.length < 1 || componentIds.length !== catalogIds.length || componentIds.some((id: number, index: number) => id !== catalogIds[index])
       || offer.componentes.some((item: any) => !item.activo);
     const careerIds = await this.getActiveCareerIds(student.usuarioId);
     const hasCareer = offer.espacioCurricular.carreraId !== null
@@ -210,7 +210,7 @@ class InscripcionEspacioService {
         if (espacioCarreraId === null) throw new AppError(409, 'El espacio ya no tiene una carrera asignada');
         const catalogIds = offer.espacioCurricular.materias.map((item: any) => item.id).sort((a: number, b: number) => a - b);
         const courseIds = offer.componentes.map((item: any) => item.materiaId).sort((a: number, b: number) => a - b);
-        if (courseIds.length < 2 || courseIds.length !== catalogIds.length || courseIds.some((id: number, index: number) => id !== catalogIds[index]) || offer.componentes.some((item: any) => !item.activo)) {
+        if (courseIds.length < 1 || courseIds.length !== catalogIds.length || courseIds.some((id: number, index: number) => id !== catalogIds[index]) || offer.componentes.some((item: any) => !item.activo)) {
           throw new AppError(409, 'La oferta no coincide con todos los componentes activos del espacio');
         }
         if (modalidadElegida && offer.componentes.some((course: any) => course.materia.modalidad !== modalidadElegida)) {

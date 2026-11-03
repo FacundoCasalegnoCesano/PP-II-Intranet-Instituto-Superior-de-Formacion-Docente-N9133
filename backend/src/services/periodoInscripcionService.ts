@@ -81,7 +81,11 @@ class PeriodoInscripcionService {
    * - MATERIA: al menos una materia existente (selección por carrera/año)
    * - EXAMEN: al menos una mesa existente
    */
-  private async validarSeleccion(data: { tipo?: string; cicloLectivo?: number; materiasIds?: number[]; cursadasEspaciosIds?: number[]; mesasIds?: number[] }, db: PeriodoValidationClient = prisma) {
+  private async validarSeleccion(
+    data: { tipo?: string; cicloLectivo?: number; materiasIds?: number[]; cursadasEspaciosIds?: number[]; mesasIds?: number[] },
+    db: PeriodoValidationClient = prisma,
+    nuevasMateriasIds: number[] = data.materiasIds ?? []
+  ) {
     if (data.tipo === 'MATERIA') {
       const materiaIds = data.materiasIds ?? [];
       const ofertaIds = data.cursadasEspaciosIds ?? [];
@@ -89,10 +93,16 @@ class PeriodoInscripcionService {
         throw new Error('El período debe incluir al menos una materia o cursada de espacio');
       }
       if (materiaIds.length > 0) {
-        const existentes = await db.materia.findMany({ where: { id: { in: materiaIds } }, select: { id: true } });
+        const existentes = await db.materia.findMany({
+          where: { id: { in: materiaIds } },
+          select: { id: true, nombre: true, espacioCurricular: { select: { nombre: true, activo: true } } }
+        });
         const encontrados = new Set(existentes.map(materia => materia.id));
         const invalida = materiaIds.find(id => !encontrados.has(id));
         if (invalida !== undefined) throw new Error(`La materia ${invalida} no existe`);
+        const nuevas = new Set(nuevasMateriasIds);
+        const componente = existentes.find(materia => nuevas.has(materia.id) && materia.espacioCurricular?.activo);
+        if (componente) throw new Error(`La materia ${componente.nombre} pertenece al espacio ${componente.espacioCurricular!.nombre}; seleccioná la cursada del espacio`);
       }
       if (ofertaIds.length > 0) {
         const ofertas = await db.cursadaEspacio.findMany({
@@ -105,7 +115,7 @@ class PeriodoInscripcionService {
         for (const oferta of ofertas) {
           const componentes = oferta.componentes.map(item => item.materiaId).sort((a, b) => a - b);
           const catalogo = oferta.espacioCurricular.materias.map(item => item.id).sort((a, b) => a - b);
-          if (componentes.length < 2 || componentes.length !== catalogo.length || componentes.some((id, index) => id !== catalogo[index])) {
+          if (componentes.length < 1 || componentes.length !== catalogo.length || componentes.some((id, index) => id !== catalogo[index])) {
             throw new Error(`La cursada de espacio ${oferta.id} no refleja la composición completa del espacio`);
           }
         }
@@ -208,6 +218,8 @@ class PeriodoInscripcionService {
         if (tipoDestino === 'MATERIA' && mesasIds?.length) {
           throw new Error('Un período MATERIA no admite mesas de examen');
         }
+        const materiasActuales = new Set(periodoActual.materias.map((item: any) => item.materiaId));
+        const nuevasMateriasIds = materiasIds?.filter(materiaId => !materiasActuales.has(materiaId)) ?? [];
         await this.validarSeleccion({
           tipo: tipoDestino,
           cicloLectivo: data.cicloLectivo ?? periodoActual.cicloLectivo,
@@ -215,7 +227,7 @@ class PeriodoInscripcionService {
             materiasIds: materiasIds ?? periodoActual.materias.map((item: any) => item.materiaId),
             cursadasEspaciosIds: cursadasEspaciosIds ?? periodoActual.cursadasEspacios.map((item: any) => item.cursadaEspacioId)
           } : { mesasIds: mesasIds ?? periodoActual.mesas.map((item: any) => item.mesaId) })
-        }, tx);
+        }, tx, nuevasMateriasIds);
       }
       if (resto.tipo !== undefined && resto.tipo !== periodoActual.tipo) {
         if (resto.tipo === 'MATERIA') await tx.periodoMesaHabilitada.deleteMany({ where: { periodoInscripcionId: id } });

@@ -1036,7 +1036,7 @@ paths:
         '200': { $ref: '#/components/responses/OK' }
     post:
       tags: [Espacios Curriculares]
-      summary: Crear espacio curricular inactivo con sus materias
+      summary: Crear espacio curricular activo con una o más materias
       x-roles: [ADMINISTRATIVO]
       requestBody:
         required: true
@@ -1070,11 +1070,20 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/OK' }
         '409': { description: Composición ya bloqueada }
+    delete:
+      tags: [Espacios Curriculares]
+      summary: Eliminar espacio curricular sin matrículas ni períodos asociados
+      x-roles: [ADMINISTRATIVO]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '409': { description: Conserva matrículas, períodos o historia académica }
 
   /espacios-curriculares/{id}/activate:
     post:
       tags: [Espacios Curriculares]
-      summary: Activar un espacio con al menos dos materias activas
+      summary: Activar un espacio con al menos una materia activa
       x-roles: [ADMINISTRATIVO]
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
@@ -3003,7 +3012,7 @@ components:
         nombre: { type: string, minLength: 1, maxLength: 255 }
         carreraId: { type: integer, minimum: 1 }
         descripcion: { type: string, maxLength: 5000, nullable: true }
-        componentesIds: { type: array, minItems: 0, uniqueItems: true, items: { type: integer, minimum: 1 }, description: La composición puede quedar en borrador con menos de dos materias; activar requiere dos o más. }
+        componentesIds: { type: array, minItems: 1, uniqueItems: true, items: { type: integer, minimum: 1 } }
         correlatividades:
           type: array
           items: { $ref: '#/components/schemas/EspacioCorrelatividadRequest' }
@@ -3016,7 +3025,7 @@ components:
       properties:
         nombre: { type: string, minLength: 1, maxLength: 255 }
         descripcion: { type: string, maxLength: 5000, nullable: true }
-        componentesIds: { type: array, minItems: 0, uniqueItems: true, items: { type: integer, minimum: 1 }, description: La composición puede quedar en borrador; activar requiere dos o más materias. }
+        componentesIds: { type: array, minItems: 1, uniqueItems: true, items: { type: integer, minimum: 1 } }
         revisarCorrelatividadesComponentes: { type: boolean, description: Confirmación explícita requerida al suspender reglas propias activas por agrupación. }
     EspacioCorrelatividadRequest:
       type: object
@@ -3051,7 +3060,7 @@ components:
         periodo: { $ref: '#/components/schemas/PeriodoMateria', default: ANUAL }
         componentes:
           type: array
-          minItems: 2
+          minItems: 1
           uniqueItems: true
           items: { $ref: '#/components/schemas/CursadaEspacioComponenteRequest' }
           description: Debe incluir exactamente todas las materias activas que componen el espacio. Cada componente puede conservar un período propio.

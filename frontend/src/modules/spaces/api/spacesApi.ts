@@ -27,6 +27,7 @@ export const spacesApi = {
   update(id: number, input: Partial<Pick<SpaceWriteInput, 'nombre' | 'descripcion' | 'componentesIds' | 'revisarCorrelatividadesComponentes'>>): Promise<CurriculumSpace> {
     return apiClient.patch(`/espacios-curriculares/${id}`, input)
   },
+  remove(id: number): Promise<void> { return apiClient.delete(`/espacios-curriculares/${id}`) },
   activate(id: number): Promise<CurriculumSpace> { return apiClient.post(`/espacios-curriculares/${id}/activate`) },
   prerequisites(id: number): Promise<SpacePrerequisite[]> { return apiClient.get(`/espacios-curriculares/${id}/correlatividades`) },
   addPrerequisite(id: number, input: SpacePrerequisiteInput): Promise<SpacePrerequisite> {

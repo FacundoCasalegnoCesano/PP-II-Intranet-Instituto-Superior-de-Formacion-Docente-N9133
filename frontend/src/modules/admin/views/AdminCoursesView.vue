@@ -93,6 +93,12 @@ async function loadOptions(request = ++optionsRequest, targetRoute = route.fullP
     teachers.value = userResult.data.map((user) => ({ idUsuario: user.idUsuario, apellidoNombre: user.apellidoNombre }))
     curriculumSpaces.value = spaceResult.filter((space) => space.activo)
     careers.value = careerResult.data
+    if (unitType.value === 'ESPACIO' && !isEdit.value) {
+      const requestedCareerId = Number(route.query.carreraId)
+      const requestedSpaceId = Number(route.query.espacioCurricularId)
+      if (careers.value.some((career) => career.id === requestedCareerId)) spaceCareerId.value = requestedCareerId
+      if (curriculumSpaces.value.some((space) => space.id === requestedSpaceId && space.carreraId === spaceCareerId.value)) selectSpace(requestedSpaceId)
+    }
     optionsReady.value = true
     return true
   } catch {
@@ -178,7 +184,9 @@ async function enrollStudentInFinalizedCourse(): Promise<void> {
 }
 
 function reset(): void {
-  Object.assign(form, { materiaId: 0, anioLectivo: new Date().getFullYear(), periodo: 'ANUAL', docenteId: null })
+  const requestedYear = Number(route.query.anioLectivo)
+  const anioLectivo = Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= 2100 ? requestedYear : new Date().getFullYear()
+  Object.assign(form, { materiaId: 0, anioLectivo, periodo: 'ANUAL', docenteId: null })
   fieldError.value = ''
   spaceCareerId.value = null; spaceId.value = null; spaceComponentSettings.value = []
   unitType.value = route.query.tipo === 'ESPACIO' ? 'ESPACIO' : 'MATERIA'
@@ -227,7 +235,7 @@ async function save(): Promise<void> {
   fieldError.value = ''
   const result = courseSchema.safeParse(form)
   if (unitType.value === 'ESPACIO') {
-    if (!spaceId.value || !spaceCareerId.value || spaceComponentSettings.value.length < 2) { fieldError.value = 'Elegí un espacio curricular con componentes disponibles.'; return }
+    if (!spaceId.value || !spaceCareerId.value || spaceComponentSettings.value.length < 1) { fieldError.value = 'Elegí un espacio curricular con al menos una materia componente.'; return }
     const spaceResult = spaceCourseSchema.safeParse(form)
     if (!spaceResult.success) { fieldError.value = spaceResult.error.issues[0]?.message ?? 'Revisá el año y período de la cursada.'; return }
     saving.value = true

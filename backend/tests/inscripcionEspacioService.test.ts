@@ -95,6 +95,46 @@ test('la baja conserva definitivas aprobadas y da de baja sólo componentes pend
   assert.ok(parentUpdates[0].data.fechaBaja instanceof Date);
 });
 
+test('la inscripción atómica de un espacio de una materia crea la matrícula y su componente', async () => {
+  const offer = {
+    id: 5, espacioCurricularId: 7, anioLectivo: 2026, periodo: 'ANUAL', activo: true,
+    espacioCurricular: { id: 7, carreraId: 9, activo: true, materias: [{ id: 21 }] },
+    componentes: [{ id: 31, materiaId: 21, activo: true, materia: { id: 21, nombre: 'Residencia', modalidad: 'PRESENCIAL' } }]
+  };
+  const componentWrites: any[] = [];
+  let offerReads = 0;
+  replaceMethod(inscripcionEspacioService as any, 'loadStudent', async (usuarioId: number) => ({ usuarioId, alumnoId: 12 }));
+  replaceMethod(inscripcionEspacioService as any, 'academicFacts', async () => ({
+    states: new Map(), approved: new Set(), correlatividades: { cumple: true, pendientes: [] }, pendientes: [], completado: false
+  }));
+  replaceMethod(inscripcionEspacioService as any, 'presentarMatricula', async (row: any) => row);
+  replaceMethod(prisma as any, '$transaction', async (callback: any) => callback({
+    $queryRaw: async () => [],
+    cursadaEspacio: { findUnique: async () => ++offerReads === 1 ? { id: 5, espacioCurricular: { carreraId: 9 } } : offer },
+    inscripcionCarrera: { findFirst: async () => ({ id: 14 }) },
+    inscripcionEspacio: {
+      findUnique: async () => null,
+      create: async () => ({ id: 41 }),
+      update: async () => assert.fail('No debe actualizar una matrícula previa')
+    },
+    inscripcionMateria: {
+      findMany: async () => [],
+      create: async (args: any) => { componentWrites.push(args); return args; },
+      update: async () => assert.fail('No debe actualizar un componente previo')
+    }
+  }));
+  replaceMethod(prisma.inscripcionEspacio as any, 'findUnique', async () => ({ id: 41 }));
+
+  await inscripcionEspacioService.inscribir(5, undefined, 90, { id: 1, rol: ROLES.ADMINISTRATIVO });
+
+  assert.equal(componentWrites.length, 1);
+  assert.deepEqual(componentWrites[0].data, {
+    alumnoId: 12, materiaId: 21, cursadaId: 31, cicloLectivo: 2026, inscripcionEspacioId: 41,
+    modalidadElegida: 'PRESENCIAL', estado: 'ACTIVA', fechaInscripcion: componentWrites[0].data.fechaInscripcion
+  });
+  assert.ok(componentWrites[0].data.fechaInscripcion instanceof Date);
+});
+
 test('un componente dado de baja del mismo espacio es compatible para reactivar la matrícula', async () => {
   replaceMethod(prisma.inscripcionMateria as any, 'findMany', async () => [
     { id: 1, materiaId: 21, cicloLectivo: 2026, cursadaId: 31, estado: 'BAJA', fechaBaja: new Date(), modalidadElegida: 'PRESENCIAL', inscripcionEspacioId: 4 }

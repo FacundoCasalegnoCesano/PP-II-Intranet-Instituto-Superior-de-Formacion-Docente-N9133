@@ -60,11 +60,21 @@ test('la composición ya bloqueada permanece monotónica aunque cambie el estado
   await latchSpaceIfStudentCompleted({ tx, carreraId: 4, espacioCurricularId: 30, materiaId: 7, alumnoId: 41, newlyApproved: true });
   assert.equal(writes, 0);
   assert.equal(approvedReads, 0);
+});
 
-  tx.espacioCurricular.findFirst = async () => ({ composicionBloqueadaAt: null, materias: [{ id: 7 }] });
+test('el singleton aprobado fija el latch y una operación sin nueva aprobación no lo vuelve a escribir', async () => {
+  let writes = 0;
+  const tx: any = {
+    espacioCurricular: {
+      findFirst: async () => ({ composicionBloqueadaAt: null, materias: [{ id: 7 }] }),
+      updateMany: async () => { writes += 1; return { count: 1 }; }
+    }
+  };
+  estadoAcademicoService.getMateriasAprobadasSet = async () => new Set();
+
   await latchSpaceIfStudentCompleted({ tx, carreraId: 4, espacioCurricularId: 30, materiaId: 7, alumnoId: 41, newlyApproved: true });
-  assert.equal(writes, 0);
+  assert.equal(writes, 1);
 
   await latchSpaceIfStudentCompleted({ tx, carreraId: 4, espacioCurricularId: 30, materiaId: 7, alumnoId: 41, newlyApproved: false });
-  assert.equal(writes, 0);
+  assert.equal(writes, 1);
 });

@@ -26,12 +26,13 @@ function spaceRecord(overrides: Record<string, unknown> = {}) {
 
 afterEach(() => { while (restorations.length) restorations.pop()?.(); });
 
-test('la configuración admite borradores con cero o una materia y no permite duplicados ni campos extra', () => {
+test('la configuración admite espacios con una materia y rechaza cero, duplicados o campos extra', () => {
   const valid = { nombre: 'Práctica', carreraId: 3, componentesIds: [10, 11] };
   assert.equal(createEspacioCurricularSchema.validate(valid).error, undefined);
   assert.ok(createEspacioCurricularSchema.validate({ ...valid, componentesIds: [10, 10] }).error);
   assert.equal(createEspacioCurricularSchema.validate({ ...valid, componentesIds: [10] }).error, undefined);
-  assert.equal(createEspacioCurricularSchema.validate({ ...valid, componentesIds: [] }).error, undefined);
+  assert.ok(createEspacioCurricularSchema.validate({ ...valid, componentesIds: [] }).error);
+  assert.ok(updateEspacioCurricularSchema.validate({ componentesIds: [] }).error);
   assert.ok(createEspacioCurricularSchema.validate({ ...valid, activo: true }).error);
   assert.ok(updateEspacioCurricularSchema.validate({ activo: true }).error);
   assert.equal(createEspacioCurricularSchema.validate({ ...valid, correlatividades: [] }).error, undefined);
@@ -52,35 +53,50 @@ test('las correlatividades validan el requisito XOR y piden una instancia de apl
   assert.ok(createEspacioCorrelatividadSchema.validate({ ...base, aplicaCursado: false, aplicaRendir: false, materiaRequeridaId: 10 }).error);
 });
 
-test('crear configura en transacción, deja inactivo y asigna las materias al espacio', async () => {
+test('crear activa el espacio, asigna una materia y fija el latch si ya estaba aprobada', async () => {
   const calls: Array<{ model: string; args: any }> = [];
   const db = {
     $queryRaw: async () => [],
     carrera: { findUnique: async () => ({ id: 3, activo: true }) },
     materia: {
-      findMany: async () => [{ id: 10, espacioCurricularId: null }, { id: 11, espacioCurricularId: null }],
+      findMany: async () => [{ id: 10, espacioCurricularId: null }],
       findUnique: async () => ({ carreraId: 3 }),
-      updateMany: async (args: any) => { calls.push({ model: 'materia.updateMany', args }); return { count: 2 }; }
+      updateMany: async (args: any) => { calls.push({ model: 'materia.updateMany', args }); return { count: 1 }; }
     },
     correlatividad: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+    inscripcionExamen: { findMany: async () => [{ alumnoId: 42 }] }, homologacion: { findMany: async () => [] }, calificacion: { findMany: async () => [] },
     espacioCorrelatividad: { findFirst: async () => null, create: async (args: any) => { calls.push({ model: 'prerequisite.create', args }); return args.data; } },
     espacioCurricular: {
       create: async (args: any) => { calls.push({ model: 'espacio.create', args }); return { id: 7 }; },
-      findUnique: async () => ({ id: 7, carreraId: 3, activo: false }),
+      findUnique: async () => ({ id: 7, carreraId: 3, activo: true }),
       findMany: async () => []
     }
   };
   transaction(db);
   replace(materiaRepository, 'getMixedCorrelationEdges', async () => []);
+  replace(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set([10]));
   const result = await espacioCurricularService.create({
-    nombre: ' Práctica ', carreraId: 3, componentesIds: [10, 11],
+    nombre: ' Práctica ', carreraId: 3, componentesIds: [10],
     correlatividades: [{ materiaRequeridaId: 12, aplicaCursado: true, aplicaRendir: false }]
   });
-  assert.equal(calls[0].args.data.activo, false);
+  assert.equal(calls[0].args.data.activo, true);
+  assert.ok(calls[0].args.data.composicionBloqueadaAt instanceof Date);
   assert.equal(calls[0].args.data.nombre, 'Práctica');
   assert.equal(calls[2].args.data.espacioCurricularId, 7);
   assert.ok(calls.some(call => call.model === 'prerequisite.create'));
-  assert.equal((result as any).activo, false);
+  assert.equal((result as any).activo, true);
+});
+
+test('el servicio rechaza crear espacios sin componentes antes de escribir', async () => {
+  let writes = 0;
+  transaction({
+    $queryRaw: async () => [],
+    carrera: { findUnique: async () => ({ id: 3, activo: true }) },
+    materia: { findMany: async () => { throw new Error('No debe consultar materias'); } },
+    espacioCurricular: { create: async () => { writes++; return { id: 7 }; } }
+  });
+  await assert.rejects(espacioCurricularService.create({ nombre: 'Práctica', carreraId: 3, componentesIds: [] }), /al menos una materia/);
+  assert.equal(writes, 0);
 });
 
 test('crear rechaza destino inválido dentro de la transacción y no confirma el espacio', async () => {
@@ -94,6 +110,7 @@ test('crear rechaza destino inválido dentro de la transacción y no confirma el
       updateMany: async () => ({ count: 2 })
     },
     correlatividad: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+    inscripcionExamen: { findMany: async () => [] }, homologacion: { findMany: async () => [] }, calificacion: { findMany: async () => [] },
     espacioCurricular: {
       create: async () => { calls.push('space.create'); return { id: 7 }; },
       findUnique: async () => ({ id: 7, carreraId: 3, activo: false, materias: [{ id: 10 }, { id: 11 }] }),
@@ -139,6 +156,7 @@ test('crear suspende las reglas propias confirmadas en la misma transacción', a
       findMany: async () => [{ id: 20, materiaOrigenId: 10, materiaRequeridaId: 12, aplicaCursado: false, aplicaRendir: true }],
       updateMany: async (args: any) => { calls.push({ model: 'correlatividad.updateMany', args }); return { count: 1 }; }
     },
+    inscripcionExamen: { findMany: async () => [] }, homologacion: { findMany: async () => [] }, calificacion: { findMany: async () => [] },
     espacioCurricular: {
       create: async (args: any) => { calls.push({ model: 'espacio.create', args }); return { id: 7 }; },
       findUnique: async () => ({ id: 7, carreraId: 3, activo: false })
@@ -212,7 +230,7 @@ test('cambiar composición sin oferta activa ni matrículas permite actualizar a
   assert.ok(calls.includes('members.update'));
 });
 
-test('al reducir un espacio activo a menos de dos materias lo devuelve a configuración', async () => {
+test('al reducir un espacio activo a una materia conserva su estado activo', async () => {
   let updateData: any;
   const db = {
     $queryRaw: async () => [],
@@ -230,7 +248,7 @@ test('al reducir un espacio activo a menos de dos materias lo devuelve a configu
 
   await espacioCurricularService.update(7, { componentesIds: [10] });
 
-  assert.equal(updateData.activo, false);
+  assert.equal(updateData.activo, undefined);
 });
 
 test('cambiar miembros rechaza los ciclos que aparecen al incorporar una correlativa del espacio', async () => {
@@ -280,17 +298,36 @@ test('cambiar composición también exige revisar y suspende reglas activas de m
   assert.deepEqual(suspension?.args.data, { suspendidaPorEspacio: true });
 });
 
-test('activar rechaza espacios con menos de dos materias', async () => {
+test('activar rechaza espacios sin materias', async () => {
+  const db = {
+    $queryRaw: async () => [],
+    carrera: { findUnique: async () => ({ id: 3, activo: true }) },
+    espacioCurricular: {
+      findUnique: async () => spaceRecord({ materias: [] }),
+      update: async () => { throw new Error('No debía activarse'); }
+    }
+  };
+  transaction(db);
+  await assert.rejects(espacioCurricularService.activate(7), /al menos una materia/);
+});
+
+test('activar permite espacios con una materia', async () => {
+  let updateData: any;
   const db = {
     $queryRaw: async () => [],
     carrera: { findUnique: async () => ({ id: 3, activo: true }) },
     espacioCurricular: {
       findUnique: async () => spaceRecord({ materias: [{ id: 10 }] }),
-      update: async () => { throw new Error('No debía activarse'); }
-    }
+      update: async ({ data }: any) => { updateData = data; return spaceRecord({ ...data, activo: true, materias: [{ id: 10 }] }); }
+    },
+    inscripcionExamen: { findMany: async () => [] }, homologacion: { findMany: async () => [] }, calificacion: { findMany: async () => [] }
   };
   transaction(db);
-  await assert.rejects(espacioCurricularService.activate(7), /al menos dos materias/);
+
+  const result = await espacioCurricularService.activate(7);
+
+  assert.equal(result.activo, true);
+  assert.equal(updateData.activo, true);
 });
 
 test('quitar correlatividad coordina con matrículas mediante lock de carrera dentro de la transacción', async () => {

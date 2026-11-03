@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/vue'
+import { render, screen, waitFor, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SpacesAdminPanel from './SpacesAdminPanel.vue'
@@ -14,13 +14,14 @@ const mocks = vi.hoisted(() => ({
   activate: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
+  remove: vi.fn(),
 }))
 
 vi.mock('@/core/api/client', () => ({ apiClient: { get: mocks.getMateria, getPaginated: mocks.getPaginated } }))
 vi.mock('../api/spacesApi', () => ({ spacesApi: {
   list: mocks.list, get: mocks.get, prerequisites: mocks.prerequisites,
   addPrerequisite: mocks.addPrerequisite, removePrerequisite: mocks.removePrerequisite,
-  activate: mocks.activate, create: mocks.create, update: mocks.update,
+  activate: mocks.activate, create: mocks.create, update: mocks.update, remove: mocks.remove,
 } }))
 
 const space = {
@@ -107,6 +108,79 @@ describe('SpacesAdminPanel Prisma response compatibility', () => {
       correlatividades: [{ materiaRequeridaId: 12, aplicaCursado: false, aplicaRendir: true }],
     }))
     expect(mocks.addPrerequisite).not.toHaveBeenCalled()
+  })
+
+  it('requires one component and creates a single-component space without an activation step', async () => {
+    const user = userEvent.setup()
+    const created = { ...space, id: 20, nombre: 'Espacio de una materia', materias: [space.materias[0]] }
+    mocks.list.mockResolvedValueOnce([]).mockResolvedValue([created])
+    mocks.create.mockResolvedValue(created)
+    render(SpacesAdminPanel)
+    await user.click(await screen.findByRole('button', { name: 'Nuevo espacio curricular' }))
+    await user.type(screen.getByLabelText('Nombre'), created.nombre)
+    await user.selectOptions(screen.getByLabelText('Carrera'), '3')
+    await user.click(await screen.findByRole('checkbox', { name: 'Materia: Práctica I' }))
+    await user.click(screen.getByRole('button', { name: 'Guardar espacio' }))
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      nombre: created.nombre, carreraId: 3, componentesIds: [10],
+    })))
+    expect(screen.queryByRole('button', { name: 'Activar' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Espacio de una materia.*Activo/ })).toBeInTheDocument()
+  })
+
+  it('does not submit a space without components', async () => {
+    const user = userEvent.setup()
+    render(SpacesAdminPanel)
+    await user.click(await screen.findByRole('button', { name: 'Nuevo espacio curricular' }))
+    await user.type(screen.getByLabelText('Nombre'), 'Espacio vacío')
+    await user.selectOptions(screen.getByLabelText('Carrera'), '3')
+    await user.click(screen.getByRole('button', { name: 'Guardar espacio' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/al menos una materia/i)
+    expect(mocks.create).not.toHaveBeenCalled()
+  })
+
+  it('cancels the delete confirmation without calling the API', async () => {
+    const user = userEvent.setup()
+    render(SpacesAdminPanel)
+    await user.click(await screen.findByRole('button', { name: /Campo de la Práctica.*Activo/ }))
+    await user.click(await screen.findByRole('button', { name: 'Borrar espacio' }))
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Eliminar espacio curricular' })
+    expect(dialog).toHaveTextContent('Campo de la Práctica')
+    await user.click(within(dialog).getAllByRole('button', { name: 'Cancelar' })[1])
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(mocks.remove).not.toHaveBeenCalled()
+  })
+
+  it('keeps the selected space and confirmation open when deletion is blocked', async () => {
+    const user = userEvent.setup()
+    mocks.remove.mockRejectedValueOnce(new Error('No se puede eliminar: tiene inscripciones asociadas.'))
+    render(SpacesAdminPanel)
+    await user.click(await screen.findByRole('button', { name: /Campo de la Práctica.*Activo/ }))
+    await user.click(await screen.findByRole('button', { name: 'Borrar espacio' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Eliminar espacio curricular' })
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar espacio' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('tiene inscripciones asociadas')
+    expect(screen.getByRole('button', { name: /Campo de la Práctica.*Activo/ })).toBeInTheDocument()
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+  })
+
+  it('deletes the selected space, refreshes the list, and closes confirmation', async () => {
+    const user = userEvent.setup()
+    mocks.list.mockResolvedValueOnce([space]).mockResolvedValueOnce([])
+    mocks.remove.mockResolvedValueOnce(undefined)
+    render(SpacesAdminPanel)
+    await user.click(await screen.findByRole('button', { name: /Campo de la Práctica.*Activo/ }))
+    await user.click(await screen.findByRole('button', { name: 'Borrar espacio' }))
+    await user.click(within(await screen.findByRole('alertdialog', { name: 'Eliminar espacio curricular' })).getByRole('button', { name: 'Eliminar espacio' }))
+
+    await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith(8))
+    expect(await screen.findByText('Espacio curricular eliminado.')).toBeInTheDocument()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Campo de la Práctica.*Activo/ })).not.toBeInTheDocument()
   })
 
   it('allows another space component as a materia prerequisite while excluding its own components', async () => {

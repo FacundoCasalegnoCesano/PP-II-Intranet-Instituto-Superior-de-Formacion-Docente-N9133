@@ -4,19 +4,24 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import AdminPeriodsView from './AdminPeriodsView.vue'
+import AdminCoursesView from './AdminCoursesView.vue'
 import type { EnrollmentPeriod } from '../types/admin'
 
 const mocks = vi.hoisted(() => ({
   listPeriods: vi.fn(),
   getPeriod: vi.fn(),
   listCareers: vi.fn(),
+  listSubjects: vi.fn(),
+  listUsers: vi.fn(),
   getSubjectsByYear: vi.fn(),
   listExams: vi.fn(),
   updatePeriod: vi.fn(),
   listSpaceCourses: vi.fn(),
 }))
+const spaceMocks = vi.hoisted(() => ({ list: vi.fn() }))
 
 vi.mock('../api/adminApi', () => ({ adminApi: mocks }))
+vi.mock('@/modules/spaces/api/spacesApi', () => ({ spacesApi: { list: spaceMocks.list } }))
 vi.mock('@/ui/feedback', () => ({ useFeedback: () => ({ success: vi.fn(), error: vi.fn() }) }))
 
 const period: EnrollmentPeriod = {
@@ -45,7 +50,7 @@ async function renderList() {
   mocks.listPeriods.mockResolvedValue({ data: [period], pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } })
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/app/administracion/periodos', name: 'admin-periods', component: AdminPeriodsView }, { path: '/app/administracion/periodos/nuevo', name: 'admin-period-create', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsView }],
+    routes: [{ path: '/app/administracion/periodos', name: 'admin-periods', component: AdminPeriodsView }, { path: '/app/administracion/periodos/nuevo', name: 'admin-period-create', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsView }, { path: '/app/administracion/cursadas', name: 'admin-courses', component: AdminCoursesView }, { path: '/app/administracion/cursadas/nueva', name: 'admin-course-create', component: AdminCoursesView }],
   })
   await router.push('/app/administracion/periodos')
   await router.isReady()
@@ -56,7 +61,7 @@ async function renderList() {
 async function renderCreate() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/app/administracion/periodos/nuevo', name: 'admin-period-create', component: AdminPeriodsView }, { path: '/app/administracion/periodos', name: 'admin-periods', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsView }],
+    routes: [{ path: '/app/administracion/periodos/nuevo', name: 'admin-period-create', component: AdminPeriodsView }, { path: '/app/administracion/periodos', name: 'admin-periods', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsView }, { path: '/app/administracion/cursadas', name: 'admin-courses', component: AdminCoursesView }, { path: '/app/administracion/cursadas/nueva', name: 'admin-course-create', component: AdminCoursesView }],
   })
   await router.push('/app/administracion/periodos/nuevo'); await router.isReady()
   const view = render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
@@ -67,14 +72,14 @@ async function renderEdit() {
   mocks.listCareers.mockResolvedValue({ data: [] })
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/app/administracion/periodos/nuevo', name: 'admin-period-create', component: AdminPeriodsView }, { path: '/app/administracion/periodos', name: 'admin-periods', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsView }],
+    routes: [{ path: '/app/administracion/periodos/nuevo', name: 'admin-period-create', component: AdminPeriodsView }, { path: '/app/administracion/periodos', name: 'admin-periods', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id', name: 'admin-period-detail', component: AdminPeriodsView }, { path: '/app/administracion/periodos/:id/editar', name: 'admin-period-edit', component: AdminPeriodsView }, { path: '/app/administracion/cursadas', name: 'admin-courses', component: AdminCoursesView }, { path: '/app/administracion/cursadas/nueva', name: 'admin-course-create', component: AdminCoursesView }],
   })
   await router.push('/app/administracion/periodos/9/editar'); await router.isReady()
   const view = render(defineComponent({ render: () => h(RouterView) }), { global: { plugins: [router] } })
   return { router, ...view }
 }
 
-beforeEach(() => { vi.resetAllMocks(); mocks.listSpaceCourses.mockResolvedValue({ data: [], pagination: { page: 1, limit: 100, total: 0, totalPages: 0 } }) })
+beforeEach(() => { vi.resetAllMocks(); spaceMocks.list.mockResolvedValue([]); mocks.getSubjectsByYear.mockResolvedValue([]); mocks.listSpaceCourses.mockResolvedValue({ data: [], pagination: { page: 1, limit: 100, total: 0, totalPages: 0 } }) })
 afterEach(() => { cleanup() })
 
 describe('AdminPeriodsView', () => {
@@ -90,6 +95,78 @@ describe('AdminPeriodsView', () => {
     expect(checkbox).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Guardar período' }))
     await waitFor(() => expect(mocks.updatePeriod).toHaveBeenCalledWith(9, expect.objectContaining({ tipo: 'MATERIA', materiasIds: [], cursadasEspaciosIds: [44] })))
+  })
+  it('shows independent subjects and active spaces, hides all active space components, and keeps inactive-space components', async () => {
+    const offer = { id: 44, espacioCurricularId: 12, espacioCurricular: { id: 12, nombre: 'Práctica', carreraId: 3 }, anioLectivo: 2026, periodo: 'ANUAL', activo: true, componentes: [{ cursadaId: 50, materiaId: 8, materia: { id: 8, nombre: 'Componente ofertado' } }] }
+    mocks.listCareers.mockResolvedValue({ data: [{ id: 3, nombre: 'Profesorado' }] })
+    mocks.getSubjectsByYear.mockResolvedValue([{ anio: 1, materias: [
+      { id: 8, nombre: 'Componente ofertado' }, { id: 9, nombre: 'Materia independiente' },
+      { id: 10, nombre: 'Componente sin oferta' }, { id: 11, nombre: 'Componente inactivo' },
+    ] }])
+    mocks.listSpaceCourses.mockResolvedValue({ data: [offer], pagination: { page: 1, limit: 100, total: 1, totalPages: 1 } })
+    spaceMocks.list.mockResolvedValue([
+      { id: 12, nombre: 'Práctica', carreraId: 3, activo: true, materias: [{ id: 8, nombre: 'Componente ofertado' }] },
+      { id: 13, nombre: 'Espacio sin oferta', carreraId: 3, activo: true, materias: [{ id: 10, nombre: 'Componente sin oferta' }] },
+      { id: 14, nombre: 'Espacio inactivo', carreraId: 3, activo: false, materias: [{ id: 11, nombre: 'Componente inactivo' }] },
+    ])
+    const { router } = await renderCreate()
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Carrera' }), '3')
+
+    expect(await screen.findByRole('checkbox', { name: 'Materia independiente' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Componente ofertado' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Componente sin oferta' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Componente inactivo' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Práctica.*2026.*Anual/ })).toBeInTheDocument()
+    expect(router.resolve({ name: 'admin-course-create', query: { tipo: 'ESPACIO' } }).href).toContain('/app/administracion/cursadas/nueva?tipo=ESPACIO')
+  })
+  it('shows active catalog spaces without a matching offering as unavailable with a create-course link', async () => {
+    mocks.listCareers.mockResolvedValue({ data: [{ id: 3, nombre: 'Profesorado' }] })
+    mocks.listSubjects.mockResolvedValue({ data: [] })
+    mocks.listUsers.mockResolvedValue({ data: [] })
+    mocks.getSubjectsByYear.mockResolvedValue([{ anio: 1, materias: [{ id: 9, nombre: 'Materia suelta' }] }])
+    mocks.listSpaceCourses.mockResolvedValue({ data: [], pagination: { page: 1, limit: 100, total: 0, totalPages: 0 } })
+    spaceMocks.list.mockResolvedValue([{ id: 13, nombre: 'Espacio sin cursada anual', carreraId: 3, activo: true, materias: [{ id: 10, nombre: 'Componente' }] }])
+    await renderCreate()
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Carrera' }), '3')
+
+    expect(await screen.findByText('Espacio sin cursada anual')).toBeInTheDocument()
+    expect(screen.getByText(/No tiene una cursada activa para esta carrera y ciclo/)).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 'Crear cursada de espacio' })
+    expect(screen.queryByRole('checkbox', { name: /Espacio sin cursada anual/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Componente' })).not.toBeInTheDocument()
+    await userEvent.click(link)
+    expect((await screen.findByRole('combobox', { name: 'Unidad académica' }) as HTMLSelectElement).value).toBe('ESPACIO')
+    expect(await screen.findByRole('combobox', { name: 'Espacio curricular' })).toBeInTheDocument()
+    expect((screen.getByRole('combobox', { name: 'Carrera' }) as HTMLSelectElement).value).toBe('3')
+    expect((screen.getByRole('spinbutton', { name: 'Año lectivo' }) as HTMLInputElement).value).toBe('2026')
+    expect((screen.getByRole('combobox', { name: 'Espacio curricular' }) as HTMLSelectElement).value).toBe('13')
+  })
+  it('keeps a prior space offering visible and checked when it no longer matches current availability', async () => {
+    const reference = { id: 44, espacioCurricularId: 12, anioLectivo: 2025, periodo: 'ANUAL', activo: false, espacioCurricular: { id: 12, nombre: 'Práctica profesional', carreraId: 3, carrera: { id: 3, nombre: 'Profesorado' } } }
+    mocks.getPeriod.mockResolvedValue({ ...period, tipo: 'MATERIA', cicloLectivo: 2025, cantidadMesas: 0, materias: [], mesas: [], cursadasEspacios: [{ cursadaEspacioId: 44, cursadaEspacio: reference }] })
+    mocks.listCareers.mockResolvedValue({ data: [{ id: 3, nombre: 'Profesorado' }] })
+    mocks.getSubjectsByYear.mockResolvedValue([])
+    mocks.updatePeriod.mockResolvedValue({})
+    spaceMocks.list.mockResolvedValue([])
+    await renderEdit()
+
+    const retained = await screen.findByRole('checkbox', { name: /Práctica profesional.*selección previa/i })
+    expect(retained).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar período' }))
+    await waitFor(() => expect(mocks.updatePeriod).toHaveBeenCalledWith(9, expect.objectContaining({ cursadasEspaciosIds: [44] })))
+  })
+  it('preserves a previously selected component subject when editing period metadata', async () => {
+    const legacySubject = { id: 8, nombre: 'Práctica I', carreraId: 3 }
+    mocks.getPeriod.mockResolvedValue({ ...period, tipo: 'MATERIA', cicloLectivo: 2026, cantidadMesas: 0, materias: [legacySubject], mesas: [], cursadasEspacios: [] })
+    mocks.listCareers.mockResolvedValue({ data: [{ id: 3, nombre: 'Profesorado' }] })
+    mocks.getSubjectsByYear.mockResolvedValue([])
+    mocks.updatePeriod.mockResolvedValue({})
+    spaceMocks.list.mockResolvedValue([{ id: 12, nombre: 'Práctica profesional', carreraId: 3, activo: true, materias: [legacySubject] }])
+    await renderEdit()
+
+    expect(await screen.findByRole('checkbox', { name: /Práctica I.*componente de un espacio activo/ })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar período' }))
+    await waitFor(() => expect(mocks.updatePeriod).toHaveBeenCalledWith(9, expect.objectContaining({ materiasIds: [8] })))
   })
   it('shows and edits an offering from the minimal period DTO', async () => {
     const reference = { id: 44, espacioCurricularId: 12, anioLectivo: 2026, periodo: 'ANUAL', activo: true, espacioCurricular: { id: 12, nombre: 'Práctica profesional', carreraId: 3, carrera: { id: 3, nombre: 'Profesorado' } } }

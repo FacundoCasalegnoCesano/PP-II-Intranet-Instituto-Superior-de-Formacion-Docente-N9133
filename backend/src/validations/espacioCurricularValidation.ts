@@ -3,7 +3,7 @@ import Joi from 'joi';
 const id = Joi.number().integer().min(1);
 const nombre = Joi.string().trim().min(1).max(255);
 const descripcion = Joi.string().allow('', null).max(5000);
-const componentesIds = Joi.array().items(id).unique().required();
+const componentesIds = Joi.array().items(id).unique().min(1).required();
 const prerequisite = Joi.object({
   materiaRequeridaId: id,
   espacioRequeridoId: id,
@@ -33,7 +33,7 @@ export const createEspacioCurricularSchema = Joi.object({
 export const updateEspacioCurricularSchema = Joi.object({
   nombre,
   descripcion,
-  componentesIds: Joi.array().items(id).unique(),
+  componentesIds: Joi.array().items(id).unique().min(1),
   revisarCorrelatividadesComponentes: Joi.boolean()
 }).min(1).unknown(false);
 

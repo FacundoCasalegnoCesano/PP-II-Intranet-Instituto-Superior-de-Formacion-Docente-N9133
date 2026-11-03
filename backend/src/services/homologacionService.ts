@@ -194,7 +194,7 @@ class HomologacionService {
         select: { id: true, composicionBloqueadaAt: true, materias: { select: { id: true } } }
       });
       for (const space of spaces) {
-        if (!space.composicionBloqueadaAt && space.materias.length >= 2 && space.materias.every((materia) => materiasAprobadas.has(materia.id))) {
+        if (!space.composicionBloqueadaAt && space.materias.length >= 1 && space.materias.every((materia) => materiasAprobadas.has(materia.id))) {
           await tx.espacioCurricular.update({ where: { id: space.id }, data: { composicionBloqueadaAt: new Date() } });
         }
       }

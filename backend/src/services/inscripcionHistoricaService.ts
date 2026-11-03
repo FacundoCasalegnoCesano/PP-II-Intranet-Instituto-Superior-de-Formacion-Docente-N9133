@@ -20,7 +20,7 @@ class InscripcionHistoricaService {
       where: { id: cursadaEspacioId },
       select: { componentes: { select: { id: true }, orderBy: { id: 'asc' } } }
     });
-    if (!offer || offer.componentes.length < 2) throw new AppError(404, 'Cursada histórica del espacio no encontrada o incompleta');
+    if (!offer || offer.componentes.length < 1) throw new AppError(404, 'Cursada histórica del espacio no encontrada o incompleta');
     return this.crear(offer.componentes[0]!.id, usuarioId, actor, transaction);
   }
 
@@ -79,7 +79,7 @@ class InscripcionHistoricaService {
           where: { id: course.cursadaEspacioId },
           include: { componentes: { include: { materia: { select: { id: true, nombre: true } } }, orderBy: { materiaId: 'asc' } } }
         });
-        if (!offer || offer.anioLectivo !== course.anioLectivo || offer.componentes.length < 2 || !offer.componentes.some((component: any) => component.id === course.id)) {
+        if (!offer || offer.anioLectivo !== course.anioLectivo || offer.componentes.length < 1 || !offer.componentes.some((component: any) => component.id === course.id)) {
           throw new AppError(409, 'La cursada no pertenece a una oferta histórica completa del espacio');
         }
         const priorParent = await tx.inscripcionEspacio.findUnique({

@@ -64,7 +64,7 @@ test('serializa el lote promocionable, recalcula con el evaluador y fija el latc
     },
     asistencia: { findMany: async () => [] },
     espacioCurricular: {
-      findFirst: async () => ({ id: 55, composicionBloqueadaAt: null, materias: [{ id: 30 }, { id: 31 }] }),
+      findFirst: async () => ({ id: 55, composicionBloqueadaAt: null, materias: [{ id: 30 }] }),
       updateMany: async ({ where }: any) => { events.push('latch'); latched.push(where.id); return { count: 1 }; }
     }
   }));

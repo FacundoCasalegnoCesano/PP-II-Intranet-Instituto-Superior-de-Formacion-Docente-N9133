@@ -25,7 +25,7 @@ export async function latchSpaceIfStudentCompleted(input: {
       materias: { select: { id: true } }
     }
   });
-  if (!space || space.composicionBloqueadaAt || space.materias.length < 2) return;
+  if (!space || space.composicionBloqueadaAt || space.materias.length < 1) return;
 
   const approved = await estadoAcademicoService.getMateriasAprobadasSet(alumnoId);
   approved.add(materiaId);

@@ -54,7 +54,7 @@ test('backfill MariaDB bloquea espacios que completan sus componentes por PROMOC
     } });
     espacioId = espacio.id;
 
-    for (const label of ['A', 'B']) {
+    for (const label of ['A']) {
       const materia = await client.materia.create({ data: {
         nombre: `Componente ${label} ${suffix}`,
         cargaHoraria: 64,

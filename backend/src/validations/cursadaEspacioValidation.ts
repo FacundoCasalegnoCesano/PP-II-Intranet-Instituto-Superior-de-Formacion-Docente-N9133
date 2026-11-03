@@ -12,7 +12,7 @@ export const crearCursadaEspacioSchema = Joi.object({
   espacioCurricularId: Joi.number().integer().min(1).required(),
   anioLectivo: Joi.number().integer().min(2000).max(2100).required(),
   periodo: Joi.string().valid(...PERIODOS).default('ANUAL'),
-  componentes: Joi.array().items(componenteSchema).unique('materiaId').min(2).required()
+  componentes: Joi.array().items(componenteSchema).unique('materiaId').min(1).required()
 });
 
 export const actualizarCursadaEspacioSchema = Joi.object({
