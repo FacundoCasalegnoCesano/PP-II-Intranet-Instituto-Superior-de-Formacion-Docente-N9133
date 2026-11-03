@@ -104,6 +104,26 @@ describe('AdminCoursesView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cursada' }))
     await waitFor(() => expect(mocks.createSpaceCourse).toHaveBeenCalledWith(expect.objectContaining({ espacioCurricularId: 31, anioLectivo: 2026, componentes: [{ materiaId: 4, docenteId: 77 }, { materiaId: 5, docenteId: null }] })))
   })
+  it('creates an offering for a space with one component', async () => {
+    mocks.createSpaceCourse.mockResolvedValue({ id: 91 })
+    await renderAt('/app/administracion/cursadas/nueva?tipo=ESPACIO', [{ id: 31, nombre: 'Formación docente', carreraId: 2, activo: true, materias: [{ id: 4, nombre: 'Álgebra' }] }])
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Carrera' }), '2')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Espacio curricular' }), '31')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cursada' }))
+    await waitFor(() => expect(mocks.createSpaceCourse).toHaveBeenCalledWith(expect.objectContaining({
+      espacioCurricularId: 31, anioLectivo: 2026, componentes: [{ materiaId: 4, docenteId: null }],
+    })))
+  })
+  it('prefills an explicitly linked space, career, and cycle after period navigation', async () => {
+    await renderAt('/app/administracion/cursadas/nueva?tipo=ESPACIO&carreraId=2&anioLectivo=2027&espacioCurricularId=31', [
+      { id: 31, nombre: 'Formación docente', carreraId: 2, activo: true, materias: [{ id: 4, nombre: 'Álgebra' }] },
+    ])
+    expect((await screen.findByRole('combobox', { name: 'Unidad académica' }) as HTMLSelectElement).value).toBe('ESPACIO')
+    expect((await screen.findByRole('combobox', { name: 'Carrera' }) as HTMLSelectElement).value).toBe('2')
+    expect((await screen.findByRole('combobox', { name: 'Espacio curricular' }) as HTMLSelectElement).value).toBe('31')
+    expect((await screen.findByRole('spinbutton', { name: 'Año lectivo' }) as HTMLInputElement).value).toBe('2027')
+    expect(screen.getByText('Álgebra')).toBeInTheDocument()
+  })
   it('enrolls a named student in a finalized course through the historical enrollment endpoint', async () => {
     mocks.getCourse.mockResolvedValue({ ...course(12), estadoCursada: 'FINALIZADA' })
     mocks.enrollHistoricalCourse.mockResolvedValue({ message: 'Inscripción histórica registrada.' })

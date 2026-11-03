@@ -41,4 +41,10 @@ describe('spacesApi', () => {
     await spacesApi.removePrerequisite(8, 22)
     expect(mocks.delete).toHaveBeenCalledWith('/espacios-curriculares/8/correlatividades/22')
   })
+
+  it('deletes a curriculum space through its resource endpoint', async () => {
+    mocks.delete.mockResolvedValueOnce(undefined)
+    await spacesApi.remove(8)
+    expect(mocks.delete).toHaveBeenCalledWith('/espacios-curriculares/8')
+  })
 })
