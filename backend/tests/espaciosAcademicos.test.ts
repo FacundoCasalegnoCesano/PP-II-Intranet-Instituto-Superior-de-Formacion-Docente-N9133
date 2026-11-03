@@ -39,3 +39,14 @@ test('promedia un espacio aprobado una vez, excluye sus componentes y conserva m
 
   assert.deepEqual(resumen, { promedio: 7.6, aprobadas: 5, total: 5 });
 });
+
+test('aprueba y cuenta un espacio de una materia como una sola unidad', () => {
+  const espacios = evaluarEspacios([
+    { id: 14, nombre: 'Taller', materias: [{ id: 3, nombre: 'Práctica I' }] }
+  ], materias);
+  const resumen = resumirUnidadesAcademicas(materias, espacios);
+
+  assert.equal(espacios[0].estado, 'APROBADA');
+  assert.equal(espacios[0].nota, 8);
+  assert.deepEqual(resumen, { promedio: 7.5, aprobadas: 6, total: 6 });
+});

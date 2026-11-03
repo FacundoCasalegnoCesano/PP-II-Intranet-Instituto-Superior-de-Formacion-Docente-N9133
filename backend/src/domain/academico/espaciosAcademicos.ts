@@ -50,7 +50,7 @@ export function evaluarEspacios(
         definitiva: materia?.definitiva ?? null
       };
     });
-    const aprobada = componentes.length >= 2 && componentes.every(componente => definitivaValida(componente.definitiva));
+    const aprobada = componentes.length >= 1 && componentes.every(componente => definitivaValida(componente.definitiva));
     const nota = aprobada
       ? Math.floor(componentes.reduce((suma, componente) => suma + componente.definitiva!.nota!, 0) / componentes.length + 0.5)
       : null;

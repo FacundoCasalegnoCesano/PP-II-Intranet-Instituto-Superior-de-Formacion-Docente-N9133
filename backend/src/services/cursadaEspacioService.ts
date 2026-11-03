@@ -70,7 +70,7 @@ class CursadaEspacioService {
         });
         if (!space?.activo || !space.carreraId) throw new AppError(409, 'El espacio debe estar activo y tener carrera asignada');
         if (space.carreraId !== initial.carreraId) throw new AppError(409, 'La carrera del espacio cambió durante la operación');
-        if (space.materias.length < 2) throw new AppError(409, 'El espacio necesita al menos dos materias activas');
+        if (space.materias.length < 1) throw new AppError(409, 'El espacio necesita al menos una materia activa');
         if (input.componentes.length !== space.materias.length
           || new Set(input.componentes.map((item) => item.materiaId)).size !== input.componentes.length
           || space.materias.some((materia) => !input.componentes.some((item) => item.materiaId === materia.id))) {
@@ -160,7 +160,7 @@ class CursadaEspacioService {
         if (input.activo === true) {
           const currentIds = oferta.componentes.map((cursada: any) => cursada.materiaId).sort((a: number, b: number) => a - b);
           const catalogIds = oferta.espacioCurricular.materias.map((materia: any) => materia.id).sort((a: number, b: number) => a - b);
-          if (currentIds.length < 2 || currentIds.length !== catalogIds.length || currentIds.some((id: number, index: number) => id !== catalogIds[index]) || oferta.componentes.some((item: any) => !item.activo)) {
+          if (currentIds.length < 1 || currentIds.length !== catalogIds.length || currentIds.some((id: number, index: number) => id !== catalogIds[index]) || oferta.componentes.some((item: any) => !item.activo)) {
             throw new AppError(409, 'La oferta quedó desactualizada respecto de la composición del espacio y no puede reactivarse');
           }
         }

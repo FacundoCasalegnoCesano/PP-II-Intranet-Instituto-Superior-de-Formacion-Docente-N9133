@@ -238,6 +238,30 @@ test('rechaza aprobar una parcial con nota insuficiente', async () => {
   assert.deepEqual(updates, []);
 });
 
+test('la homologación aprobada de un componente único fija el bloqueo de composición', async () => {
+  stubPendingPartial(7);
+  const updates: any[] = [];
+  replaceMethod(homologacionRepository, 'update', async (_id: number, data: any) => rawHomologacion({ id: 1, ...data }));
+  replaceMethod(materiaRepository, 'withTransaction', async (operation: any) => operation({
+    $queryRaw: async () => [],
+    homologacion: { findUnique: async () => ({
+      id: 1, alumnoId: 101, materiaId: 30, tipoHomologacion: 'PARCIAL', estado: 'PENDIENTE',
+      calificacion: null, notaExamenHomologacion: 7, materia: { carreraId: 3, notaMinima: 6 }
+    }) },
+    espacioCurricular: {
+      findMany: async () => [{ id: 44, composicionBloqueadaAt: null, materias: [{ id: 30 }] }],
+      update: async (args: any) => { updates.push(args); return args; }
+    }
+  }));
+  replaceMethod(estadoAcademicoService, 'getMateriasAprobadasSet', async () => new Set());
+
+  await homologacionService.resolver(1, 'APROBAR', admin);
+
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].where, { id: 44 });
+  assert.ok(updates[0].data.composicionBloqueadaAt instanceof Date);
+});
+
 test('el repository persiste una solicitud parcial nullable y siempre PENDIENTE', async () => {
   let createArgs: any;
   replaceMethod(prisma.homologacion, 'create', async (args: any) => {

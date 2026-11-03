@@ -15,7 +15,7 @@ export function evaluarRequisitosAcademicos(input: {
 }): { cumple: boolean; pendientes: RequisitoAcademicoPendiente[]; primerError: RequisitoAcademicoPendiente | null } {
   const pendientes = input.reglas.filter(regla => {
     if (regla.tipo === 'MATERIA') return !input.materiasCumplidas.has(regla.materiaId);
-    return regla.componentesIds.length < 2 || regla.componentesIds.some(id => !input.materiasCumplidas.has(id));
+    return regla.componentesIds.length === 0 || regla.componentesIds.some(id => !input.materiasCumplidas.has(id));
   }).map(({ tipo, requisitoId, nombre }) => ({ tipo, requisitoId, nombre }));
   return {
     cumple: pendientes.length === 0,

@@ -1,9 +1,10 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import materiaRepository from '../repositories/materiaRepository.js';
 import estadoAcademicoService from './estadoAcademicoService.js';
 import { AppError } from '../utils/AppError.js';
 import { createsMixedCorrelationCycle, espacioNode, materiaNode } from '../utils/correlatividadGraph.js';
+import { ROLES } from '../constants/roles.js';
 
 type SpaceInput = { nombre: string; carreraId: number; descripcion?: string | null; componentesIds: number[]; correlatividades?: RequirementInput[]; revisarCorrelatividadesComponentes?: boolean };
 type SpacePatch = { nombre?: string; descripcion?: string | null; componentesIds?: number[]; revisarCorrelatividadesComponentes?: boolean };
@@ -45,6 +46,7 @@ class EspacioCurricularService {
   }
 
   private async validateComponents(db: Db, carreraId: number, ids: number[], spaceId?: number): Promise<void> {
+    if (ids.length === 0) throw new AppError(400, 'El espacio curricular debe tener al menos una materia');
     if (new Set(ids).size !== ids.length) {
       throw new AppError(400, 'Seleccioná materias distintas');
     }
@@ -59,7 +61,7 @@ class EspacioCurricularService {
   }
 
   private async groupAlreadyCompleted(db: Db, componentIds: number[]): Promise<boolean> {
-    if (componentIds.length < 2) return false;
+    if (componentIds.length < 1) return false;
     const [exams, homologations, grades] = await Promise.all([
       db.inscripcionExamen.findMany({
         where: { aprobado: true, fechaBaja: null, mesa: { materiaId: { in: componentIds } } },
@@ -128,8 +130,12 @@ class EspacioCurricularService {
       if (componentRules.length && input.revisarCorrelatividadesComponentes !== true) {
         throw new AppError(400, 'Revisá y confirmá las correlatividades propias de las materias antes de agruparlas');
       }
+      const completed = await this.groupAlreadyCompleted(tx, input.componentesIds);
       const space = await tx.espacioCurricular.create({
-        data: { nombre: input.nombre.trim(), descripcion: input.descripcion ?? null, carreraId: input.carreraId, activo: false },
+        data: {
+          nombre: input.nombre.trim(), descripcion: input.descripcion ?? null, carreraId: input.carreraId, activo: true,
+          ...(completed ? { composicionBloqueadaAt: new Date() } : {})
+        },
         select: { id: true }
       });
       await this.replaceComponents(tx, space.id, input.carreraId, input.componentesIds);
@@ -247,7 +253,6 @@ class EspacioCurricularService {
       const data = {
         ...(input.nombre !== undefined ? { nombre: input.nombre.trim() } : {}),
         ...(input.descripcion !== undefined ? { descripcion: input.descripcion } : {}),
-        ...(nextIds.length < 2 ? { activo: false } : {}),
         ...(await this.groupAlreadyCompleted(tx, nextIds) ? { composicionBloqueadaAt: new Date() } : {})
       };
       const updated = await tx.espacioCurricular.update({ where: { id }, data, include: spaceInclude });
@@ -262,7 +267,7 @@ class EspacioCurricularService {
       const current = await this.requireSpace(tx, id);
       await this.lockCareer(tx, current.carreraId!);
       const locked = await this.requireSpace(tx, id);
-      if (locked.materias.length < 2) throw new AppError(400, 'Se requieren al menos dos materias para activar el espacio');
+      if (locked.materias.length < 1) throw new AppError(400, 'Se requiere al menos una materia para activar el espacio');
       const completed = locked.composicionBloqueadaAt
         ? false
         : await this.groupAlreadyCompleted(tx, locked.materias.map((materia) => materia.id));
@@ -302,6 +307,89 @@ class EspacioCurricularService {
       const result = await tx.espacioCorrelatividad.deleteMany({ where: { id: correlatividadId, espacioOrigenId: id } });
       if (!result.count) throw new AppError(404, 'Correlatividad no encontrada');
     });
+  }
+
+  async delete(id: number, currentUser: any): Promise<void> {
+    if (currentUser?.rol !== ROLES.ADMINISTRATIVO) throw new AppError(403, 'Solo administrativos pueden eliminar espacios curriculares');
+    try {
+      await prisma.$transaction(async tx => {
+        const initial = await tx.espacioCurricular.findUnique({ where: { id }, select: { id: true, carreraId: true } });
+        if (!initial) throw new AppError(404, 'Espacio curricular no encontrado');
+        if (!initial.carreraId) throw new AppError(409, 'El espacio curricular no tiene una carrera asignada');
+        await tx.$queryRaw`SELECT id FROM carreras WHERE id = ${initial.carreraId} FOR UPDATE`;
+        await tx.$queryRaw`SELECT id FROM espacios_curriculares WHERE id = ${id} FOR UPDATE`;
+        const space = await tx.espacioCurricular.findUnique({
+          where: { id },
+          select: { id: true, carreraId: true, composicionBloqueadaAt: true, materias: { select: { id: true } } }
+        });
+        if (!space) throw new AppError(404, 'Espacio curricular no encontrado');
+        if (space.carreraId !== initial.carreraId) throw new AppError(409, 'La carrera del espacio cambió durante la operación');
+
+        // ReadCommitted makes later counts see commits completed while waiting for these locks.
+        // Lock referenced rows before checking links because period links cascade on offer deletion.
+        await tx.$queryRaw`SELECT id FROM cursadas_espacios WHERE espacio_curricular_id = ${id} FOR UPDATE`;
+        await tx.$queryRaw`SELECT c.id FROM cursadas c INNER JOIN cursadas_espacios ce ON ce.id = c.cursada_espacio_id WHERE ce.espacio_curricular_id = ${id} FOR UPDATE`;
+        const [offers, enrollments, componentEnrollments, periods, legacyGrades, incomingSpaceRules, legacyRules, ownedSpaceRules, suspendedRules] = await Promise.all([
+          tx.cursadaEspacio.findMany({
+            where: { espacioCurricularId: id },
+            select: { id: true, componentes: { select: { id: true, _count: { select: { inscripciones: true, asistencias: true, calificaciones: true, horarios: true } } } } }
+          }),
+          tx.inscripcionEspacio.count({ where: { cursadaEspacio: { espacioCurricularId: id } } }),
+          tx.inscripcionMateria.count({ where: { inscripcionEspacio: { cursadaEspacio: { espacioCurricularId: id } } } }),
+          tx.periodoEspacioHabilitado.count({ where: { cursadaEspacio: { espacioCurricularId: id } } }),
+          tx.alumnoEspacioCurricular.count({ where: { espacioCurricularId: id } }),
+          tx.espacioCorrelatividad.count({ where: { espacioRequeridoId: id } }),
+          tx.correlatividad.count({ where: { espacioRequeridoId: id } }),
+          tx.espacioCorrelatividad.count({ where: { espacioOrigenId: id } }),
+          space.materias.length ? tx.correlatividad.findMany({
+            where: { materiaOrigenId: { in: space.materias.map(materia => materia.id) }, suspendidaPorEspacio: true },
+            select: { id: true, materiaOrigenId: true, materiaRequeridaId: true, espacioRequeridoId: true, aplicaCursado: true, aplicaRendir: true }
+          }) : Promise.resolve([])
+        ]);
+        if (enrollments > 0 || componentEnrollments > 0) throw new AppError(409, 'No se puede eliminar el espacio: tiene matrículas de alumnos registradas');
+        if (periods > 0) throw new AppError(409, 'No se puede eliminar el espacio: una oferta está asociada a un período de inscripción');
+        if (legacyGrades > 0 || space.composicionBloqueadaAt) throw new AppError(409, 'No se puede eliminar el espacio: conserva historia académica');
+        if (incomingSpaceRules > 0 || legacyRules > 0) throw new AppError(409, 'No se puede eliminar el espacio: otra correlatividad lo requiere');
+        if (offers.some((offer: any) => offer.componentes.some((course: any) =>
+          course._count.inscripciones || course._count.asistencias || course._count.calificaciones || course._count.horarios
+        ))) throw new AppError(409, 'No se puede eliminar el espacio: sus cursadas conservan datos académicos');
+
+        const currentEdges = await materiaRepository.getMixedCorrelationEdges(space.carreraId!, tx);
+        const currentSpaceNode = espacioNode(id);
+        const remainingEdges = currentEdges.filter(edge =>
+          !(edge.kind === 'MEMBERSHIP' && edge.to === currentSpaceNode)
+          && !(edge.kind === 'SPACE' && edge.from === currentSpaceNode)
+        );
+        const restoredRules = suspendedRules.map((rule: any) => ({
+          from: materiaNode(rule.materiaOrigenId),
+          to: rule.materiaRequeridaId != null ? materiaNode(rule.materiaRequeridaId) : espacioNode(rule.espacioRequeridoId),
+          kind: 'LEGACY' as const,
+          aplicaCursado: rule.aplicaCursado,
+          aplicaRendir: rule.aplicaRendir
+        }));
+        if (createsMixedCorrelationCycle(remainingEdges, restoredRules)) {
+          throw new AppError(409, 'No se puede eliminar el espacio: restaurar sus correlatividades generaría un ciclo');
+        }
+
+        const offerIds = offers.map((offer: any) => offer.id);
+        if (offerIds.length) {
+          await tx.cursada.updateMany({ where: { cursadaEspacioId: { in: offerIds } }, data: { cursadaEspacioId: null } });
+          await tx.cursadaEspacio.deleteMany({ where: { id: { in: offerIds } } });
+        }
+        if (ownedSpaceRules > 0) await tx.espacioCorrelatividad.deleteMany({ where: { espacioOrigenId: id } });
+        if (suspendedRules.length) await tx.correlatividad.updateMany({
+          where: { id: { in: suspendedRules.map((rule: any) => rule.id) }, suspendidaPorEspacio: true },
+          data: { suspendidaPorEspacio: false }
+        });
+        await tx.materia.updateMany({ where: { espacioCurricularId: id }, data: { espacioCurricularId: null } });
+        await tx.espacioCurricular.delete({ where: { id } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    } catch (error) {
+      if ((error as any)?.code === 'P2003' || (error as any)?.code === 'P2014') {
+        throw new AppError(409, 'No se puede eliminar el espacio: conserva registros relacionados');
+      }
+      throw error;
+    }
   }
 
   async latchIfCompleted(db: Db, id: number): Promise<boolean> {

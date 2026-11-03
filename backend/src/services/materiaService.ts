@@ -317,7 +317,7 @@ class MateriaService {
     for (const alumnoId of alumnoIds) {
       const approved = approvedByAlumno.get(alumnoId)!;
       for (const space of spaces) {
-        if (space.materias.length >= 2 && space.materias.every(component => approved.has(component.id))) latches.add(space.id);
+        if (space.materias.length >= 1 && space.materias.every(component => approved.has(component.id))) latches.add(space.id);
       }
     }
     return latches;

@@ -3,7 +3,13 @@ import { test } from 'node:test';
 import cursadaEspacioController from '../src/controllers/cursadaEspacioController.js';
 import cursadaEspacioService from '../src/services/cursadaEspacioService.js';
 import { validationMiddleware } from '../src/middleware/validation.js';
-import { cursadaEspacioIdParamsSchema, listarCursadasEspacioSchema } from '../src/validations/cursadaEspacioValidation.js';
+import { crearCursadaEspacioSchema, cursadaEspacioIdParamsSchema, listarCursadasEspacioSchema } from '../src/validations/cursadaEspacioValidation.js';
+
+test('la validación de oferta acepta un componente y rechaza cero', () => {
+  const base = { espacioCurricularId: 4, anioLectivo: 2026 };
+  assert.equal(crearCursadaEspacioSchema.validate({ ...base, componentes: [{ materiaId: 8 }] }).error, undefined);
+  assert.ok(crearCursadaEspacioSchema.validate({ ...base, componentes: [] }).error);
+});
 
 test('el filtro activo convertido por Joi conserva true al consultar las cursadas', async () => {
   const originalList = cursadaEspacioService.list;

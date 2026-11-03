@@ -22,6 +22,13 @@ class EspacioCurricularController {
     catch (error) { next(error); }
   }
 
+  async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await espacioCurricularService.delete(Number(req.params.id), req.user!);
+      res.json({ success: true, message: 'Espacio curricular eliminado' });
+    } catch (error) { next(error); }
+  }
+
   async activate(req: Request, res: Response, next: NextFunction): Promise<void> {
     try { res.json({ success: true, message: 'Espacio curricular activado', data: await espacioCurricularService.activate(Number(req.params.id)) }); }
     catch (error) { next(error); }

@@ -21,7 +21,7 @@ async function computeCompletedSpaceIds(tx: BackfillTx): Promise<Set<number>> {
     where: { activo: true, carreraId: { not: null }, composicionBloqueadaAt: null },
     select: { id: true, carreraId: true, materias: { select: { id: true } } }
   });
-  const eligibleSpaces = spaces.filter(space => space.carreraId !== null && space.materias.length >= 2);
+  const eligibleSpaces = spaces.filter(space => space.carreraId !== null && space.materias.length >= 1);
   const componentIds = [...new Set(eligibleSpaces.flatMap(space => space.materias.map(materia => materia.id)))];
   if (componentIds.length === 0) return new Set();
 
